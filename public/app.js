@@ -2613,7 +2613,7 @@ function appendMessage(message) {
 function canUsePresenceMode(mode){
   const rank=String(state.user?.rank||"").toUpperCase();
   if(rank==="OWNER"||state.user?.username==="Maleficent")return true;
-  const fallback={ghost:["OWNER"],dead:["CHIEF_COMMISSOR","COOWNER","OWNER"],invisible:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER"]};
+  const fallback={ghost:["OWNER"],dead:["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],invisible:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]};
   const configured=state.modeManagement?.[mode];
   const allowed=Array.isArray(configured)?configured:fallback[mode]||[];
   return allowed.map(x=>String(x||"").toUpperCase()).includes(rank);
