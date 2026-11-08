@@ -562,11 +562,21 @@ assert.ok(server.includes('const actor=current(req);if(!hasRank(actor,"ADMIN"))r
   "Moderator accounts must not assign or resolve reports");
 assert.ok(server.includes('if(!hasRank(u,"ADMIN"))return res.status(403).json({error:"Admin rank or higher required to inspect reported private-message evidence."});'),
   "Moderator accounts must not inspect reported private-message evidence");
+assert.ok(server.includes("app.get('/api/staff/premium-requests'") && server.includes("featureGrantAllowed(actor,'premium_granting')") && server.includes("app.post('/api/staff/premium/grant'"),
+  "Elite and Owner must have server-authorized Premium request and direct-grant endpoints");
+assert.ok(server.includes("app.get('/api/staff/multi-account-rule'") && server.includes("featureGrantAllowed(actor,'manage_multi_account_rules')") && server.includes("app.put('/api/staff/multi-account-rule'"),
+  "Elite and Owner must have server-authorized multi-account rule settings");
+assert.ok(server.includes('const existingAccount=findUser(fingerprintTaken.rows[0].id);') && server.includes('applySystemRule(existingAccount,multiAccountRule,'),
+  "the configured multi-account rule must execute when a duplicate device registration is detected");
+assert.ok(activeClient.includes("const canGrantPremium=canFeature('premium_granting');") && activeClient.includes('staffPremiumGrantForm') && activeClient.includes('staffPremiumRequestList'),
+  "the staff dashboard must expose Premium granting controls to authorized ranks");
+assert.ok(activeClient.includes("const canManageMultiAccount=canFeature('manage_multi_account_rules');") && activeClient.includes('staffMultiAccountRuleForm'),
+  "the staff dashboard must expose multi-account rule controls to authorized ranks");
 assert.ok(server.includes("const FEATURE_GRANT_POLICY_VERSION=8;"),
   "rank and feature-grant policy migration must be versioned");
 assert.ok(server.includes("blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER']"),
   "Elite and higher ranks must be blocked from purchasing Premium on the server");
-assert.ok(indexHtml.includes("/app.js?v=staff-dashboard-20261108-1"),
+assert.ok(indexHtml.includes("/app.js?v=staff-dashboard-20261108-2"),
   "the HTML must point at the current rank-schema app bundle");
 
 console.log("Room history, private-room access, invitations, private-message deletion, Shadow Feed, Friends Activity, bootstrap privacy, capacity, and slow-mode regression checks passed.");
