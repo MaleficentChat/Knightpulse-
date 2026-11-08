@@ -2740,7 +2740,7 @@ function renderArcade(){
   if(arcadeGameTimer){clearTimeout(arcadeGameTimer);arcadeGameTimer=null;}if(arcadeInterval){clearInterval(arcadeInterval);arcadeInterval=null;}
   root.innerHTML=`
     <section class="arcade-home">
-      <div class="arcade-welcome"><div><span class="arcade-kicker">MALEFICENT ARCADE</span><h2>Choose your next obsession.</h2><p>Quick games, friendly rivalries, and tiny victories. No drawing tools or old Gravity Run mode.</p></div><div class="arcade-orb">✦</div></div>
+      <div class="arcade-welcome"><div><span class="arcade-kicker">KNIGHT PULSE ARCADE</span><h2>Choose your next obsession.</h2><p>Quick games, friendly rivalries, and tiny victories. No drawing tools or old Gravity Run mode.</p></div><div class="arcade-orb">✦</div></div>
       <section class="arcade-studio-card"><div><span class="arcade-kicker">CREATIVE STUDIO</span><h3>🖌️ Doodle Studio</h3><p>Draw something, save it to your personal library, or share it in the current room.</p></div><button type="button" class="primary" data-open-doodle-studio>Open Doodle Studio ↗</button></section>
       <section class="arcade-library"><div class="news-card-top"><h3>Saved drawings</h3><button type="button" class="mini" data-refresh-doodle-library>Refresh</button></div><div id="doodleLibrary" class="doodle-library-list"><p class="muted">Loading your drawings…</p></div></section>
       <div class="arcade-game-grid">
@@ -4561,7 +4561,7 @@ async function openProfileActionDrawer(user,data={}){
   }
   const prefs=dmPrefs(),id=String(user.id),muted=!!prefs.muted?.[id],archived=!!prefs.archived?.[id],blocked=(state.user.blocked||[]).map(String).includes(id);
   const isOwner=String(state.user?.rank||'').toUpperCase()==='OWNER' || (state.user?.username==='Maleficent' && String(state.user?.rank||'').toUpperCase()==='OWNER');
-  const actorIsDeveloper=String(state.user?.rank||'').toUpperCase()==='OWNER'||String(state.user?.username||'').toLowerCase()==='maleficent';
+  const actorIsOwner=String(state.user?.rank||'').toUpperCase()==='OWNER'||String(state.user?.username||'').toLowerCase()==='maleficent';
   const targetIsDeveloper=String(user.rank||'').toUpperCase()==='OWNER'||String(user.username||'').toLowerCase()==='maleficent';
   const canActOnTarget=!targetIsDeveloper||actorIsDeveloper;
   const canShareWallet=!blocked;
