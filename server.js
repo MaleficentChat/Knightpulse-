@@ -1722,10 +1722,8 @@ app.post(
     if (fingerprintTaken.rowCount) {
       const existingAccount=findUser(fingerprintTaken.rows[0].id);
       const multiAccountRule=db.settings?.system_moderation?.multi_account;
-      if(existingAccount&&multiAccountRule?.enabled===true){
-        applySystemRule(existingAccount,multiAccountRule,"A second account registration was attempted from a device already linked to this account.","multi_account");
-      }
-      return res.status(409).json({error:multiAccountRule?.enabled===true?"This device is already linked to an account. The configured multi-account action was applied.":"Only one account allowed per device"});
+      const actionApplied=!!(existingAccount&&multiAccountRule?.enabled===true&&applySystemRule(existingAccount,multiAccountRule,"A second account registration was attempted from a device already linked to this account.","multi_account"));
+      return res.status(409).json({error:actionApplied?"This device is already linked to an account. The configured multi-account action was applied.":(multiAccountRule?.enabled===true?"This device is already linked to an account. Registration is blocked.":"Only one account allowed per device")});
     }
     if(!deviceFingerprint){
       const sameIp=await pool.query(`SELECT id FROM device_fingerprints WHERE ip_hash=$1 LIMIT 1`,[ipHash]);
