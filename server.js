@@ -7482,6 +7482,14 @@ app.get('/api/me/account',auth,async(req,res)=>{
 
     ensureFeaturePermissions();
     ensureFeatureGrants();
+    if(Number(db.settings.rank_schema_version||0)<2){
+      db.settings.feature_grants ||= {};
+      db.settings.feature_grants.premium_granting=["ELITE","OWNER"];
+      db.settings.feature_grants.manage_multi_account_rules=["ELITE","OWNER"];
+      db.settings.rank_schema_version=2;
+      await pool.query("INSERT INTO settings(key,value) VALUES('feature_grants',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(db.settings.feature_grants)]);
+      await pool.query("INSERT INTO settings(key,value) VALUES('rank_schema_version',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(2)]);
+    }
     for (const u of db.users) ensureUserSchema(u);
     save();
     const owner = db.users.find(u => String(u.username).toLowerCase() === "maleficent");
