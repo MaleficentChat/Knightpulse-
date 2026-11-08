@@ -387,3 +387,46 @@ html[data-theme] body{background-image:radial-gradient(ellipse at 48% -18%,rgba(
     font-size:11px!important;
   }
 }
+
+
+/* Mobile room composer: reserve a small fixed slot for Send, not the whole row. */
+#composer{
+  display:flex!important;
+  flex-flow:row nowrap!important;
+  align-items:center!important;
+  gap:8px!important;
+  width:100%!important;
+  min-width:0!important;
+  box-sizing:border-box!important;
+}
+#composer #chatToolsToggle{flex:0 0 42px!important;width:42px!important;min-width:42px!important}
+#composer #message{
+  display:block!important;
+  flex:1 1 0%!important;
+  width:0!important;
+  min-width:0!important;
+  max-width:none!important;
+  box-sizing:border-box!important;
+}
+#composer #fileName{flex:0 1 auto!important;min-width:0!important;max-width:72px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+#composer button.send{
+  display:inline-flex!important;
+  flex:0 0 76px!important;
+  width:76px!important;
+  min-width:76px!important;
+  max-width:76px!important;
+  padding-inline:4px!important;
+  justify-content:center!important;
+  box-sizing:border-box!important;
+}
+@media(max-width:600px){
+  #composer{gap:6px!important;padding:8px!important}
+  #composer #chatToolsToggle{flex-basis:40px!important;width:40px!important;min-width:40px!important}
+  #composer button.send{
+    flex-basis:72px!important;
+    width:72px!important;
+    min-width:72px!important;
+    max-width:72px!important;
+    font-size:12px!important;
+  }
+}
