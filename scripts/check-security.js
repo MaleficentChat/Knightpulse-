@@ -500,18 +500,26 @@ for (const policy of grantCeilingExpressions) {
 }
 const grantHierarchy = rankPolicySchema;
 const grantIndex = rank => grantHierarchy.indexOf(rank);
+const expectedGrantLists = {
+  MOD:["MEMBER","VIP","SVIP","PREMIUM","MOD"],
+  ADMIN:["MEMBER","VIP","SVIP","PREMIUM","MOD"],
+  SUPER_ADMIN:["MEMBER","VIP","SVIP","PREMIUM","MOD"],
+  COMMISSOR:["MEMBER","VIP","SVIP","PREMIUM","MOD"],
+  CHIEF_COMMISSOR:["MEMBER","VIP","SVIP","PREMIUM","MOD"],
+  COOWNER:["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR"],
+  ELITE:["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER"],
+  OWNER:grantHierarchy
+};
 for (const [actorRank, ceiling] of Object.entries(expectedGrantCeilings)) {
-  for (const requestedRank of grantHierarchy) {
-    assert.equal(grantIndex(requestedRank)<=grantIndex(ceiling), grantIndex(requestedRank)<=grantIndex(ceiling), actorRank+' ceiling matrix must include '+requestedRank+' only when within '+ceiling);
-  }
-  for (const targetRank of grantHierarchy) {
-    assert.equal(grantIndex(targetRank)<grantIndex(actorRank), grantIndex(targetRank)<grantIndex(actorRank), actorRank+' may only change lower-ranked targets, not '+targetRank);
-  }
+  const actualGrantList = grantHierarchy.filter(rank => grantIndex(rank)<=grantIndex(ceiling));
+  assert.deepEqual(actualGrantList, expectedGrantLists[actorRank], actorRank+' must expose exactly its permitted grant list');
+  const actualTargetList = grantHierarchy.filter(rank => grantIndex(rank)<grantIndex(actorRank));
+  assert.deepEqual(actualTargetList, grantHierarchy.slice(0,grantIndex(actorRank)), actorRank+' may only change strictly lower-ranked targets');
 }
 assert.match(server.slice(server.indexOf("app.patch('/api/staff/user/:id/rank'"), server.indexOf('app.patch(\n  "/api/owner/user/:id/rank"')),
   /rankOrder\[String\(target\.rank\|\|'MEMBER'\)\.toUpperCase\(\)\]>=rankOrder\[actorRank\]/,
   'direct staff rank changes must reject equal- and higher-ranked targets');
-assert.match(server.slice(server.indexOf('app.post("/api/staff/applications/:id/approve"'), server.indexOf('app.get("/api/staff/dashboard"')),
+assert.match(server.slice(server.indexOf("app.post('/api/staff/applications/:id/grant'"), server.indexOf('app.get("/api/staff/dashboard"')),
   /hierarchyIndex\(target\.rank\)>=hierarchyIndex\(actorRankNow\)/,
   'staff application approvals must reject equal- and higher-ranked targets');
 
