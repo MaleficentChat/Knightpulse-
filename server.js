@@ -7792,6 +7792,12 @@ app.post('/api/admin/private-search',auth,ownerOnly,async(req,res)=>{
     }).map(m=>{const from=m.from??m.senderId??m.sender_id??m.fromUsername??m.senderUsername??m.sender_username,to=m.to??m.receiverId??m.receiver_id??m.toUsername??m.receiverUsername??m.receiver_username,sender=(db.users||[]).find(u=>String(u.id)===String(from)||norm(u.username)===norm(from)),receiver=(db.users||[]).find(u=>String(u.id)===String(to)||norm(u.username)===norm(to));return {...m,sender_id:sender?.id??from,receiver_id:receiver?.id??to,message:m.text??m.message??m.data?.text??m.data?.message??m.data?.content??'',created_at:m.created_at??m.time,sender_username:sender?.username||m.fromUsername||m.senderUsername||m.sender_username,receiver_username:receiver?.username||m.toUsername||m.receiverUsername||m.receiver_username};});
     const sourceRows=[...filteredSqlRows,...filteredLegacyRows.filter(row=>row.id===undefined||row.id===null||!sqlIds.has(String(row.id)))].sort((x,y)=>new Date(y.created_at||y.time||0).getTime()-new Date(x.created_at||x.time||0).getTime()).slice(0,200);
     const messages=sourceRows.map(row=>{const data=row.data&&typeof row.data==='object'?row.data:{},attachment=row.attachment??data.attachment??data.attachments??null;return {...data,id:row.id,from:row.sender_id??data.from,to:row.receiver_id??data.to,sender_id:row.sender_id,receiver_id:row.receiver_id,sender_username:row.sender_username||data.fromUsername||data.senderUsername||data.sender_username||'Unknown',receiver_username:row.receiver_username||data.toUsername||data.receiverUsername||data.receiver_username||'Unknown',message:row.message??data.text??data.message??data.content??'',text:data.text??row.message??data.message??data.content??'',attachment,created_at:row.created_at??data.created_at,time:data.time??(row.created_at?new Date(row.created_at).getTime():Date.now())};});
+    await log(actor,'PRIVATE_MESSAGE_INSPECTION','Private-message inspection',{
+      reason:'Owner inspected private-message search results ('+messages.length+' message(s)); participant names and message content are intentionally excluded from the staff audit log.',
+      resultCount:messages.length,
+      keywordFiltered:Boolean(keyword),
+      source:'owner_private_message_inspection'
+    });
     res.json({messages,users});
   }catch(error){console.error('Owner private-message inspection failed:',error);res.status(500).json({error:'Could not inspect private messages. Please retry.'});}
 });
