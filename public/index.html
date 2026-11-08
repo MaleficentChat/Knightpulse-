@@ -32,7 +32,7 @@
 </script>
 <link rel="stylesheet" href="/style.css?v=profile-avatar-popup-actions-20261107-3">
 <link rel="stylesheet" href="/knightpulse-theme.css?v=1">
-<link rel="stylesheet" href="/knightpulse-complete.css?v=knightpulse-profile-luxe-20261108">
+<link rel="stylesheet" href="/knightpulse-complete.css?v=knightpulse-fixed-theme-chattools-20261108">
 <link rel="stylesheet" href="/social-features.css?v=1">
  <link rel="manifest" href="/manifest.json">
 <script src="/socket.io/socket.io.js"></script>
@@ -69,7 +69,6 @@
 </style><style id="profile-music-upload-styles">
 .profile-music-upload{display:flex;flex-direction:column;gap:12px}.profile-music-file-label{display:flex;align-items:center;justify-content:center;min-height:54px;padding:12px;border:1px dashed rgba(182,154,255,.6);border-radius:12px;background:rgba(90,60,130,.15);font-weight:750;cursor:pointer}.profile-music-upload input[type=file]{width:100%;max-width:100%;padding:10px;border:1px solid rgba(182,154,255,.25);border-radius:10px;background:rgba(8,6,17,.4);color:inherit}.profile-music-current{padding:9px 12px;border-radius:10px;background:rgba(18,185,154,.1)}
 </style><link rel="stylesheet" href="/entertainment.css?v=20261106-3">
-<link rel="stylesheet" href="/knightpulse-complete.css?v=knightpulse-profile-luxe-20261108">
 </head>
 <body>
 <div id="auth" class="auth-screen">
@@ -204,8 +203,8 @@
         <div id="replyBar" class="replybar hidden"></div>
         <div id="typing" class="typing"></div>
         <form id="composer" class="composer" onsubmit="return false;">
-          <button type="button" id="chatToolsToggle" class="chat-tools-toggle" aria-label="More chat tools">☷</button>
-          <div id="chatToolsDrawer" class="chat-tools-drawer"><button type="button" id="attach" title="Attach image, audio or file">📎 Attach</button><button type="button" id="chatGifBtn" title="Search and send a GIF">🎞 GIF</button><button type="button" id="doodleBtn" title="Draw and send a doodle">🖌️ Doodle</button><button type="button" class="icon-btn" id="youtubeComposerBtn" title="Search and share a YouTube video">▶️ YouTube</button><button type="button" class="icon-btn" id="reelComposerBtn" title="Share a Shadow Reel to the current room">🎬 Reels</button></div>
+          <button type="button" id="chatToolsToggle" class="chat-tools-toggle" aria-label="Open chat tools" aria-expanded="false">＋</button>
+          <div id="chatToolsDrawer" class="chat-tools-drawer" aria-label="Chat tools"><div class="chat-tools-heading"><strong>Quick actions</strong><span>Share something with the room</span></div><button type="button" id="attach" title="Attach an image, video or audio file"><span class="chat-tool-icon">📎</span><span><b>Media</b><small>Photo or file</small></span></button><button type="button" id="chatGifBtn" title="Search and send a GIF"><span class="chat-tool-icon">🎞️</span><span><b>GIFs</b><small>Find a reaction</small></span></button><button type="button" id="doodleBtn" title="Draw and send a doodle"><span class="chat-tool-icon">✏️</span><span><b>Doodle</b><small>Draw something</small></span></button><button type="button" class="icon-btn" id="youtubeComposerBtn" title="Search and share a YouTube video"><span class="chat-tool-icon">▶️</span><span><b>YouTube</b><small>Share a video</small></span></button><button type="button" class="icon-btn" id="reelComposerBtn" title="Share a Shadow Reel to the current room"><span class="chat-tool-icon">🎬</span><span><b>Reels</b><small>Share a reel</small></span></button></div>
           <input id="message" maxlength="4000" placeholder="Write a message… Use @username to mention">
           <span id="fileName" class="composer-file-name" aria-live="polite"></span>
           <button class="send" type="submit">Send</button>
@@ -377,8 +376,7 @@
         ["announcement","📢 Room announcement"],
         ["pinned","📌 Pinned messages"],
         ["youtube","▶️ YouTube"],
-        ["invite","🔐 Room code"],
-        ["theme","🎨 Site Theme"]
+        ["invite","🔐 Room code"]
       ];
       body.innerHTML='<div class="room-menu-panel"><h2>Room options</h2><div class="room-menu-actions">'+
         actions.map(function(item){return '<button type="button" class="room-menu-action" data-room-menu-fallback="'+item[0]+'">'+item[1]+'</button>';}).join("")+
@@ -395,7 +393,6 @@
             else if(action==="pinned"&&typeof showPinnedMessages==="function")showPinnedMessages();
             else if(action==="youtube"&&typeof openYoutubePanel==="function")openYoutubePanel();
             else if(action==="invite"&&typeof showInvite==="function")showInvite();
-            else if(action==="theme"&&typeof openRoomThemePicker==="function")openRoomThemePicker();
             else throw new Error("This option is unavailable while the main app script is not running.");
           }catch(error){console.error("Room menu fallback action failed:",error);alert(error.message||"Could not open this option.");}
         });
