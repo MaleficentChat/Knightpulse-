@@ -616,3 +616,20 @@ assert.match(premiumCancelRoute,/String\(target\.rank\|\|'\)\.toUpperCase\(\)!==
   "Premium cancellation must never demote staff ranks or non-Premium accounts");
 
 console.log("Room history, private-room access, invitations, private-message deletion, Shadow Feed, Friends Activity, bootstrap privacy, capacity, and slow-mode regression checks passed.");
+
+
+const staffUi = fs.readFileSync("public/app.js", "utf8");
+const staffCss = fs.readFileSync("public/knightpulse-complete.css", "utf8");
+assert.match(staffUi, /Owner Command Center[\s\S]*Elite Command Center/,
+  "Elite and Owner must receive distinct command-center interfaces");
+assert.match(staffUi, /bootstrapData\.settings\?\.feature_grants[\s\S]*Permission audit/,
+  "the command center must expose the currently configured feature-grant permission audit");
+assert.match(staffUi, /api\('\/api\/notifications\/unread'\)[\s\S]*system-announcement/,
+  "staff spaces must load unread system and staff notifications");
+assert.match(staffUi, /api\('\/api\/notifications\/'\+encodeURIComponent\(button\.dataset\.kpRead\)\+'\/read'/,
+  "staff notification items must be individually markable as read");
+assert.match(staffUi, /adminActivityLogsDropdown[\s\S]*Admin Activity Logs/,
+  "the durable admin activity log interface must remain available");
+assert.match(staffCss, /\.kp-command-center[\s\S]*\.kp-staff-inbox/,
+  "the new command center and staff inbox must have dedicated responsive styling");
+console.log("KnightPulse staff command center, permission audit, activity log and notification inbox checks passed.");

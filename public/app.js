@@ -5282,7 +5282,48 @@ async function loadStaff() {
 
     const staffRoot=$("staff");
     staffRoot?.classList.add('staff-space-root','staff-space-rank-'+staffRank.toLowerCase().replace(/[^a-z0-9_-]/g,''));
+    
     staffRoot?.insertAdjacentHTML('afterbegin',staffHero);
+    // Staff command center: compact, rank-aware shortcuts and a live permission snapshot.
+    if(staffRoot && ['ELITE','OWNER'].includes(staffRank)){
+      const ownerSpace=staffRank==='OWNER';
+      const grants=bootstrapData.settings?.feature_grants||{};
+      const grantRows=Object.entries(grants).sort(([a],[b])=>a.localeCompare(b)).map(([key,value])=>{
+        const allowed=Array.isArray(value)?value.map(v=>String(v).toUpperCase()).join(', '):'Custom / user override';
+        return '<div class="kp-permission-row"><b>'+esc(key.replace(/_/g,' '))+'</b><span>'+esc(allowed||'Not granted')+'</span></div>';
+      }).join('');
+      const panel=document.createElement('section');
+      panel.className='card kp-command-center';
+      panel.innerHTML='<div class="kp-command-head"><div><small>KNIGHTPULSE / '+(ownerSpace?'OWNER':'ELITE')+' SPACE</small><h3>'+(ownerSpace?'Owner Command Center':'Elite Command Center')+'</h3><p class="muted">'+(ownerSpace?'Full owner controls and protected system oversight.':'Premium grants, multi-account policy and staff oversight.')+'</p></div><span class="kp-command-mark">'+(ownerSpace?'♛':'✦')+'</span></div><div class="kp-command-actions"><button type="button" data-kp-jump="staffPremiumGrantDropdown">Premium grants</button><button type="button" data-kp-jump="staffMultiAccountRuleDropdown">Multi-account rules</button><button type="button" data-kp-jump="adminActivityLogsDropdown">Activity logs</button>'+(ownerSpace?'<button type="button" data-kp-jump="developerNetworkConsole">Security console</button>':'')+'</div><details class="kp-permission-audit"><summary>Permission audit · '+Object.keys(grants).length+' configured grants</summary><p class="muted">Live configured feature grants. Server-side authorization remains authoritative for every action.</p><div class="kp-permission-list">'+(grantRows||'<p class="muted">No custom feature grants configured; default rank policy applies.</p>')+'</div></details>';
+      staffRoot.prepend(panel);
+      panel.querySelectorAll('[data-kp-jump]').forEach(button=>button.addEventListener('click',()=>{
+        const target=staffRoot.querySelector('#'+button.dataset.kpJump);
+        if(target){target.open=true;target.scrollIntoView({behavior:'smooth',block:'center'});}
+      }));
+    }
+    // Staff-only notification inbox; warning acknowledgements remain in the existing warning flow.
+    if(staffRoot && ['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(staffRank)){
+      const inbox=document.createElement('section');
+      inbox.className='card kp-staff-inbox';
+      inbox.innerHTML='<div class="kp-inbox-head"><div><small>STAFF COMMUNICATIONS</small><h3>Staff Notifications</h3></div><button type="button" class="mini" data-kp-refresh>↻ Refresh</button></div><div class="kp-inbox-list"><p class="muted">Loading staff notifications…</p></div>';
+      const command=staffRoot.querySelector('.kp-command-center');
+      if(command)command.after(inbox);else staffRoot.prepend(inbox);
+      const loadStaffInbox=async()=>{
+        const host=inbox.querySelector('.kp-inbox-list');
+        try{
+          const result=await api('/api/notifications/unread');
+          const items=(result.notifications||[]).filter(n=>['system-announcement','staff','moderation','report'].includes(String(n.type||'').toLowerCase())).slice(0,12);
+          host.innerHTML=items.length?items.map(n=>'<article class="kp-inbox-item"><div><b>'+esc(n.title||'Staff update')+'</b><p>'+esc(n.message||n.text||'')+'</p><small>'+esc(new Date(n.time||Date.now()).toLocaleString())+'</small></div><button type="button" class="mini" data-kp-read="'+esc(n.id)+'">Mark read</button></article>').join(''):'<p class="muted">You’re all caught up. No unread staff notifications.</p>';
+          host.querySelectorAll('[data-kp-read]').forEach(button=>button.addEventListener('click',async()=>{
+            button.disabled=true;
+            try{await api('/api/notifications/'+encodeURIComponent(button.dataset.kpRead)+'/read',{method:'PATCH'});await loadStaffInbox();}
+            catch(error){button.disabled=false;toast(error.message||'Could not mark notification read.');}
+          }));
+        }catch(error){host.innerHTML='<p class="muted">'+esc(error.message||'Could not load staff notifications.')+'</p>';}
+      };
+      inbox.querySelector('[data-kp-refresh]')?.addEventListener('click',loadStaffInbox);
+      loadStaffInbox();
+    }
     staffRoot?.querySelector('.grid2')?.classList.add('staff-space-stat-grid');
     staffRoot?.querySelectorAll(':scope > .grid2 > .card').forEach((card,index)=>card.classList.add('staff-space-stat-card','staff-space-stat-'+index));
     
