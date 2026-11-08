@@ -77,7 +77,9 @@ dmReplyText: null,
 const rankIcon = {
   MEMBER: "⚡",
   VIP: "💎",
+  SVIP: "💠",
   PREMIUM: "🏅",
+  ELITE: "✨",
   ROYAL: "⚜️",
   MOD: "🛡️",
   ADMIN: "⭐",
@@ -92,16 +94,18 @@ const rankIcon = {
 const rankOrder = {
   MEMBER: 0,
   VIP: 1,
-  PREMIUM: 2,
+  SVIP: 2,
+  PREMIUM: 3,
   ROYAL: 3,
   MOD: 4,
   ADMIN: 5,
   SUPER_ADMIN: 6,
   COMMISSOR: 7,
   INSTRUCTOR: 8,
-  COOWNER: 9,
-  OWNER: 10,
-  DEVELOPER: 11
+  COOWNER: 10,
+  ELITE: 11,
+  OWNER: 12,
+  DEVELOPER: 13
 };
 
 const ranks = Object.keys(rankOrder);
@@ -1489,12 +1493,12 @@ if($('newWallPost'))$('newWallPost').onclick=async()=>{
 async function loadRankShop(){
   const d=await api('/api/shop'); const c=$('rankShop'); if(!c)return;
   const rank=String(state.user?.rank||'').toUpperCase();
-  const canBuyVip=rank==='MEMBER';
+  const canBuySvip=rank==='MEMBER';
   const canBuyPremium=!['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(rank);
-  c.innerHTML=`<div class="panel shop-item"><div class="shop-icon">🏅</div><h3>Premium — $6 lifetime</h3><p>Request Premium from the owner, or unlock it instantly for 50,000 Diamonds.</p>${canBuyPremium?'<button class="primary" id="requestPremium">Request Premium — $6</button>':'<p class="muted">Premium purchase is unavailable for your current rank.</p>'}${canBuyPremium?'<button class="mini" id="buyPremiumDiamonds" style="margin-top:8px">💎 Buy with 50,000 Diamonds</button>':'<p class="muted">Premium purchase is unavailable for your current rank.</p>'}</div>${canBuyVip?d.vip.map(v=>`<div class="panel shop-item"><div class="shop-icon">💎</div><h3>VIP — ${v.label}</h3><p>${v.price} gold</p><button class="mini" data-vip-plan="${v.label.includes('7')?'7':v.label.includes('month')&&v.label.includes('3')?'90':v.label.includes('year')?'365':'30'}">${v.price} gold</button></div>`).join(''):'<div class="panel shop-item"><div class="shop-icon">💎</div><h3>VIP</h3><p>Higher ranks cannot buy VIP</p></div>'}`;
+  c.innerHTML=`<div class="panel shop-item"><div class="shop-icon">🏅</div><h3>Premium — $6 lifetime</h3><p>Request Premium from the owner, or unlock it instantly for 50,000 Diamonds.</p>${canBuyPremium?'<button class="primary" id="requestPremium">Request Premium — $6</button>':'<p class="muted">Premium purchase is unavailable for your current rank.</p>'}${canBuyPremium?'<button class="mini" id="buyPremiumDiamonds" style="margin-top:8px">💎 Buy with 50,000 Diamonds</button>':'<p class="muted">Premium purchase is unavailable for your current rank.</p>'}</div>${canBuySvip?d.vip.map(v=>`<div class="panel shop-item"><div class="shop-icon">💠</div><h3>SVIP — ${v.label}</h3><p>${v.price} gold</p><button class="mini" data-svip-plan="${v.label.includes('7')?'7':v.label.includes('month')&&v.label.includes('3')?'90':v.label.includes('year')?'365':'30'}">${v.price} gold</button></div>`).join(''):'<div class="panel shop-item"><div class="shop-icon">💠</div><h3>SVIP</h3><p>Higher ranks cannot buy SVIP</p></div>'}`;
   $('requestPremium').onclick=async()=>{try{await api('/api/shop/premium/request',{method:'POST'});toast('Premium request sent to owner.')}catch(e){toast(e.message)}};
   const diamondPremiumButton=$('buyPremiumDiamonds'); if(diamondPremiumButton)diamondPremiumButton.onclick=async()=>{if(!confirm('Spend 50,000 Diamonds to activate lifetime Premium?'))return;diamondPremiumButton.disabled=true;try{const result=await api('/api/shop/premium/buy-diamonds',{method:'POST'});state.user.rank='PREMIUM';state.user.is_premium=true;state.user.isPremium=true;state.user.diamonds=Number(result.diamonds);toast('Premium activated! 50,000 Diamonds spent.');updateNav();await loadRankShop();}catch(e){toast(e.message);diamondPremiumButton.disabled=false;}};
-  document.querySelectorAll('[data-vip-plan]').forEach(b=>b.onclick=async()=>{try{const d=await api('/api/shop/vip',{method:'POST',body:JSON.stringify({plan:b.dataset.vipPlan})});state.user.gold=d.gold;toast('VIP activated.');updateNav();loadRankShop()}catch(e){toast(e.message)}});
+  document.querySelectorAll('[data-svip-plan]').forEach(b=>b.onclick=async()=>{try{const d=await api('/api/shop/svip',{method:'POST',body:JSON.stringify({plan:b.dataset.svipPlan})});state.user.gold=d.gold;state.user.rank='SVIP';toast('SVIP activated.');updateNav();loadRankShop()}catch(e){toast(e.message)}});
 }
 
 async function loadGoldEconomy(){
