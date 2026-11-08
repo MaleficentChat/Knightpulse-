@@ -6016,9 +6016,10 @@ app.patch(
     );
 
     const assignableRanks=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
+    const requestedRank=String(req.body.rank||"").toUpperCase();
     if(
       !v||
-      !assignableRanks.includes(String(req.body.rank||"").toUpperCase())
+      !assignableRanks.includes(requestedRank)
     ){
       return res.status(400).json({
         error:"Invalid"
@@ -6036,7 +6037,7 @@ app.patch(
     }
 
     const previousRank=String(v.rank||'MEMBER').toUpperCase();
-    v.rank=req.body.rank;
+    v.rank=requestedRank;
 
     save();
 
