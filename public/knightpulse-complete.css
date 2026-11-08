@@ -666,3 +666,129 @@ html[data-theme] body{background-image:radial-gradient(ellipse at 48% -18%,rgba(
 #staff .kp-staff-dropdown-section .kp-staff-group-body>.admin-activity-logs{grid-column:1/-1!important;width:100%!important;max-width:none!important;min-width:0!important}
 #staff .admin-activity-logs>.admin-activity-logs-card{display:block!important;box-sizing:border-box!important;width:100%!important;max-width:none!important;min-width:0!important}
 #staff .admin-activity-logs-card #systemAuditSearchForm{width:100%!important;min-width:0!important}
+
+/* KnightPulse premium public profile — match the Edit Profile account experience. */
+.profile-modal.kp-public-profile{
+  width:min(880px,96vw)!important;max-width:880px!important;max-height:94vh!important;
+  overflow:auto!important;overscroll-behavior:contain!important;
+  border:1px solid rgba(153,184,224,.22)!important;border-radius:24px!important;
+  background:linear-gradient(155deg,#101f35 0%,#0b1729 48%,#091321 100%)!important;
+  box-shadow:0 26px 76px rgba(0,0,0,.48),inset 0 1px rgba(255,255,255,.045)!important;color:#edf4ff!important;
+}
+.profile-modal.kp-public-profile .profile-banner{
+  position:relative!important;isolation:isolate!important;display:flex!important;flex-direction:column!important;
+  align-items:center!important;text-align:center!important;min-height:0!important;
+  padding:34px 22px 25px!important;border-radius:22px 22px 0 0!important;
+  border-bottom:1px solid rgba(232,204,145,.2)!important;
+  background-color:#102039!important;background-position:center 42%!important;background-size:cover!important;
+}
+.profile-modal.kp-public-profile .profile-banner:before{
+  content:"";position:absolute;z-index:-1;inset:0;
+  background:radial-gradient(ellipse at 50% 0%,rgba(91,151,222,.2),transparent 68%),
+    linear-gradient(180deg,rgba(5,13,25,.28),rgba(5,13,25,.78) 76%,#0b1729);
+  pointer-events:none;
+}
+.profile-modal.kp-public-profile .equipped-profile-frame{
+  position:relative!important;display:grid!important;place-items:center!important;
+  width:116px!important;height:116px!important;min-width:116px!important;
+  margin:12px auto 13px!important;padding:5px!important;box-sizing:border-box!important;
+  border:3px solid #e4c991!important;border-radius:50%!important;
+  background:linear-gradient(145deg,#243e60,#101d32)!important;
+  box-shadow:0 0 0 7px rgba(232,204,145,.12),0 12px 32px rgba(0,0,0,.42)!important;
+  overflow:hidden!important;
+}
+.profile-modal.kp-public-profile .equipped-profile-frame .big-avatar,
+.profile-modal.kp-public-profile .equipped-profile-frame img{
+  width:100%!important;height:100%!important;min-width:0!important;object-fit:cover!important;border-radius:50%!important;
+}
+.profile-modal.kp-public-profile .profile-rank{order:2!important;margin:10px 0 0!important}
+.profile-modal.kp-public-profile .profile-rank .rank{
+  display:inline-flex!important;align-items:center!important;gap:5px!important;padding:7px 14px!important;
+  border:1px solid rgba(232,204,145,.38)!important;border-radius:999px!important;
+  background:rgba(12,26,43,.78)!important;color:#f0d6a0!important;font-size:11px!important;
+  font-weight:850!important;letter-spacing:.06em!important;text-transform:uppercase!important;
+}
+.profile-modal.kp-public-profile .profile-name{
+  order:3!important;margin-top:17px!important;color:#f7f4ed!important;
+  font-family:Georgia,serif!important;font-size:clamp(25px,5vw,35px)!important;
+  font-weight:700!important;letter-spacing:-.035em!important;text-shadow:0 2px 16px rgba(0,0,0,.55)!important;
+}
+.profile-modal.kp-public-profile .profile-handle{order:4!important;margin-top:4px!important;color:#9db2ce!important;font-size:14px!important;letter-spacing:.04em!important}
+.profile-modal.kp-public-profile .profile-stats{order:0!important;display:flex!important;justify-content:center!important;flex-wrap:wrap!important;gap:8px!important;width:100%!important;margin:0 auto 5px!important}
+.profile-modal.kp-public-profile .profile-stats .profile-stat{
+  display:flex!important;align-items:center!important;gap:6px!important;min-width:0!important;padding:7px 11px!important;
+  border:1px solid rgba(150,185,230,.17)!important;border-radius:12px!important;background:rgba(7,16,29,.62)!important;
+}
+.profile-modal.kp-public-profile .profile-stats .profile-stat small{display:none!important}
+.profile-modal.kp-public-profile .profile-stats .profile-stat b{font-size:12px!important;white-space:nowrap!important}
+.profile-modal.kp-public-profile .profile-social-stats{
+  order:5!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:9px!important;width:100%!important;max-width:650px!important;margin:19px auto 0!important;
+}
+.profile-modal.kp-public-profile .profile-social-stat{
+  display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;
+  min-height:60px!important;padding:9px 10px!important;border:1px solid rgba(143,176,218,.15)!important;
+  border-radius:14px!important;background:linear-gradient(135deg,rgba(24,45,71,.76),rgba(12,27,45,.88))!important;
+}
+.profile-modal.kp-public-profile .profile-social-stat b{font-size:14px!important;font-weight:850!important}
+.profile-modal.kp-public-profile .profile-social-stat small{margin-top:4px!important;color:#91a7c4!important;font-size:9px!important;letter-spacing:.13em!important}
+.profile-modal.kp-public-profile .profile-primary-actions{order:6!important;display:flex!important;justify-content:center!important;gap:10px!important;width:100%!important;margin:16px auto 0!important}
+.profile-modal.kp-public-profile .profile-primary-actions .profile-social-button{
+  min-width:130px!important;min-height:42px!important;padding:10px 17px!important;border-radius:999px!important;
+  font-size:12px!important;font-weight:850!important;box-shadow:0 8px 22px rgba(0,0,0,.2)!important;
+}
+.profile-modal.kp-public-profile .kp-profile-tabs-label{
+  display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;
+  padding:14px 17px 8px!important;background:#0b1729!important;color:#dfc58f!important;
+  font-size:10px!important;font-weight:900!important;letter-spacing:.18em!important;
+}
+.profile-modal.kp-public-profile .kp-profile-tabs-label small{color:#8fa8c8!important;font-size:10px!important;font-weight:600!important;letter-spacing:0!important}
+.profile-modal.kp-public-profile .profile-tabs{
+  position:sticky!important;top:0!important;z-index:4!important;display:flex!important;gap:7px!important;
+  overflow-x:auto!important;padding:10px 13px!important;margin:0!important;
+  border:1px solid rgba(153,184,224,.14)!important;border-left:0!important;border-right:0!important;
+  background:rgba(8,17,31,.97)!important;backdrop-filter:blur(16px)!important;
+}
+.profile-modal.kp-public-profile .profile-tab{
+  flex:0 0 auto!important;min-height:42px!important;padding:10px 16px!important;border:1px solid transparent!important;
+  border-radius:12px!important;background:transparent!important;color:#9aafca!important;
+  font-size:12px!important;font-weight:850!important;
+}
+.profile-modal.kp-public-profile .profile-tab.active{
+  border-color:rgba(232,204,145,.22)!important;
+  background:linear-gradient(135deg,rgba(78,133,196,.3),rgba(232,204,145,.12))!important;
+  color:#f2dfb8!important;box-shadow:inset 0 0 0 1px rgba(232,204,145,.08),0 5px 16px rgba(0,0,0,.16)!important;
+}
+.profile-modal.kp-public-profile .profile-info{display:grid!important;gap:10px!important;padding:16px!important;background:linear-gradient(180deg,#0b1729,#091321)!important}
+.profile-modal.kp-public-profile .profile-info-row{
+  display:flex!important;flex-direction:column!important;gap:7px!important;min-width:0!important;
+  padding:14px 15px!important;border:1px solid rgba(143,176,218,.15)!important;border-radius:14px!important;
+  background:linear-gradient(135deg,rgba(24,45,71,.76),rgba(12,27,45,.88))!important;
+}
+.profile-modal.kp-public-profile .profile-info-row b{color:#eaf2fc!important;font-size:14px!important;font-weight:850!important}
+.profile-modal.kp-public-profile .profile-info-row>span{color:#a9bdd8!important;font-size:13px!important;overflow-wrap:anywhere!important}
+.profile-modal.kp-public-profile .profile-actions{display:flex!important;flex-wrap:wrap!important;gap:9px!important}
+.profile-modal.kp-public-profile .profile-actions button,.profile-modal.kp-public-profile .about-card button{
+  border-radius:12px!important;font-weight:800!important;
+}
+.profile-modal.kp-public-profile .about-card{
+  padding:17px!important;border:1px solid rgba(143,176,218,.15)!important;border-radius:16px!important;
+  background:linear-gradient(135deg,rgba(24,45,71,.76),rgba(12,27,45,.88))!important;color:#eaf2fc!important;
+}
+.profile-modal.kp-public-profile .about-card h3{color:#f0d6a0!important}
+.profile-modal.kp-public-profile .profile-photos-heading{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;flex-wrap:wrap!important}
+.profile-modal.kp-public-profile .profile-photo-grid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:9px!important;margin-top:14px!important}
+.profile-modal.kp-public-profile .profile-photo-tile{overflow:hidden!important;border-radius:13px!important;border:1px solid rgba(143,176,218,.2)!important}
+@media(max-width:600px){
+ .profile-modal.kp-public-profile{width:96vw!important;max-width:96vw!important;max-height:94dvh!important;border-radius:20px!important}
+ .profile-modal.kp-public-profile .profile-banner{padding:22px 14px 19px!important}
+ .profile-modal.kp-public-profile .equipped-profile-frame{width:104px!important;height:104px!important;min-width:104px!important}
+ .profile-modal.kp-public-profile .profile-social-stats{gap:7px!important;margin-top:15px!important}
+ .profile-modal.kp-public-profile .profile-social-stat{min-height:56px!important;padding:8px 5px!important}
+ .profile-modal.kp-public-profile .profile-social-stat b{font-size:12px!important}
+ .profile-modal.kp-public-profile .profile-primary-actions .profile-social-button{min-width:0!important;flex:1!important}
+ .profile-modal.kp-public-profile .profile-tabs{padding:8px!important}
+ .profile-modal.kp-public-profile .profile-tab{min-height:39px!important;padding:9px 12px!important;font-size:11px!important}
+ .profile-modal.kp-public-profile .profile-info{padding:12px!important}
+ .profile-modal.kp-public-profile .profile-photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
