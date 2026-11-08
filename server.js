@@ -230,7 +230,10 @@ const rankIcons={MEMBER:"⚡",VIP:"💎",SVIP:"💠",PREMIUM:"🏅",MOD:"🛡️
 const rankOrder=Object.fromEntries(ranks.map((r,i)=>[r,i]));
 
 function hasRank(u,r){
-  return !!u&&rankOrder[u.rank]>=rankOrder[r];
+  if(!u)return false;
+  const userRank=String(u.rank||"MEMBER").toUpperCase();
+  const requiredRank=String(r||"MEMBER").toUpperCase();
+  return (rankOrder[userRank]??-1)>=(rankOrder[requiredRank]??0);
 }
 
 // Staff may inspect or manage staff-only records only for accounts strictly below their rank.
@@ -449,9 +452,10 @@ function ensureFeaturePermissions(){
 function featureRank(key){
   // One-time compatibility migration: translate retired rank names into the current Knightpulse schema.
 const LEGACY_RANK_MIGRATION={ROYAL:"PREMIUM",INSTRUCTOR:"CHIEF_COMMISSOR",DEVELOPER:"OWNER"};
+const CANONICAL_RANKS=new Set(["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]);
 for(const account of (db.users||[])){
   const previous=String(account.rank||"MEMBER").toUpperCase();
-  if(LEGACY_RANK_MIGRATION[previous])account.rank=LEGACY_RANK_MIGRATION[previous];
+  account.rank=LEGACY_RANK_MIGRATION[previous]||(CANONICAL_RANKS.has(previous)?previous:account.rank||"MEMBER");
 }
 function migrateRankSettings(value){
   if(Array.isArray(value))return value.map(migrateRankSettings);
@@ -1399,13 +1403,13 @@ function awardXp(u,n=5){
 
 async function ensureOwner(){
   // Persistently translate retired global ranks before the permanent Owner is initialized.
-  await pool.query("UPDATE users SET rank=CASE UPPER(rank) WHEN 'ROYAL' THEN 'premium' WHEN 'INSTRUCTOR' THEN 'chief_commissor' WHEN 'DEVELOPER' THEN 'owner' ELSE rank END WHERE UPPER(rank) IN ('ROYAL','INSTRUCTOR','DEVELOPER')");
+  await pool.query("UPDATE users SET rank=CASE UPPER(rank) WHEN 'USER' THEN 'MEMBER' WHEN 'ROYAL' THEN 'PREMIUM' WHEN 'INSTRUCTOR' THEN 'CHIEF_COMMISSOR' WHEN 'DEVELOPER' THEN 'OWNER' ELSE UPPER(rank) END WHERE UPPER(rank) IN ('USER','MEMBER','VIP','SVIP','PREMIUM','ROYAL','MOD','MODERATOR','ADMIN','SUPER_ADMIN','COMMISSOR','INSTRUCTOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER','DEVELOPER')");
   let q;
   if (process.env.OWNER_PASSWORD) {
     const hash = await bcrypt.hash(process.env.OWNER_PASSWORD, 10);
-    q = await pool.query(`INSERT INTO users(username,password,rank,gold,xp) VALUES('Maleficent',$1,'Owner',999999,999999) ON CONFLICT(username) DO UPDATE SET rank='Owner',password=EXCLUDED.password RETURNING *`, [hash]);
+    q = await pool.query(`INSERT INTO users(username,password,rank,gold,xp) VALUES('Maleficent',$1,'OWNER',999999,999999) ON CONFLICT(username) DO UPDATE SET rank='Owner',password=EXCLUDED.password RETURNING *`, [hash]);
   } else {
-    q = await pool.query(`UPDATE users SET rank='Owner' WHERE username='Maleficent' RETURNING *`);
+    q = await pool.query(`UPDATE users SET rank='OWNER' WHERE username='Maleficent' RETURNING *`);
     if (!q.rowCount) throw new Error('OWNER_PASSWORD is required to initialize the permanent Owner account.');
   }
   const row=q.rows[0]; let u=findUser('Maleficent');
@@ -5068,7 +5072,7 @@ app.post('/api/staff/applications/:id/grant',auth,featureAllowed('view_staff_das
       const hierarchyIndex=rank=>{const index=assignableRanks.indexOf(String(rank||"MEMBER").toUpperCase());return index<0?-1:index;};
       if(hierarchyIndex(requested)>hierarchyIndex(grantCeiling)){await client.query('ROLLBACK');return res.status(403).json({error:'Your permissions allow granting '+grantCeiling.replaceAll('_',' ')+' or below only.'});}
       if(hierarchyIndex(target.rank)>=hierarchyIndex(actorRankNow)){await client.query('ROLLBACK');return res.status(403).json({error:'You cannot change an equal or higher rank.'});}
-      await client.query("UPDATE users SET rank=$1 WHERE id=$2",[requested.toLowerCase(),Number(target.id)]);
+      await client.query("UPDATE users SET rank=$1 WHERE id=$2",[requested,Number(target.id)]);
       await client.query("UPDATE staff_applications SET status='APPROVED',reviewed_by=$2,reviewed_at=NOW() WHERE id=$1",[req.params.id,Number(actor.id)]);
       await client.query('COMMIT');
       // Update the in-memory account only after the database transaction commits.
@@ -5526,7 +5530,7 @@ app.post('/api/premium/grant',ownerOnly,async(req,res)=>{
 });
 app.post('/api/premium/cancel',ownerOnly,async(req,res)=>{
   const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'Cannot change Owner'});
-  v.rank='MEMBER';v.isPremium=false;v.is_premium=false;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='member',is_premium=false,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`DELETE FROM premium_requests WHERE user_id=$1`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
+  v.rank='MEMBER';v.isPremium=false;v.is_premium=false;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='MEMBER',is_premium=false,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`DELETE FROM premium_requests WHERE user_id=$1`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
 });
 app.post('/api/shop/svip',auth,async(req,res)=>{
   const u=current(req), options={7:{price:200,interval:"7 days",days:7},30:{price:2000,interval:"1 month",days:30},90:{price:5000,interval:"3 months",days:90},365:{price:10000,interval:"1 year",days:365}};
