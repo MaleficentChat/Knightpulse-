@@ -91,35 +91,15 @@ dmReplyText: null,
 
 
 const rankIcon = {
-  MEMBER: "⚡",
-  VIP: "💎",
-  PREMIUM: "🏅",
-  ROYAL: "⚜️",
-  MOD: "🛡️",
-  ADMIN: "⭐",
-  SUPER_ADMIN: "🌟",
-  COMMISSOR: "👻",
-  INSTRUCTOR: "⚔️",
-  COOWNER: "🦉",
-  OWNER: "👑",
-  DEVELOPER: "🛠️"
+  MEMBER:"⚡",VIP:"💎",SUPER_VIP:"💠",CLASSIC:"⚜️",PREMIUM:"🏅",
+  MODERATOR:"🛡️",ADMIN:"⭐",SUPER_ADMIN:"🌟",COMMISSOR:"👻",
+  CHIEF_COMMISSOR:"⚔️",COOWNER:"🦉",ELITE:"🔱",OWNER:"👑"
 };
-
 const rankOrder = {
-  MEMBER: 0,
-  VIP: 1,
-  PREMIUM: 2,
-  ROYAL: 3,
-  MOD: 4,
-  ADMIN: 5,
-  SUPER_ADMIN: 6,
-  COMMISSOR: 7,
-  INSTRUCTOR: 8,
-  COOWNER: 9,
-  OWNER: 10,
-  DEVELOPER: 11
+  MEMBER:0,VIP:1,SUPER_VIP:2,CLASSIC:3,PREMIUM:4,MODERATOR:5,
+  ADMIN:6,SUPER_ADMIN:7,COMMISSOR:8,CHIEF_COMMISSOR:9,
+  COOWNER:10,ELITE:11,OWNER:12
 };
-
 const ranks = Object.keys(rankOrder);
 
 const esc = s =>
@@ -362,7 +342,7 @@ async function hardRefreshSite(){
       const registration=await navigator.serviceWorker.getRegistration("/");
       if(registration)await registration.update().catch(()=>{});
     }
-    toast("Site cache cleared. Reloading the latest Cloud Chat…");
+    toast("Site cache cleared. Reloading the latest Knight Pulse…");
     const url=new URL(window.location.href);
     url.searchParams.set("mc_refresh",String(Date.now()));
     window.location.replace(url.toString());
@@ -396,7 +376,7 @@ if("Notification" in window && Notification.permission==="granted") registerSite
 
 function toast(text) {
   const el = $("toast");
-  if (!el) { console.warn("[Cloud Chat]", String(text)); return; }
+  if (!el) { console.warn("[Knight Pulse]", String(text)); return; }
   el.textContent = String(text ?? "");el.style.display = "block";el.onclick=null;el.style.cursor="";
   clearTimeout(toast.timer);
   toast.timer=setTimeout(()=>{const current=$("toast");if(current)current.style.display="none";},3200);
@@ -487,7 +467,7 @@ function can(requiredRank) {
 function canAccessStaffTarget(user){
   if(!state.user||!user||String(state.user.id)===String(user.id))return false;
   const actorRank=String(state.user.rank||"").toUpperCase(),targetRank=String(user.rank||"").toUpperCase();
-  if(targetRank==="DEVELOPER"||user.username==="Maleficent")return false;
+  if(targetRank==="OWNER"||user.username==="Maleficent")return false;
   return (rankOrder[targetRank]??999)<(rankOrder[actorRank]??-1);
 }
 function canFeature(key){
@@ -504,7 +484,7 @@ function canFeature(key){
     delete_message:roomRole==='ROOM_OWNER'&&Array.isArray(state.featureGrants?.room_delete_messages)&&state.featureGrants.room_delete_messages.length>0
   };
   if(roomOwnedFeature[key])return true;
-  if(String(state.user.rank).toUpperCase()==='DEVELOPER') return true;
+  if(String(state.user.rank).toUpperCase()==='OWNER') return true;
   if(state.user.username==='Maleficent'&&state.user.rank==='OWNER') return true;
   const permissionMap={create_room:'can_create_rooms',create_rooms:'can_create_rooms',edit_room:'can_edit_rooms',edit_rooms:'can_edit_rooms',delete_room:'can_delete_rooms',delete_rooms:'can_delete_rooms',profile_note:'can_add_notes',manage_staff_accounts:'can_edit_usernames',account_modifications:'can_manage_profiles',manage_profiles:'can_manage_profiles',edit_email:'can_edit_emails',share_gold:'can_share_gold',delete_message:'can_delete_messages'};
   const permission=state.userPermissions?.[permissionMap[key]||key];if(permission)return !!permission.granted;
@@ -541,7 +521,7 @@ async function browserDeviceFingerprint(){
   const canvas=document.createElement('canvas');
   canvas.width=220;canvas.height=40;
   const ctx=canvas.getContext('2d');
-  if(ctx){ctx.textBaseline='top';ctx.font='14px Arial';ctx.fillStyle='#f60';ctx.fillRect(10,5,100,20);ctx.fillStyle='#069';ctx.fillText('Cloud Chat device',2,2);}
+  if(ctx){ctx.textBaseline='top';ctx.font='14px Arial';ctx.fillStyle='#f60';ctx.fillRect(10,5,100,20);ctx.fillStyle='#069';ctx.fillText('Knight Pulse device',2,2);}
   const material=[navigator.userAgent,screen.width,Intl.DateTimeFormat().resolvedOptions().timeZone,canvas.toDataURL()||''].join('|');
   if(globalThis.crypto?.subtle){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(material));return [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');}
   return btoa(unescape(encodeURIComponent(material))).slice(0,2000);
@@ -908,7 +888,7 @@ async function start() {
 
   state.socket.on("notification", data => {
     loadNotifications();
-    if(document.hidden)showSiteNotification(data?.title||"Cloud Chat",String(data?.message||data?.body||"You have a new notification").slice(0,180),"notifications");
+    if(document.hidden)showSiteNotification(data?.title||"Knight Pulse",String(data?.message||data?.body||"You have a new notification").slice(0,180),"notifications");
   });
   state.socket.on("room:announcement",()=>{if(state.currentRoom)loadRoomAnnouncements(state.currentRoom)});
   state.socket.on("room:announcement-delete",()=>{if(state.currentRoom)loadRoomAnnouncements(state.currentRoom)});
@@ -1094,7 +1074,7 @@ function updateNav() {
     $("topProfile").innerHTML = avatar(state.user, "top-avatar");
   }
 
-  const staffSpaceLabels={MOD:"Moderator Space",ADMIN:"Admin Space",SUPER_ADMIN:"Superadmin Space",COMMISSOR:"Commissor Space",INSTRUCTOR:"Instructor Space",COOWNER:"Coowner Space",OWNER:"Owner Space",DEVELOPER:"Developer Space"};
+  const staffSpaceLabels={MODERATOR:"Moderator Space",ADMIN:"Admin Space",SUPER_ADMIN:"Superadmin Space",COMMISSOR:"Commissor Space",CHIEF_COMMISSOR:"Instructor Space",COOWNER:"Coowner Space",OWNER:"Owner Space",OWNER:"Developer Space"};
   const currentStaffRank=String(state.user?.rank||"").toUpperCase();
   const canOpenStaffSpace=Object.prototype.hasOwnProperty.call(staffSpaceLabels,currentStaffRank)||canFeature("view_staff_dashboard");
   document.querySelectorAll(".staff-only").forEach(el =>
@@ -1103,7 +1083,7 @@ function updateNav() {
   const managementLabel=$("managementSpaceNavLabel");
   if(managementLabel) managementLabel.textContent=staffSpaceLabels[currentStaffRank]||"Staff Dashboard";
   const reportButton=$("topFlag");
-  if(reportButton) reportButton.classList.toggle("hidden", !can("MOD")&&!canFeature("view_staff_dashboard"));
+  if(reportButton) reportButton.classList.toggle("hidden", !can("MODERATOR")&&!canFeature("view_staff_dashboard"));
 
   document
     .querySelectorAll(".owner-only")
@@ -1111,7 +1091,7 @@ function updateNav() {
       el.classList.toggle(
         "hidden",
         !(
-          (String(state.user.rank).toUpperCase() === "DEVELOPER" || (state.user.rank === "OWNER" && state.user.username === "Maleficent"))
+          (String(state.user.rank).toUpperCase() === "OWNER" || (state.user.rank === "OWNER" && state.user.username === "Maleficent"))
         )
       )
     );
@@ -1130,7 +1110,7 @@ function updateNav() {
   if(brandNewsPublishButton)brandNewsPublishButton.classList.toggle("hidden",!canFeature("publish_news"));
 
   // Room creation is Premium+ by default; staff ranks are explicitly eligible too.
-  const roomCreatorRanks=["PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+  const roomCreatorRanks=["PREMIUM","ROYAL","MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"];
   const mayCreateRooms=roomCreatorRanks.includes(String(state.user?.rank||"").toUpperCase())||canFeature("create_room")||canFeature("create_rooms");
   document.querySelectorAll("#newRoom, .room-create-button").forEach(el=>el.classList.toggle("hidden",!mayCreateRooms));
   document.querySelectorAll(".coowner-only").forEach(el=>{
@@ -1280,10 +1260,10 @@ async function renderView() {
     case "management": {
       const rank=String(state.user?.rank||"").toUpperCase();
       const labels={
-        MOD:["🛡️","Moderator Space"], ADMIN:["⭐","Admin Space"],
+        MODERATOR:["🛡️","Moderator Space"], ADMIN:["⭐","Admin Space"],
         SUPER_ADMIN:["🌟","Superadmin Space"], COMMISSOR:["👻","Commissor Space"],
-        INSTRUCTOR:["⚔️","Instructor Space"], COOWNER:["🦉","Coowner Space"],
-        OWNER:["👑","Owner Space"], DEVELOPER:["🛠️","Developer Space"]
+        CHIEF_COMMISSOR:["⚔️","Instructor Space"], COOWNER:["🦉","Coowner Space"],
+        OWNER:["👑","Owner Space"], OWNER:["🛠️","Developer Space"]
       };
       if(!Object.prototype.hasOwnProperty.call(labels,rank)){
         toast("Management Spaces are available only to staff ranks.");
@@ -1295,7 +1275,7 @@ async function renderView() {
       if(title)title.textContent=icon+" "+label;
       if(navLabel)navLabel.textContent=label;
       if(description)description.textContent="Staff Dashboard tools and rank-authorized controls, all in one place.";
-      const ownerEligible=["OWNER","DEVELOPER"].includes(rank);
+      const ownerEligible=["OWNER","OWNER"].includes(rank);
       $("owner")?.classList.toggle("hidden",!ownerEligible);
       await loadStaff();
       if(ownerEligible) await loadOwner();
@@ -1362,7 +1342,7 @@ function openMyProfileFromHeader(){ $("topProfileDropdown")?.classList.add("hidd
 async function loadSuggestions(){
   const list=$('suggestionsList'),form=$('suggestionForm');
   if(!list||!form)return;
-  const developer=String(state.user?.username||'').toLowerCase()==='maleficent'||String(state.user?.rank||'').toUpperCase()==='DEVELOPER';
+  const developer=String(state.user?.username||'').toLowerCase()==='maleficent'||String(state.user?.rank||'').toUpperCase()==='OWNER';
   try{
     const data=await api('/api/suggestions');
     const items=data.suggestions||[];
@@ -1428,7 +1408,7 @@ async function loadWall(){
         </div>
         <div class="social-post-options hidden" id="wallOptions-${esc(p.id)}">
           <div class="wall-extra-reactions">${emojis.filter(e=>e!=='❤️').map(e=>{const us=Array.isArray(rx[e])?rx[e].map(String):[];return `<button type="button" class="${us.includes(String(state.user?.id))?'reacted':''}" data-wall-reaction="${esc(e)}" data-wall-id="${esc(p.id)}">${e} <b>${us.length}</b></button>`}).join('')}</div>
-          ${(canFeature('pin_news')||['OWNER','DEVELOPER'].includes(String(state.user?.rank||'').toUpperCase()))?`<button type="button" data-wall-feature="${esc(p.id)}" data-featured="${p.featured?'true':'false'}">${p.featured?'Unfeature':'📌 Feature post'}</button>`:''}
+          ${(canFeature('pin_news')||['OWNER','OWNER'].includes(String(state.user?.rank||'').toUpperCase()))?`<button type="button" data-wall-feature="${esc(p.id)}" data-featured="${p.featured?'true':'false'}">${p.featured?'Unfeature':'📌 Feature post'}</button>`:''}
           ${(String(p.user_id)===String(state.user?.id)||canFeature('delete_news'))?`<button class="danger" type="button" data-wall-delete="${esc(p.id)}">🗑 Delete post</button>`:''}
           <button type="button" data-wall-report="${esc(p.id)}">⚑ Report post</button>
           ${state.user?.username==='Maleficent'? `<button type="button" data-wall-pin="${esc(p.id)}">📌 Pin post</button>`:''}
@@ -1442,7 +1422,7 @@ async function loadWall(){
     feed.querySelectorAll('[data-wall-options]').forEach(b=>b.onclick=()=>{const box=$('wallOptions-'+b.dataset.wallOptions);if(!box)return;const opening=box.classList.contains('hidden');box.classList.toggle('hidden');b.setAttribute('aria-expanded',String(opening));});
     document.querySelectorAll('[data-wall-save]').forEach(b=>b.onclick=async()=>{try{const r=await api('/api/wall/'+encodeURIComponent(b.dataset.wallSave)+'/save',{method:'POST',body:JSON.stringify({})});toast(r.saved?'Post saved.':'Post removed from saved posts.');await loadWall()}catch(e){toast(e.message||'Could not save post.')}});
     document.querySelectorAll('[data-wall-reaction]').forEach(b=>b.onclick=async()=>{try{await api('/api/wall/'+encodeURIComponent(b.dataset.wallId)+'/reaction',{method:'POST',body:JSON.stringify({emoji:b.dataset.wallReaction})});await loadWall()}catch(e){toast(e.message||'Could not send reaction.')}});
-    document.querySelectorAll('[data-wall-share]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wallShare;if(wallShowingReels){await sendReelToCurrentRoom(id);return;}const url=location.origin+'/#shadow-post='+encodeURIComponent(id);const title='Shadow Feed · Cloud Chat';try{if(navigator.share){await navigator.share({title,text:'Check out this post on Cloud Chat',url});}else if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(url);toast('Post link copied.');}else{const field=document.createElement('textarea');field.value=url;document.body.appendChild(field);field.select();document.execCommand('copy');field.remove();toast('Post link copied.');}}catch(e){if(e?.name!=='AbortError')toast('Could not share this post.');}});
+    document.querySelectorAll('[data-wall-share]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wallShare;if(wallShowingReels){await sendReelToCurrentRoom(id);return;}const url=location.origin+'/#shadow-post='+encodeURIComponent(id);const title='Shadow Feed · Knight Pulse';try{if(navigator.share){await navigator.share({title,text:'Check out this post on Knight Pulse',url});}else if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(url);toast('Post link copied.');}else{const field=document.createElement('textarea');field.value=url;document.body.appendChild(field);field.select();document.execCommand('copy');field.remove();toast('Post link copied.');}}catch(e){if(e?.name!=='AbortError')toast('Could not share this post.');}});
     const wallDoubleTapTimers=new WeakMap();
     feed.querySelectorAll('.wall-media:not(video)').forEach(media=>{media.addEventListener('click',()=>{const previous=wallDoubleTapTimers.get(media);if(previous){clearTimeout(previous);wallDoubleTapTimers.delete(media);const post=media.closest('[data-wall-id]');if(post){const like=post.querySelector('[data-wall-reaction="❤️"]');if(like&&!like.classList.contains('reacted'))like.click();}}else{wallDoubleTapTimers.set(media,setTimeout(()=>wallDoubleTapTimers.delete(media),320));}});});
     document.querySelectorAll('[data-wall-feature]').forEach(b=>b.onclick=async()=>{try{const featured=b.dataset.featured!=='true';await api('/api/wall/'+encodeURIComponent(b.dataset.wallFeature)+'/feature',{method:'POST',body:JSON.stringify({featured})});toast(featured?'Post featured.':'Post unfeatured.');await loadWall()}catch(e){toast(e.message||'Could not feature post.')}});
@@ -1488,7 +1468,7 @@ async function loadRankShop(){
   const d=await api('/api/shop'); const c=$('rankShop'); if(!c)return;
   const rank=String(state.user?.rank||'').toUpperCase();
   const canBuyVip=rank==='MEMBER';
-  const canBuyPremium=!['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(rank);
+  const canBuyPremium=!['PREMIUM','MODERATOR','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'].includes(rank);
   c.innerHTML=`<div class="panel shop-item"><div class="shop-icon">🏅</div><h3>Premium — $6 lifetime</h3><p>Request Premium from the owner, or unlock it instantly for 50,000 Diamonds.</p>${canBuyPremium?'<button class="primary" id="requestPremium">Request Premium — $6</button>':'<p class="muted">Premium purchase is unavailable for your current rank.</p>'}${canBuyPremium?'<button class="mini" id="buyPremiumDiamonds" style="margin-top:8px">💎 Buy with 50,000 Diamonds</button>':'<p class="muted">Premium purchase is unavailable for your current rank.</p>'}</div>${canBuyVip?d.vip.map(v=>`<div class="panel shop-item"><div class="shop-icon">💎</div><h3>VIP — ${v.label}</h3><p>${v.price} gold</p><button class="mini" data-vip-plan="${v.label.includes('7')?'7':v.label.includes('month')&&v.label.includes('3')?'90':v.label.includes('year')?'365':'30'}">${v.price} gold</button></div>`).join(''):'<div class="panel shop-item"><div class="shop-icon">💎</div><h3>VIP</h3><p>Higher ranks cannot buy VIP</p></div>'}`;
   $('requestPremium').onclick=async()=>{try{await api('/api/shop/premium/request',{method:'POST'});toast('Premium request sent to owner.')}catch(e){toast(e.message)}};
   const diamondPremiumButton=$('buyPremiumDiamonds'); if(diamondPremiumButton)diamondPremiumButton.onclick=async()=>{if(!confirm('Spend 50,000 Diamonds to activate lifetime Premium?'))return;diamondPremiumButton.disabled=true;try{const result=await api('/api/shop/premium/buy-diamonds',{method:'POST'});state.user.rank='PREMIUM';state.user.is_premium=true;state.user.isPremium=true;state.user.diamonds=Number(result.diamonds);toast('Premium activated! 50,000 Diamonds spent.');updateNav();await loadRankShop();}catch(e){toast(e.message);diamondPremiumButton.disabled=false;}};
@@ -1650,7 +1630,7 @@ function maleficentUserAge(user=state.user) {
   return age>=0&&age<=120?age:null;
 }
 function isMaleficentStaff(user=state.user) {
-  return ["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(String(user?.rank||"").toUpperCase());
+  return ["MODERATOR","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(String(user?.rank||"").toUpperCase());
 }
 function roomForAgeRouting() {
   const staff=isMaleficentStaff();
@@ -1731,10 +1711,10 @@ function renderRooms() {
   const search=(($('roomSearch')?.value)||'').trim().toLowerCase();
   const visited=joinedRoomIds();
   const normalizedRoomRank=String(state.user?.rank||"").toUpperCase().replace(/[\s_-]/g,"");
-  const canSeeRoomPins=["COOWNER","OWNER","DEVELOPER"].includes(normalizedRoomRank);
+  const canSeeRoomPins=["COOWNER","OWNER","OWNER"].includes(normalizedRoomRank);
   const canPinRooms=canSeeRoomPins;
   const allRooms=(Array.isArray(state.rooms)?state.rooms:[]).slice().sort((a,b)=>canSeeRoomPins?(Number(!!b.pinned)-Number(!!a.pinned)):0);
-  const canViewHiddenRooms=["OWNER","DEVELOPER"].includes(String(state.user?.rank||"").toUpperCase());
+  const canViewHiddenRooms=["OWNER","OWNER"].includes(String(state.user?.rank||"").toUpperCase());
   const hiddenRooms=allRooms.filter(room=>room.public===false);
   const hiddenToggle=$("hiddenRoomsToggle");
   if(hiddenToggle){
@@ -1811,7 +1791,7 @@ function handleRoomCodeInput(input){
 }
 
 function toggleHiddenRoomsView(){
-  if(!["OWNER","DEVELOPER"].includes(String(state.user?.rank||"").toUpperCase()))return;
+  if(!["OWNER","OWNER"].includes(String(state.user?.rank||"").toUpperCase()))return;
   state.showHiddenRoomsOnly=!state.showHiddenRoomsOnly;
   if($("roomSearch"))$("roomSearch").value="";
   renderRooms();
@@ -1985,7 +1965,7 @@ let onlinePanelTab="online";
 let onlinePanelCache=[];
 
 function isStaffUser(user){
-  return ["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(user.rank);
+  return ["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(user.rank);
 }
 
 let onlineSortMode="online-rank";
@@ -2632,8 +2612,8 @@ function appendMessage(message) {
 
 function canUsePresenceMode(mode){
   const rank=String(state.user?.rank||"").toUpperCase();
-  if(rank==="DEVELOPER"||state.user?.username==="Maleficent")return true;
-  const fallback={ghost:["OWNER"],dead:["INSTRUCTOR","COOWNER","OWNER"],invisible:["COMMISSOR","INSTRUCTOR","COOWNER","OWNER"]};
+  if(rank==="OWNER"||state.user?.username==="Maleficent")return true;
+  const fallback={ghost:["OWNER"],dead:["CHIEF_COMMISSOR","COOWNER","OWNER"],invisible:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER"]};
   const configured=state.modeManagement?.[mode];
   const allowed=Array.isArray(configured)?configured:fallback[mode]||[];
   return allowed.map(x=>String(x||"").toUpperCase()).includes(rank);
@@ -2723,7 +2703,7 @@ function openPresenceModes(){
 }
 function canUsePartyMode(){
   const rank=String(state.user?.rank||"").toUpperCase();
-  return ["SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(rank)||state.user?.username==="Maleficent";
+  return ["SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(rank)||state.user?.username==="Maleficent";
 }
 function isPartyModeActive(){return document.body.classList.contains("party-mode-active");}
 function setPartyMode(enabled){
@@ -3381,7 +3361,7 @@ function renderUserProfileModal(user,data={}){
     <div class="profile-banner" ${bannerStyle}>
       <div class="equipped-profile-frame ${frame?esc(frame.id):''}" title="${frame?esc(frame.name):'Profile avatar'}">${avatar(user,'big-avatar')}</div>
       ${user.profileMusicUrl?`<div class="profile-music-pill"><button type="button" class="profile-music-toggle" id="profileMusicToggle" aria-label="Play profile music">▶</button><span class="profile-music-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="profile-music-title">${esc(user.profileMusicTitle||'Profile music')}</span><audio id="profileMusicAudio" preload="none" src="${esc(safeProfileUrl(user.profileMusicUrl))}"></audio></div>`:''}
-      <div class="profile-stats"><span class="profile-stat">⭐ ${user.level||1}</span><span class="profile-stat">XP ${user.xp||0}</span><span class="profile-stat">❤️ ${user.profileLikes||data.profileLikes||0}</span>${!isSelf && (String(state.user?.rank||"").toUpperCase()==="DEVELOPER" || (state.user?.username==="Maleficent" && String(state.user?.rank||"").toUpperCase()==="OWNER") || canFeature("staff_rank_assignment")) ? `<button class="mini profile-rank-btn" id="profileRankBtn">🏅 Rank</button>` : ""}${isSelf?'<button class="mini profile-hamburger" id="profileMenuBtn" title="Profile actions">☰</button><button class="mini profile-edit-btn" id="profileEditBtn" title="Edit account">✏️ Edit</button>':((canFeature("account_modifications")||canFeature("edit_email")||canFeature("change_password")||canFeature("manage_staff_accounts")) && canAccessStaffTarget(user) ? '<button class="mini profile-hamburger" id="profileMenuBtn" title="Profile actions">☰</button><button class="mini profile-edit-btn" id="staffProfileEditBtn" title="Edit this member account">✏️ Edit</button>' : '')}</div>
+      <div class="profile-stats"><span class="profile-stat">⭐ ${user.level||1}</span><span class="profile-stat">XP ${user.xp||0}</span><span class="profile-stat">❤️ ${user.profileLikes||data.profileLikes||0}</span>${!isSelf && (String(state.user?.rank||"").toUpperCase()==="OWNER" || (state.user?.username==="Maleficent" && String(state.user?.rank||"").toUpperCase()==="OWNER") || canFeature("staff_rank_assignment")) ? `<button class="mini profile-rank-btn" id="profileRankBtn">🏅 Rank</button>` : ""}${isSelf?'<button class="mini profile-hamburger" id="profileMenuBtn" title="Profile actions">☰</button><button class="mini profile-edit-btn" id="profileEditBtn" title="Edit account">✏️ Edit</button>':((canFeature("account_modifications")||canFeature("edit_email")||canFeature("change_password")||canFeature("manage_staff_accounts")) && canAccessStaffTarget(user) ? '<button class="mini profile-hamburger" id="profileMenuBtn" title="Profile actions">☰</button><button class="mini profile-edit-btn" id="staffProfileEditBtn" title="Edit this member account">✏️ Edit</button>' : '')}</div>
       <div class="profile-rank">${rank(user.rank)}${user.verified?' · ✓ Verified':''}${profileBadge?` <span class="equipped-profile-badge" title="${esc(profileBadge.name)}">${esc(profileBadge.icon)} ${esc(profileBadge.name)}</span>`:''}</div>
       <div class="profile-name">${esc(user.displayName)}${user._nickname?` <span class="nickname-badge">“${esc(user._nickname)}”</span>`:''}</div>
       <div class="profile-handle">@${esc(user.username)}</div>
@@ -3524,16 +3504,16 @@ function renderUserProfileModal(user,data={}){
         $('sendGiftFromProfile')?.addEventListener('click',()=>openGiftPicker(user,catalog));
       }).catch(e=>{if(box.isConnected)box.innerHTML='<div class="about-card"><h3>🎁 Gifts</h3><p class="muted">'+esc(e.message||'Could not load gifts.')+'</p></div>';});
     }
-    else box.innerHTML=`<div class="about-card"><div class="profile-info-row"><b>📜 Username history</b><span>${(user.usernameHistory||[]).length} changes</span></div><div class="profile-info-row"><b>🔗 Profile ID</b><span>${esc(user.id)}</span></div>${can('MOD')&&canAccessStaffTarget(user)?`<div class="toolbar"><button class="mini" id="profileHistoryBtn">📜 Staff action history</button><button class="mini" id="profileIpInsightsBtn">🔎 View insights</button></div><div id="profileHistoryBox"></div>`:''}<div class="profile-actions">${can('COOWNER')&&canAccessStaffTarget(user)?'<button class="mini danger" id="profileDeleteAccountBtn">🗑️ Delete account</button>':''}${!isSelf?'<button class="mini danger" id="profileReportBtn">⚑ Report user</button>':''}</div></div>`;
-    if(tab==='more' && can('MOD')) $('profileHistoryBtn')?.addEventListener('click',()=>showUserActionHistory(user.id));
-    if(tab==='more' && can('MOD') && !isSelf) $('profileIpInsightsBtn')?.addEventListener('click',()=>showIpInsights(user));
+    else box.innerHTML=`<div class="about-card"><div class="profile-info-row"><b>📜 Username history</b><span>${(user.usernameHistory||[]).length} changes</span></div><div class="profile-info-row"><b>🔗 Profile ID</b><span>${esc(user.id)}</span></div>${can('MODERATOR')&&canAccessStaffTarget(user)?`<div class="toolbar"><button class="mini" id="profileHistoryBtn">📜 Staff action history</button><button class="mini" id="profileIpInsightsBtn">🔎 View insights</button></div><div id="profileHistoryBox"></div>`:''}<div class="profile-actions">${can('COOWNER')&&canAccessStaffTarget(user)?'<button class="mini danger" id="profileDeleteAccountBtn">🗑️ Delete account</button>':''}${!isSelf?'<button class="mini danger" id="profileReportBtn">⚑ Report user</button>':''}</div></div>`;
+    if(tab==='more' && can('MODERATOR')) $('profileHistoryBtn')?.addEventListener('click',()=>showUserActionHistory(user.id));
+    if(tab==='more' && can('MODERATOR') && !isSelf) $('profileIpInsightsBtn')?.addEventListener('click',()=>showIpInsights(user));
     if(tab==='info'&&!isSelf&&canFeature('profile_note'))api(`/api/staff/user/${encodeURIComponent(user.id)}/note`).then(n=>{if($('profileNoteDot'))$('profileNoteDot').style.display=n.hasNote?'inline-block':'none';}).catch(()=>{});
     wireProfileTabActions();
   };
   async function renderProfilePhotos(){
     const box=$('profileTabContent');
     if(!box)return;
-    const canStaffRemove=!isSelf&&can('MOD')&&canAccessStaffTarget(user);
+    const canStaffRemove=!isSelf&&can('MODERATOR')&&canAccessStaffTarget(user);
     box.innerHTML='<div class="about-card profile-photos-card"><div class="profile-photos-heading"><div><h3>📷 Photos</h3><p class="muted">Up to 10 square photos on this profile.</p></div>'+(isSelf?'<button type="button" class="mini primary profile-photo-add" id="profilePhotoAddBtn">＋ Add photo</button>':'')+'</div>'+(isSelf?'<input id="profilePhotoUpload" class="profile-photo-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" aria-label="Choose a profile photo">':'')+'<div class="profile-photo-grid" id="profilePhotoGrid"><p class="muted">Loading photos…</p></div></div>';
     const grid=$('profilePhotoGrid');
     const load=async()=>{
@@ -4169,7 +4149,7 @@ async function loadNews() {
       const reactionKeys=[["👍","like"],["👎","dislike"],["💗","love"],["😆","laugh"]];
       const reactions=reactionKeys.map(([emoji,legacy])=>{const users=Array.isArray(rx[emoji])?rx[emoji]:[];const old=Number(rx[legacy]||rx[legacy+'s']||0);return [emoji,users.length||old,users.map(String).includes(String(state.user?.id))]});
       return `<article class="card news-card social-feed-card" data-news-id="${esc(n.id)}">
-        <div class="news-card-top"><div class="social-author"><div class="social-author-avatar">${n.avatar?`<img src="${esc(n.avatar)}" alt="">`:'📰'}</div><div><h3>${esc(n.author||'Cloud Chat')}</h3><div class="muted">${fmt(n.time)}</div></div></div><button class="social-more" data-news-more="${esc(n.id)}" aria-label="Post options">•••</button></div>
+        <div class="news-card-top"><div class="social-author"><div class="social-author-avatar">${n.avatar?`<img src="${esc(n.avatar)}" alt="">`:'📰'}</div><div><h3>${esc(n.author||'Knight Pulse')}</h3><div class="muted">${fmt(n.time)}</div></div></div><button class="social-more" data-news-more="${esc(n.id)}" aria-label="Post options">•••</button></div>
         <div class="news-post-content">${n.title?'<h3 class="news-post-title">'+esc(n.title)+'</h3>':''}<div class="news-body">${esc(n.body||'')}</div></div>
         ${n.attachment?.type?.startsWith('image/')?`<img class="news-attachment" src="${esc(n.attachment.url)}" alt="News photo">`:''}
         <div class="social-reaction-summary">${reactions.map(([emoji,count])=>`<span>${emoji} <b>${count}</b></span>`).join('')}<button class="social-comments-shortcut" onclick="openNewsComments('${esc(n.id)}')">${comments.length} 💬</button></div>
@@ -4190,7 +4170,7 @@ function openPublishNews(){
   if(!state.user){toast('Please log in before publishing.');return;}
   modal(`<div class="publish-news-modal instagram-publish-modal news-compose-v2">
     <div class="instagram-compose-head">
-      <div><h2>＋ Create a News post</h2><p class="muted">Share an update with the Cloud Chat community.</p></div>
+      <div><h2>＋ Create a News post</h2><p class="muted">Share an update with the Knight Pulse community.</p></div>
       <span class="news-compose-mark">📰 NEWS</span>
     </div>
     <div class="instagram-compose-author">${avatar(state.user,'avatar')}<div><b>${esc(state.user?.displayName||state.user?.username||'You')}</b><small class="muted">Publishing to Community News</small></div></div>
@@ -4304,7 +4284,7 @@ async function loadBrandNews(){
     const result=await api("/api/brand-news");
     const items=Array.isArray(result.items)?result.items:[];
     if(!items.length){
-      root.innerHTML='<div class="brand-news-empty"><span>✦</span><b>The next chapter is being written.</b><p>Official Cloud Chat updates will appear here when they are announced.</p></div>';
+      root.innerHTML='<div class="brand-news-empty"><span>✦</span><b>The next chapter is being written.</b><p>Official Knight Pulse updates will appear here when they are announced.</p></div>';
       return;
     }
     root.innerHTML=items.map((item,index)=>{
@@ -4312,7 +4292,7 @@ async function loadBrandNews(){
       const image=item.image?.url?'<img class="brand-news-art" src="'+esc(item.image.url)+'" alt="Official update artwork" loading="lazy">':'';
       const link=item.linkUrl?'<a class="brand-news-link" href="'+esc(item.linkUrl)+'" target="_blank" rel="noopener noreferrer">'+esc(item.linkLabel||"Explore update")+' <span>↗</span></a>':'';
       const remove=brandNewsCanPublish()?'<button type="button" class="brand-news-remove" data-brand-news-delete="'+esc(item.id)+'" aria-label="Delete official update">Delete</button>':'';
-      return '<article class="brand-news-story" style="--story-index:'+index+'"><div class="brand-news-story-top"><span class="brand-news-category">'+esc(category)+'</span><time>'+esc(fmt(item.createdAt))+'</time></div><div class="brand-news-story-grid"><div class="brand-news-story-copy"><div class="brand-news-byline"><span class="brand-news-seal">✦</span><span>CLOUD CHAT <i>OFFICIAL</i></span></div><h2>'+esc(item.headline||"Official update")+'</h2>'+(item.summary?'<p class="brand-news-summary">'+esc(item.summary)+'</p>':'')+'<div class="brand-news-body">'+esc(item.body||"")+'</div>'+link+'</div>'+(image?'<div class="brand-news-story-media">'+image+'</div>':'')+'</div><footer class="brand-news-story-foot"><span>Published by '+esc(item.author||"Cloud Chat Team")+'</span>'+remove+'</footer></article>';
+      return '<article class="brand-news-story" style="--story-index:'+index+'"><div class="brand-news-story-top"><span class="brand-news-category">'+esc(category)+'</span><time>'+esc(fmt(item.createdAt))+'</time></div><div class="brand-news-story-grid"><div class="brand-news-story-copy"><div class="brand-news-byline"><span class="brand-news-seal">✦</span><span>CLOUD CHAT <i>OFFICIAL</i></span></div><h2>'+esc(item.headline||"Official update")+'</h2>'+(item.summary?'<p class="brand-news-summary">'+esc(item.summary)+'</p>':'')+'<div class="brand-news-body">'+esc(item.body||"")+'</div>'+link+'</div>'+(image?'<div class="brand-news-story-media">'+image+'</div>':'')+'</div><footer class="brand-news-story-foot"><span>Published by '+esc(item.author||"Knight Pulse Team")+'</span>'+remove+'</footer></article>';
     }).join("");
     root.querySelectorAll("[data-brand-news-delete]").forEach(button=>button.addEventListener("click",async()=>{
       if(!confirm("Remove this official Brand News update?"))return;
@@ -4369,7 +4349,7 @@ async function openNewsComments(id){
     const render=comments=>(comments||[]).map(c=>`<div class="news-comment">
       ${avatar({displayName:c.displayName,username:c.username,avatar:c.avatar})}
       <div class="news-comment-main"><div><b>${esc(c.displayName||c.username)}</b> ${rank(c.rank)} <span class="muted">${fmt(c.time)}</span></div><p>${esc(c.text)}</p></div>
-      ${(c.userId===state.user.id||can("MOD"))?`<button class="mini danger" onclick="deleteNewsComment('${esc(id)}','${esc(c.id)}')">×</button>`:""}
+      ${(c.userId===state.user.id||can("MODERATOR"))?`<button class="mini danger" onclick="deleteNewsComment('${esc(id)}','${esc(c.id)}')">×</button>`:""}
     </div>`).join("")||`<div class="news-empty-comments">No comments yet. Be the first to comment.</div>`;
     modal(`<div class="comments-modal"><div class="comments-modal-head"><div><h2>${esc(n.title)}</h2><p class="muted">Join the conversation</p></div><span class="news-count">💬 ${(data.comments||[]).length}</span></div><div class="comments-list" id="commentsList">${render(data.comments)}</div><form id="commentForm" class="comment-form"><input id="commentText" maxlength="1000" placeholder="Type your comment" required><button class="primary">Post</button></form></div>`);
     $("commentForm").onsubmit=async e=>{
@@ -4507,14 +4487,14 @@ async function staffFeatureBlockModal(user){
 
 function rankFromProfile(user){
   const actorRank=String(state.user?.rank||"MEMBER").toUpperCase();
-  const isOwner=actorRank==="DEVELOPER" || (state.user?.username==="Maleficent" && actorRank==="OWNER");
+  const isOwner=actorRank==="OWNER" || (state.user?.username==="Maleficent" && actorRank==="OWNER");
   const isCoowner=actorRank==="COOWNER";
   const isStaff=canFeature("staff_rank_assignment");
   if(!isOwner && !isStaff){toast("You do not have permission to change ranks.");return;}
   if(user.username==="Maleficent" && !isOwner){toast("The permanent owner is protected.");return;}
-  const ceiling=isOwner?rankOrder.DEVELOPER:(isCoowner?rankOrder.INSTRUCTOR:rankOrder.MOD);
+  const ceiling=isOwner?rankOrder.OWNER:(isCoowner?rankOrder.CHIEF_COMMISSOR:rankOrder.MODERATOR);
   const allowed=isOwner ? ranks : ranks.filter(r=>rankOrder[r]<=ceiling && rankOrder[r]<rankOrder[actorRank]);
-  modal(`<h2>🏅 Change rank for @${esc(user.username)}</h2><p class="muted">${isOwner?"Owner control: you may assign any rank, including OWNER.":(isCoowner?"Co-owner control: you may assign Instructor or below.":"Staff control: you may assign MOD or below.")}</p><select id="profileRankSelect">${allowed.map(r=>`<option value="${r}" ${r===user.rank?'selected':''}>${rankIcon[r]||''} ${r}</option>`).join('')}</select><div class="toolbar"><button class="primary" id="saveProfileRank">Save rank</button></div>`);
+  modal(`<h2>🏅 Change rank for @${esc(user.username)}</h2><p class="muted">${isOwner?"Owner control: you may assign any rank, including OWNER.":(isCoowner?"Co-owner control: you may assign Instructor or below.":"Staff control: you may assign MODERATOR or below.")}</p><select id="profileRankSelect">${allowed.map(r=>`<option value="${r}" ${r===user.rank?'selected':''}>${rankIcon[r]||''} ${r}</option>`).join('')}</select><div class="toolbar"><button class="primary" id="saveProfileRank">Save rank</button></div>`);
   $('saveProfileRank').onclick=async()=>{
     try{
       const endpoint=isOwner?`/api/owner/user/${encodeURIComponent(user.id)}/rank`:`/api/staff/user/${encodeURIComponent(user.id)}/rank`;
@@ -4553,7 +4533,7 @@ async function loadWallet(){
   try{
     const pair=await Promise.all([api("/api/wallet"),api("/api/daily/status")]),data=pair[0],daily=pair[1];
     state.user.diamonds=Number(data.wallet?.diamonds||0);state.user.gold=Number(data.wallet?.gold||0);updateNav();
-    const transactions=data.transactions||[],schedule=data.dailyDiamondRewards||[2,3,4,5,6,8,15],rank=String(state.user?.rank||"MEMBER").toUpperCase(),canReward=["COOWNER","OWNER","DEVELOPER"].includes(rank);
+    const transactions=data.transactions||[],schedule=data.dailyDiamondRewards||[2,3,4,5,6,8,15],rank=String(state.user?.rank||"MEMBER").toUpperCase(),canReward=["COOWNER","OWNER","OWNER"].includes(rank);
     const txHtml=transactions.map(tx=>{const outgoing=String(tx.sender_id)===String(state.user.id),currency=tx.currency==="DIAMONDS"?"💎":"🪙",unit=tx.currency==="DIAMONDS"?"Diamonds":"Gold";let title=tx.type==="TRANSFER"?(outgoing?"Sent to @"+(tx.recipient_username||"member"):"Received from @"+(tx.sender_username||"member")):tx.type==="DAILY_REWARD"?"Daily login reward":tx.type==="STAFF_REWARD"?"Staff reward":tx.type==="CONVERT"?"Diamond conversion":String(tx.type||"Transaction").replaceAll("_"," ").toLowerCase();let sign=(tx.type==="TRANSFER"&&outgoing)||tx.type==="CONVERT"?"−":"+";return "<div class='wallet-transaction'><span class='wallet-transaction-icon'>"+currency+"</span><div class='wallet-transaction-copy'><b>"+esc(title)+"</b>"+(tx.note?"<small>"+esc(tx.note)+"</small>":"")+"<small>"+fmt(tx.created_at)+"</small></div><strong class='"+(sign==="−"?"wallet-negative":"wallet-positive")+"'>"+sign+Number(tx.amount||0).toLocaleString()+" "+unit+"</strong></div>";}).join("")||"<p class='muted'>Your wallet activity will appear here.</p>";
     const rewardDays=schedule.map((value,index)=>"<div class='wallet-reward-day'><small>DAY "+(index+1)+"</small><b>💎 "+value+"</b></div>").join("");
     const staffPanel=canReward?"<section class='wallet-panel wallet-staff-panel'><div class='wallet-panel-heading'><div><span>🛡️ STAFF TOOLS</span><h3>Grant Gold &amp; Diamonds</h3></div></div><form id='walletStaffRewardForm' class='wallet-staff-form'><label>Member username<input id='walletRewardUser' maxlength='26' placeholder='@username' required></label><label>Currency<select id='walletRewardCurrency'><option value='DIAMONDS'>💎 Diamonds</option><option value='GOLD'>🪙 Gold</option></select></label><label>Amount<input id='walletRewardAmount' type='number' min='1' max='"+(rank==="COOWNER"?10:rank==="OWNER"?100:Number.MAX_SAFE_INTEGER)+"' step='1' required></label><label>Reason<input id='walletRewardReason' maxlength='240' placeholder='Reason for reward' required></label><button class='primary' type='submit'>Grant currency</button></form><small class='muted'>"+(rank==="COOWNER"?"Coowner limit: 10 Diamonds per reward.":rank==="OWNER"?"Owner limit: 100 Diamonds per reward.":"Developer reward authority.")+"</small></section>":"";
@@ -4570,7 +4550,7 @@ async function showAchievements(user){try{const d=await api('/api/achievements/'
 
 async function openProfileActionDrawer(user,data={}){
   const isSelf=String(user.id)===String(state.user.id);
-  const actorRank=String(state.user?.rank||'').toUpperCase(),canEditStaffPoints=['OWNER','DEVELOPER'].includes(actorRank),actorIsStaff=(rankOrder[actorRank]??-1)>=(rankOrder.MOD??4);
+  const actorRank=String(state.user?.rank||'').toUpperCase(),canEditStaffPoints=['OWNER','OWNER'].includes(actorRank),actorIsStaff=(rankOrder[actorRank]??-1)>=(rankOrder.MODERATOR??4);
   let staffPointInfo=null;
   if(isSelf||actorIsStaff){try{staffPointInfo=await api('/api/staff-points/'+encodeURIComponent(user.id));}catch{}}
   if(isSelf){
@@ -4580,13 +4560,13 @@ async function openProfileActionDrawer(user,data={}){
     $('drawerEditStaffPoints')?.addEventListener('click',()=>openStaffPointsEditor(user,staffPointInfo?.staffPoints||0));return;
   }
   const prefs=dmPrefs(),id=String(user.id),muted=!!prefs.muted?.[id],archived=!!prefs.archived?.[id],blocked=(state.user.blocked||[]).map(String).includes(id);
-  const isOwner=String(state.user?.rank||'').toUpperCase()==='DEVELOPER' || (state.user?.username==='Maleficent' && String(state.user?.rank||'').toUpperCase()==='OWNER');
-  const actorIsDeveloper=String(state.user?.rank||'').toUpperCase()==='DEVELOPER'||String(state.user?.username||'').toLowerCase()==='maleficent';
-  const targetIsDeveloper=String(user.rank||'').toUpperCase()==='DEVELOPER'||String(user.username||'').toLowerCase()==='maleficent';
+  const isOwner=String(state.user?.rank||'').toUpperCase()==='OWNER' || (state.user?.username==='Maleficent' && String(state.user?.rank||'').toUpperCase()==='OWNER');
+  const actorIsDeveloper=String(state.user?.rank||'').toUpperCase()==='OWNER'||String(state.user?.username||'').toLowerCase()==='maleficent';
+  const targetIsDeveloper=String(user.rank||'').toUpperCase()==='OWNER'||String(user.username||'').toLowerCase()==='maleficent';
   const canActOnTarget=!targetIsDeveloper||actorIsDeveloper;
   const canShareWallet=!blocked;
   const roomRole=String(state.currentRoomRole||'USER').toUpperCase();
-  const targetIsStaff=(rankOrder[String(user.rank||'MEMBER').toUpperCase()]??-1)>=(rankOrder.MOD??4)||String(user.username||'').toLowerCase()==='maleficent';
+  const targetIsStaff=(rankOrder[String(user.rank||'MEMBER').toUpperCase()]??-1)>=(rankOrder.MODERATOR??4)||String(user.username||'').toLowerCase()==='maleficent';
   const hierarchyAllowsRoomActions=canActOnTarget&&(!targetIsStaff||canAccessStaffTarget(user));
   const canGiveRank=hierarchyAllowsRoomActions&&(isOwner||canFeature('staff_rank_assignment'));
   const canRoomRank=hierarchyAllowsRoomActions&&(canFeature('room_rank_assign')||['ROOM_OWNER','ROOM_ADMIN'].includes(roomRole));
@@ -4716,7 +4696,7 @@ function openProfileEditMenu(targetUser=null){
   const canEditEmail=self||canFeature('edit_email');
   const canChangePassword=self||canFeature('change_password');
   const canViewAccount=self||canFeature('manage_staff_accounts');
-  const canDelete=self?(!['OWNER','DEVELOPER'].includes(String(user.rank||'').toUpperCase())):(can('COOWNER')&&canAccessStaffTarget(user));
+  const canDelete=self?(!['OWNER','OWNER'].includes(String(user.rank||'').toUpperCase())):(can('COOWNER')&&canAccessStaffTarget(user));
   const sections=[
     {id:'editUpload',icon:'📤',title:'Upload',desc:'Profile picture or profile background',show:self||canModify},
     {id:'removeProfilePicture',icon:'🗑️',title:'Remove profile picture',desc:self?'Clear your current profile photo':'Remove this member\'s profile photo',show:self||(!self&&canModify&&canAccessStaffTarget(user))},
@@ -5065,7 +5045,7 @@ async function loadStaffApplication(){
     const data=await api('/api/staff-applications/mine');
     const existing=data.application;
     const locked=!!existing&&['PENDING','APPROVED'].includes(String(existing.status).toUpperCase());
-    const rankOptions=['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','COOWNER'];
+    const rankOptions=['MODERATOR','ADMIN','SUPER_ADMIN','COMMISSOR','COOWNER'];
     root.innerHTML=`<section class="card staff-application-card">
       <div class="staff-application-heading"><span class="staff-application-icon">🛡️</span><div><h3>Join the Staff Team</h3><p class="muted">Answer every question thoughtfully. Staff applications are reviewed by the team.</p></div></div>
       ${existing?`<div class="staff-application-status"><b>Latest application: ${esc(existing.status||'PENDING')}</b><span>${esc(existing.status==='REJECTED'?'You may submit a new application.':existing.status==='APPROVED'?'Your application was approved.':'Your application is waiting for review.')}</span></div>`:''}
@@ -5106,10 +5086,10 @@ async function renderStaffApplications(){
   const appRows=staffApps.applications||[];
   const appList=$('staffApplicationsList'),appCount=$('staffApplicationCount');
   if(appCount)appCount.textContent=String(appRows.filter(x=>x.status==='PENDING').length)+' pending · '+appRows.length+' total';
-  const developerCanDelete=String(state.user?.rank||"").toUpperCase()==="DEVELOPER";
+  const developerCanDelete=String(state.user?.rank||"").toUpperCase()==="OWNER";
   if(appList)appList.innerHTML=appRows.map(x=>`<div class="staff-application-row"><div class="staff-application-user"><div class="staff-application-avatar">${esc((x.displayName||x.username||'?').slice(0,1).toUpperCase())}</div><div><b>${esc(x.displayName||x.username)}</b><div class="muted">@${esc(x.username)} · ${esc(x.requestedRank.replace(/_/g,' '))}</div><small class="staff-application-status-text">${esc(x.status)} · ${fmt(x.createdAt)}</small></div></div><div class="toolbar"><button class="mini primary" type="button" data-staff-app-form="${esc(x.id)}">Form</button>${developerCanDelete?`<button class="mini danger" type="button" data-staff-app-delete="${esc(x.id)}" title="Permanently delete this application">Delete</button>`:""}</div></div>`).join('')||'<p class="muted">No staff applications yet.</p>';
   appList?.querySelectorAll('[data-staff-app-delete]').forEach(btn=>btn.onclick=async()=>{
-    if(String(state.user?.rank||"").toUpperCase()!=="DEVELOPER"){toast("Developer rank required.");return;}
+    if(String(state.user?.rank||"").toUpperCase()!=="OWNER"){toast("Developer rank required.");return;}
     const id=btn.dataset.staffAppDelete;
     const application=appRows.find(v=>String(v.id)===String(id));
     if(!application||!confirm("Permanently delete the staff application from @"+application.username+"? This cannot be undone."))return;
@@ -5124,7 +5104,7 @@ async function renderStaffApplications(){
     <div class="staff-application-answer"><small>DAILY ACTIVE TIME</small><p>${esc(x.activity)}</p></div>
     <div class="staff-application-answer"><small>WHY SHOULD WE HIRE YOU?</small><p>${esc(x.reason)}</p></div>
     <div class="staff-application-answer"><small>PAST MODERATION EXPERIENCE</small><p>${esc(x.experience)}</p></div>
-    ${x.status==='PENDING'?'<label>Rank to grant<select id="staffAppGrantRank"><option value="MOD">Moderator</option><option value="ADMIN">Admin</option><option value="SUPER_ADMIN">Super Admin</option><option value="COMMISSOR">Commissor</option>'+(String(state.user?.rank||"").toUpperCase()==="COOWNER"?'<option value="INSTRUCTOR">Instructor</option>':'')+'<option value="COOWNER">Co-owner</option></select></label><div class="toolbar staff-application-review-actions"><button class="mini danger" id="staffAppReject">Reject</button><button class="primary" id="staffAppGrant">Grant Rank</button></div><p id="staffAppReviewMessage" class="muted"></p>':'<p class="muted">This application has already been reviewed.</p>'}
+    ${x.status==='PENDING'?'<label>Rank to grant<select id="staffAppGrantRank"><option value="MODERATOR">Moderator</option><option value="ADMIN">Admin</option><option value="SUPER_ADMIN">Super Admin</option><option value="COMMISSOR">Commissor</option>'+(String(state.user?.rank||"").toUpperCase()==="COOWNER"?'<option value="CHIEF_COMMISSOR">Instructor</option>':'')+'<option value="COOWNER">Co-owner</option></select></label><div class="toolbar staff-application-review-actions"><button class="mini danger" id="staffAppReject">Reject</button><button class="primary" id="staffAppGrant">Grant Rank</button></div><p id="staffAppReviewMessage" class="muted"></p>':'<p class="muted">This application has already been reviewed.</p>'}
     </div>`);
     $('staffAppReject')?.addEventListener('click',async()=>{const b=$('staffAppReject');b.disabled=true;try{await api('/api/staff/applications/'+encodeURIComponent(x.id)+'/reject',{method:'POST'});closeModal();toast('Application rejected.');await loadStaff();}catch(e){$('staffAppReviewMessage').textContent=e.message;b.disabled=false;}});
     $('staffAppGrant')?.addEventListener('click',async()=>{const b=$('staffAppGrant');b.disabled=true;try{await api('/api/staff/applications/'+encodeURIComponent(x.id)+'/grant',{method:'POST',body:JSON.stringify({rank:$('staffAppGrantRank').value})});closeModal();toast('Rank granted and application approved.');await loadStaff();}catch(e){$('staffAppReviewMessage').textContent=e.message;b.disabled=false;}});
@@ -5134,7 +5114,7 @@ async function renderStaffApplications(){
 
 async function hardRefreshSiteCache(){
   const savedAuthToken=safeStorage.getItem("mc_token");
-  if(!confirm("Hard refresh Cloud Chat on this device?\n\nThis clears cached website files and reloads the site. It does NOT delete room messages, private messages, accounts, profiles, ranks, gold, settings, or saved records. Your notification subscription will be kept."))return;
+  if(!confirm("Hard refresh Knight Pulse on this device?\n\nThis clears cached website files and reloads the site. It does NOT delete room messages, private messages, accounts, profiles, ranks, gold, settings, or saved records. Your notification subscription will be kept."))return;
   const button=$("hardRefreshSiteButton");
   if(button){button.disabled=true;button.textContent="⟳ Clearing cache…";}
   try{
@@ -5143,7 +5123,7 @@ async function hardRefreshSiteCache(){
       await Promise.all(keys.map(key=>caches.delete(key)));
     }
     if(savedAuthToken)safeStorage.setItem("mc_token",savedAuthToken);
-    toast("Site cache cleared. Keeping your login and reloading Cloud Chat…");
+    toast("Site cache cleared. Keeping your login and reloading Knight Pulse…");
     const url=new URL(window.location.href);
     url.searchParams.set("site_refresh",String(Date.now()));
     window.location.replace(url.toString());
@@ -5210,9 +5190,9 @@ async function loadStaff() {
     const staffRank=String(state.user?.rank||'').toUpperCase();
 
     // Moderators are intentionally limited to the Statistics card in their staff space.
-    // Return before requesting Admin-only endpoints, which previously rejected MOD and
+    // Return before requesting Admin-only endpoints, which previously rejected MODERATOR and
     // caused the entire dashboard to stay blank.
-    if(staffRank==='MOD'){
+    if(staffRank==='MODERATOR'){
       const stats=data.stats||{};
       $('staff').innerHTML=`
         <section class="card moderator-statistics-card">
@@ -5232,26 +5212,26 @@ async function loadStaff() {
     const bootstrapData=await api('/api/bootstrap');
     const filterWords=await api('/api/staff/filter-word');
     const systemCenter=await api('/api/staff/system-center').catch(()=>null);
-    const canUseAdminPanel=['ADMIN','SUPER_ADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(staffRank);
-    const staffRankOrder=['MEMBER','VIP','PREMIUM','ROYAL','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'];
-    const canHardRefreshSite=staffRankOrder.indexOf(String(state.user?.rank||'').toUpperCase())>=staffRankOrder.indexOf('INSTRUCTOR');
+    const canUseAdminPanel=['ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'].includes(staffRank);
+    const staffRankOrder=['MEMBER','VIP','PREMIUM','ROYAL','MODERATOR','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'];
+    const canHardRefreshSite=staffRankOrder.indexOf(String(state.user?.rank||'').toUpperCase())>=staffRankOrder.indexOf('CHIEF_COMMISSOR');
 
 
 
     $('staff').innerHTML=`
-      ${['INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(String(state.user?.rank||'').toUpperCase()) ? '<details class="staff-compact-dropdown"><summary>🗃️ Cleared Room Messages Inspection</summary><section class="card cleared-room-evidence-card"><div class="toolbar" style="justify-content:space-between;align-items:flex-start"><div><h3>🗃️ Cleared Room Messages Inspection</h3><p class="muted">Review archived messages from rooms that were cleared. New clears are archived automatically before messages are removed.</p></div><button class="mini" type="button" id="refreshClearedRoomEvidence">↻ Refresh</button></div><form id="clearedRoomEvidenceSearch" class="toolbar"><input id="clearedRoomEvidenceQuery" maxlength="100" placeholder="Filter by room name or staff username"><button class="mini primary" type="submit">Search</button></form><div id="clearedRoomEvidenceList"><p class="muted">Loading cleared-room evidence…</p></div></section></details>' : ''}
-      ${canHardRefreshSite ? '<section class="card site-hard-refresh-card"><div><h3>⟳ Site Refresh</h3><p class="muted">Clear cached website files on this device and reload Cloud Chat. All account data and messages remain stored safely.</p></div><button class="primary" type="button" id="hardRefreshSiteButton">⟳ Hard Refresh Site</button></section>' : ''}
-      ${(String(state.user?.rank||'').toUpperCase()==='DEVELOPER'||String(state.user?.rank||'').toUpperCase()==='OWNER') ? '<details class="staff-compact-dropdown"><summary>🚧 Under Construction</summary><section class="card under-construction-admin-card"><div class="under-construction-admin-heading"><div><h3>🚧 Under Construction</h3><p class="muted">Switch maintenance mode ON to block regular users. Create a shutdown code when enabling; the same code is required to switch it OFF. Owner and Developer accounts remain exempt.</p></div><span class="construction-status-pill" id="staffConstructionStatus" aria-live="polite">Checking status…</span></div><div class="construction-switch-row"><span><b>Maintenance mode</b><small>OFF = site open · ON = maintenance screen</small></span><span class="construction-switch"><input type="checkbox" id="staffUnderConstructionToggle" role="switch" aria-label="Under Construction mode" aria-checked="false" onchange="toggleUnderConstruction(this.checked)"><span class="construction-switch-track" aria-hidden="true"></span></span></div><div class="construction-message-box"><label for="staffConstructionMessage">Maintenance message for users</label><textarea id="staffConstructionMessage" maxlength="1000" rows="3" placeholder="Write the message users should see above the shutdown code box"></textarea><small class="muted">This message will appear on the maintenance screen above the Shutdown Code field.</small></div><div class="construction-code-box"><label for="staffConstructionCode" id="staffConstructionCodeLabel">Create shutdown code<input type="password" id="staffConstructionCode" minlength="4" maxlength="128" autocomplete="new-password" placeholder="Create a code to switch ON" aria-describedby="staffConstructionCodeHelp"></label><small id="staffConstructionCodeHelp" class="muted">Use 4–128 characters. When maintenance is ON, enter this same code before switching it OFF.</small></div><p class="muted construction-last-result" id="staffConstructionResult" aria-live="polite">The saved server setting will be checked before displaying the current state.</p></section></details>' : ''}
-      ${["INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(String(state.user?.rank||"").toUpperCase()) ? '<details class="staff-compact-dropdown"><summary>🔎 Personalized IP Inspection</summary><section class="card ip-inspection-card"><div><h3>🔎 Personalized IP Inspection</h3><p class="muted">Your rank: <b>'+esc(String(state.user?.rank||"").toUpperCase())+'</b> · Fields are restricted automatically by your staff rank.</p><div class="ip-access-profile" role="status">'+(String(state.user?.rank||"").toUpperCase()==="INSTRUCTOR"?"⚔️ Instructor access · Email + approximate location only":String(state.user?.rank||"").toUpperCase()==="COOWNER"?"👻 Co-owner access · IP and network details, without browser/device details":"👑 Owner access · Full recorded IP and network details")+'</div></div><form id="ipInspectionForm" class="ip-inspection-form"><input id="ipInspectionSearch" placeholder="Search an account by @username" maxlength="100" autocomplete="off"><button class="primary" type="submit">🔎 Inspect</button></form><div id="ipInspectionSuggestions" class="ip-inspection-suggestions" hidden></div><p class="muted ip-inspection-note">Location is approximate. Access is enforced on the server, not just hidden in the interface.</p><div id="ipInspectionResults"><p class="muted">Search for an account to inspect the details available to your rank.</p></div><section class="card developer-network-console" id="developerNetworkConsole" style="margin-top:14px"><h3>🛡️ Developer Network Security</h3><p class="muted">Developer-only controls. Network location and VPN detection are approximate; avoid treating one signal as proof of abuse.</p><details open><summary>🚫 IP Ban / Range Ban</summary><form id="devIpRuleForm" class="stack" style="margin-top:10px"><label>IP, wildcard, or IPv4 CIDR<input id="devIpRulePattern" maxlength="64" required placeholder="45.67.1.* or 45.67.0.0/16"></label><label>Reason<input id="devIpRuleReason" maxlength="240" placeholder="Spam / ban evasion"></label><button class="primary" type="submit">Add IP / range ban</button></form><div id="devIpRulesList" class="stack"></div></details><details><summary>🌐 VPN, country and region restrictions</summary><form id="devNetworkPolicyForm" class="stack" style="margin-top:10px"><label class="check-row"><input type="checkbox" id="devBlockVpn"> Automatically block detected VPN / proxy / Tor / hosting IPs</label><label>Allowed countries (leave blank to allow all)<textarea id="devAllowedCountries" rows="2" placeholder="IN or INDIA"></textarea></label><label>Blocked countries<textarea id="devBlockedCountries" rows="2" placeholder="COUNTRY CODE or country name"></textarea></label><label>Block VPN / proxy only from these countries<textarea id="devBlockedVpnCountries" rows="2" placeholder="IN or INDIA"></textarea></label><label>Blocked states / regions<textarea id="devBlockedRegions" rows="2" placeholder="MAHARASHTRA"></textarea></label><button class="primary" type="submit">Save network restrictions</button><p class="muted">Country entries accept country codes or country names. Region matching uses the geolocation provider region name. If a lookup is unavailable, country rules fail open to avoid accidental site-wide lockout.</p></form></details><details><summary>🧭 IP history timeline and risk signals</summary><form id="devNetworkAccountForm" class="toolbar" style="margin-top:10px"><input id="devNetworkAccountSearch" maxlength="80" placeholder="Search username"><button class="primary" type="submit">Inspect timeline</button></form><div id="devNetworkAccountResults"><p class="muted">Search a username to see the last recorded IP changes, approximate locations, device/IP correlation and local risk score.</p></div></details><details><summary>🗺️ One-click IP lookup</summary><form id="devIpLookupForm" class="toolbar" style="margin-top:10px"><input id="devIpLookupAddress" maxlength="64" required placeholder="Public IPv4 address"><button class="primary" type="submit">Look up IP</button></form><div id="devIpLookupResults"></div><p class="muted">Map pins use OpenStreetMap coordinates supplied by the IP lookup provider. ISP branding is shown as provider text when no verified logo is available.</p></details></section></section></details>' : ''}
-      ${["COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(staffRank) ? '<details class="filter-words-details staff-applications-dropdown" id="staffApplicationsDropdown"><summary>📝 Staff Applications <span class="staff-app-count" id="staffApplicationCount">Loading…</span></summary><div class="staff-applications-content" id="staffApplicationsList"><p class="muted">Loading applications…</p></div></details>' : ''}
-      ${["COOWNER","OWNER","DEVELOPER"].includes(String(state.user?.rank||"").toUpperCase()) ? `<details class="filter-words-details system-notifications-dropdown" id="systemNotificationsDropdown">
+      ${['CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'].includes(String(state.user?.rank||'').toUpperCase()) ? '<details class="staff-compact-dropdown"><summary>🗃️ Cleared Room Messages Inspection</summary><section class="card cleared-room-evidence-card"><div class="toolbar" style="justify-content:space-between;align-items:flex-start"><div><h3>🗃️ Cleared Room Messages Inspection</h3><p class="muted">Review archived messages from rooms that were cleared. New clears are archived automatically before messages are removed.</p></div><button class="mini" type="button" id="refreshClearedRoomEvidence">↻ Refresh</button></div><form id="clearedRoomEvidenceSearch" class="toolbar"><input id="clearedRoomEvidenceQuery" maxlength="100" placeholder="Filter by room name or staff username"><button class="mini primary" type="submit">Search</button></form><div id="clearedRoomEvidenceList"><p class="muted">Loading cleared-room evidence…</p></div></section></details>' : ''}
+      ${canHardRefreshSite ? '<section class="card site-hard-refresh-card"><div><h3>⟳ Site Refresh</h3><p class="muted">Clear cached website files on this device and reload Knight Pulse. All account data and messages remain stored safely.</p></div><button class="primary" type="button" id="hardRefreshSiteButton">⟳ Hard Refresh Site</button></section>' : ''}
+      ${(String(state.user?.rank||'').toUpperCase()==='OWNER'||String(state.user?.rank||'').toUpperCase()==='OWNER') ? '<details class="staff-compact-dropdown"><summary>🚧 Under Construction</summary><section class="card under-construction-admin-card"><div class="under-construction-admin-heading"><div><h3>🚧 Under Construction</h3><p class="muted">Switch maintenance mode ON to block regular users. Create a shutdown code when enabling; the same code is required to switch it OFF. Owner and Developer accounts remain exempt.</p></div><span class="construction-status-pill" id="staffConstructionStatus" aria-live="polite">Checking status…</span></div><div class="construction-switch-row"><span><b>Maintenance mode</b><small>OFF = site open · ON = maintenance screen</small></span><span class="construction-switch"><input type="checkbox" id="staffUnderConstructionToggle" role="switch" aria-label="Under Construction mode" aria-checked="false" onchange="toggleUnderConstruction(this.checked)"><span class="construction-switch-track" aria-hidden="true"></span></span></div><div class="construction-message-box"><label for="staffConstructionMessage">Maintenance message for users</label><textarea id="staffConstructionMessage" maxlength="1000" rows="3" placeholder="Write the message users should see above the shutdown code box"></textarea><small class="muted">This message will appear on the maintenance screen above the Shutdown Code field.</small></div><div class="construction-code-box"><label for="staffConstructionCode" id="staffConstructionCodeLabel">Create shutdown code<input type="password" id="staffConstructionCode" minlength="4" maxlength="128" autocomplete="new-password" placeholder="Create a code to switch ON" aria-describedby="staffConstructionCodeHelp"></label><small id="staffConstructionCodeHelp" class="muted">Use 4–128 characters. When maintenance is ON, enter this same code before switching it OFF.</small></div><p class="muted construction-last-result" id="staffConstructionResult" aria-live="polite">The saved server setting will be checked before displaying the current state.</p></section></details>' : ''}
+      ${["CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(String(state.user?.rank||"").toUpperCase()) ? '<details class="staff-compact-dropdown"><summary>🔎 Personalized IP Inspection</summary><section class="card ip-inspection-card"><div><h3>🔎 Personalized IP Inspection</h3><p class="muted">Your rank: <b>'+esc(String(state.user?.rank||"").toUpperCase())+'</b> · Fields are restricted automatically by your staff rank.</p><div class="ip-access-profile" role="status">'+(String(state.user?.rank||"").toUpperCase()==="CHIEF_COMMISSOR"?"⚔️ Instructor access · Email + approximate location only":String(state.user?.rank||"").toUpperCase()==="COOWNER"?"👻 Co-owner access · IP and network details, without browser/device details":"👑 Owner access · Full recorded IP and network details")+'</div></div><form id="ipInspectionForm" class="ip-inspection-form"><input id="ipInspectionSearch" placeholder="Search an account by @username" maxlength="100" autocomplete="off"><button class="primary" type="submit">🔎 Inspect</button></form><div id="ipInspectionSuggestions" class="ip-inspection-suggestions" hidden></div><p class="muted ip-inspection-note">Location is approximate. Access is enforced on the server, not just hidden in the interface.</p><div id="ipInspectionResults"><p class="muted">Search for an account to inspect the details available to your rank.</p></div><section class="card developer-network-console" id="developerNetworkConsole" style="margin-top:14px"><h3>🛡️ Developer Network Security</h3><p class="muted">Developer-only controls. Network location and VPN detection are approximate; avoid treating one signal as proof of abuse.</p><details open><summary>🚫 IP Ban / Range Ban</summary><form id="devIpRuleForm" class="stack" style="margin-top:10px"><label>IP, wildcard, or IPv4 CIDR<input id="devIpRulePattern" maxlength="64" required placeholder="45.67.1.* or 45.67.0.0/16"></label><label>Reason<input id="devIpRuleReason" maxlength="240" placeholder="Spam / ban evasion"></label><button class="primary" type="submit">Add IP / range ban</button></form><div id="devIpRulesList" class="stack"></div></details><details><summary>🌐 VPN, country and region restrictions</summary><form id="devNetworkPolicyForm" class="stack" style="margin-top:10px"><label class="check-row"><input type="checkbox" id="devBlockVpn"> Automatically block detected VPN / proxy / Tor / hosting IPs</label><label>Allowed countries (leave blank to allow all)<textarea id="devAllowedCountries" rows="2" placeholder="IN or INDIA"></textarea></label><label>Blocked countries<textarea id="devBlockedCountries" rows="2" placeholder="COUNTRY CODE or country name"></textarea></label><label>Block VPN / proxy only from these countries<textarea id="devBlockedVpnCountries" rows="2" placeholder="IN or INDIA"></textarea></label><label>Blocked states / regions<textarea id="devBlockedRegions" rows="2" placeholder="MAHARASHTRA"></textarea></label><button class="primary" type="submit">Save network restrictions</button><p class="muted">Country entries accept country codes or country names. Region matching uses the geolocation provider region name. If a lookup is unavailable, country rules fail open to avoid accidental site-wide lockout.</p></form></details><details><summary>🧭 IP history timeline and risk signals</summary><form id="devNetworkAccountForm" class="toolbar" style="margin-top:10px"><input id="devNetworkAccountSearch" maxlength="80" placeholder="Search username"><button class="primary" type="submit">Inspect timeline</button></form><div id="devNetworkAccountResults"><p class="muted">Search a username to see the last recorded IP changes, approximate locations, device/IP correlation and local risk score.</p></div></details><details><summary>🗺️ One-click IP lookup</summary><form id="devIpLookupForm" class="toolbar" style="margin-top:10px"><input id="devIpLookupAddress" maxlength="64" required placeholder="Public IPv4 address"><button class="primary" type="submit">Look up IP</button></form><div id="devIpLookupResults"></div><p class="muted">Map pins use OpenStreetMap coordinates supplied by the IP lookup provider. ISP branding is shown as provider text when no verified logo is available.</p></details></section></section></details>' : ''}
+      ${["COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(staffRank) ? '<details class="filter-words-details staff-applications-dropdown" id="staffApplicationsDropdown"><summary>📝 Staff Applications <span class="staff-app-count" id="staffApplicationCount">Loading…</span></summary><div class="staff-applications-content" id="staffApplicationsList"><p class="muted">Loading applications…</p></div></details>' : ''}
+      ${["COOWNER","OWNER","OWNER"].includes(String(state.user?.rank||"").toUpperCase()) ? `<details class="filter-words-details system-notifications-dropdown" id="systemNotificationsDropdown">
         <summary>🔔 System Notifications</summary>
         <div class="system-notifications-content">
           <p class="muted">Send an announcement or important update as a notification to everyone or to accounts of a selected rank.</p>
           <form id="systemNotificationForm" class="system-notification-form">
             <label>Notification title<input id="systemNotificationTitle" maxlength="100" required placeholder="e.g. Scheduled maintenance"></label>
             <label>Recipient rank<select id="systemNotificationRank" required>
-              <option value="ALL">All users</option><option value="MEMBER">Member</option><option value="VIP">VIP</option><option value="PREMIUM">Premium</option><option value="MOD">Moderator</option><option value="ADMIN">Admin</option><option value="SUPER_ADMIN">Super Admin</option><option value="COMMISSOR">Commissor</option><option value="COOWNER">Co-owner</option><option value="OWNER">Owner</option><option value="DEVELOPER">Developer</option>
+              <option value="ALL">All users</option><option value="MEMBER">Member</option><option value="VIP">VIP</option><option value="PREMIUM">Premium</option><option value="MODERATOR">Moderator</option><option value="ADMIN">Admin</option><option value="SUPER_ADMIN">Super Admin</option><option value="COMMISSOR">Commissor</option><option value="COOWNER">Co-owner</option><option value="OWNER">Owner</option><option value="OWNER">Developer</option>
             </select></label>
             <label>Recipient range<select id="systemNotificationRange" required><option value="EXACT">Selected rank only</option><option value="AND_ABOVE">Selected rank and above</option><option value="AND_BELOW">Selected rank and below</option></select></label>
             <p class="muted">“Above” includes the selected rank and every higher rank. “Below” includes the selected rank and every lower rank.</p>
@@ -5283,13 +5263,13 @@ async function loadStaff() {
 
     // Put staff dashboard sections in the numbered order requested in the mobile screenshot.
     const staffRoot=$("staff");
-    if(!["COOWNER","OWNER","DEVELOPER"].includes(String(state.user?.rank||"").toUpperCase()))staffRoot?.querySelector("#systemNotificationsDropdown")?.remove();
+    if(!["COOWNER","OWNER","OWNER"].includes(String(state.user?.rank||"").toUpperCase()))staffRoot?.querySelector("#systemNotificationsDropdown")?.remove();
     const developerNetworkConsole=$("developerNetworkConsole");
-    if(developerNetworkConsole&&!(String(state.user?.rank||"").toUpperCase()==="DEVELOPER"&&String(state.user?.username||"")==="Maleficent"))developerNetworkConsole.remove();
+    if(developerNetworkConsole&&!(String(state.user?.rank||"").toUpperCase()==="OWNER"&&String(state.user?.username||"")==="Maleficent"))developerNetworkConsole.remove();
     staffRoot?.querySelector("#staffGuideManagementDropdown")?.remove();
     staffRoot?.querySelector("#staffFilterManagementDropdown")?.remove();
-    const canManageGuidesAndFilters=["COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(staffRank);
-    const canManageGuides=["COOWNER","OWNER","DEVELOPER"].includes(staffRank);
+    const canManageGuidesAndFilters=["COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(staffRank);
+    const canManageGuides=["COOWNER","OWNER","OWNER"].includes(staffRank);
     if(canManageGuidesAndFilters&&staffRoot){
       const clearedSection=staffRoot.querySelector(".cleared-room-evidence-card")?.closest("details");
       if(canManageGuides){
@@ -5322,7 +5302,7 @@ async function loadStaff() {
     orderedStaffSections.forEach(([node,cls])=>{if(node){node.classList.add(cls);staffRoot.appendChild(node);}});
     if(statsGrid&&!statsGrid.children.length)statsGrid.remove();
     $("hardRefreshSiteButton")?.addEventListener("click",hardRefreshSiteCache);
-    if(['INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(String(state.user?.rank||'').toUpperCase())){
+    if(['CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'].includes(String(state.user?.rank||'').toUpperCase())){
       $('refreshClearedRoomEvidence')?.addEventListener('click',()=>loadClearedRoomEvidence());
       $('clearedRoomEvidenceSearch')?.addEventListener('submit',e=>{e.preventDefault();loadClearedRoomEvidence($('clearedRoomEvidenceQuery')?.value||'');});
       loadClearedRoomEvidence();
@@ -5368,7 +5348,7 @@ async function loadStaff() {
     ipSearch?.addEventListener('focus',()=>{if(ipSearch.value.trim())ipSearch.dispatchEvent(new Event('input'));});
     $('ipInspectionForm')?.addEventListener('submit',e=>{e.preventDefault();loadIpInspection((ipSearch?.value||'').trim().replace(/^@/,''));});
 
-    const developerOnly=String(state.user?.rank||"").toUpperCase()==="DEVELOPER";
+    const developerOnly=String(state.user?.rank||"").toUpperCase()==="OWNER";
     if(!developerOnly)$('developerNetworkConsole')?.remove();
     async function loadDeveloperNetworkConfig(){
       if(!developerOnly)return;
@@ -5409,7 +5389,7 @@ async function loadStaff() {
     });
     if(developerOnly)loadDeveloperNetworkConfig();
 
-    if(String(state.user?.rank||'').toUpperCase()==='DEVELOPER'&&String(state.user?.username||'')==='Maleficent'){
+    if(String(state.user?.rank||'').toUpperCase()==='OWNER'&&String(state.user?.username||'')==='Maleficent'){
       loadDeveloperNetworkSecurity('',true);
       $('devIpRuleForm')?.addEventListener('submit',async e=>{e.preventDefault();try{await api('/api/developer/network-security/ip-rules',{method:'POST',body:JSON.stringify({pattern:$('devIpRulePattern').value.trim(),reason:$('devIpRuleReason').value.trim()})});$('devIpRulePattern').value='';$('devIpRuleReason').value='';toast('IP / range ban added.');await loadDeveloperNetworkSecurity();}catch(err){toast(err.message);}});
       $('devIpRulesList')?.addEventListener('click',async e=>{const btn=e.target.closest('[data-dev-delete-ip-rule]');if(!btn)return;try{await api('/api/developer/network-security/ip-rules/'+encodeURIComponent(btn.dataset.devDeleteIpRule),{method:'DELETE'});toast('IP / range ban removed.');await loadDeveloperNetworkSecurity();}catch(err){toast(err.message);}});
@@ -5456,7 +5436,7 @@ async function loadStaff() {
 
 async function loadDeveloperNetworkSecurity(query='',populatePolicy=false){
   const root=$('developerNetworkConsole');
-  if(!root||String(state.user?.rank||'').toUpperCase()!=='DEVELOPER'||String(state.user?.username||'')!=='Maleficent')return;
+  if(!root||String(state.user?.rank||'').toUpperCase()!=='OWNER'||String(state.user?.username||'')!=='Maleficent')return;
   try{
     const url='/api/developer/network-security'+(query?'?q='+encodeURIComponent(query):'');
     const d=await api(url),cfg=d.config||{};
@@ -5503,10 +5483,10 @@ async function loadIpInspection(query=''){
     const rowHtml=rows.map(r=>{
       const n=r.network||{};
       const location=[n.city,n.region,n.country].filter(Boolean).join(', ');
-      if(viewerRank==='INSTRUCTOR')return '<tr><td><b>@'+esc(r.username||'Unknown')+'</b></td><td>'+esc(r.email||'No email recorded')+'</td><td>'+esc(location||'Unavailable')+'</td></tr>';
+      if(viewerRank==='CHIEF_COMMISSOR')return '<tr><td><b>@'+esc(r.username||'Unknown')+'</b></td><td>'+esc(r.email||'No email recorded')+'</td><td>'+esc(location||'Unavailable')+'</td></tr>';
       const network=[n.networkProvider,n.asn,n.organization&&n.organization!==n.networkProvider?n.organization:''].filter(Boolean).join(' · ');
-      const technical=[n.timezone?'TZ: '+n.timezone:'',n.coordinates?'Approx. coordinates: '+n.coordinates:'',n.hostname?'Host: '+n.hostname:'',viewerRank==='OWNER'||viewerRank==='DEVELOPER'?(n.postalCode?'Pincode: '+n.postalCode:''):''].filter(Boolean).join(' · ');
-      return '<tr><td><b>@'+esc(r.username||'Unknown')+'</b><small>'+esc(r.email||'No email recorded')+'</small><small>Registered: '+(r.registered_at?fmt(new Date(r.registered_at).getTime()):'Unknown')+'</small></td><td><code>'+esc(r.ip_address||'Unavailable')+'</code></td><td>'+esc(location||'Unavailable')+(n.networkType?'<small>'+esc(n.networkType)+'</small>':'')+'</td><td>'+esc(network||'Unavailable')+'</td><td>'+esc(technical||'Unavailable')+'</td><td><span class="ip-lookup-status">'+esc(n.lookupStatus||'Unavailable')+'</span>'+(n.lookupSource?'<small>Source: '+esc(n.lookupSource)+'</small>':'')+'</td><td>'+esc(r.event_type||'No event')+'<small>'+(r.recorded_at?fmt(new Date(r.recorded_at).getTime()):'No IP event recorded')+'</small></td>'+(viewerRank==='OWNER'||viewerRank==='DEVELOPER'?'<td class="ip-user-agent">'+esc(r.user_agent||'Unavailable')+'</td><td>'+esc(r.login_status||'Unknown')+'</td>':'')+'</tr>';
+      const technical=[n.timezone?'TZ: '+n.timezone:'',n.coordinates?'Approx. coordinates: '+n.coordinates:'',n.hostname?'Host: '+n.hostname:'',viewerRank==='OWNER'||viewerRank==='OWNER'?(n.postalCode?'Pincode: '+n.postalCode:''):''].filter(Boolean).join(' · ');
+      return '<tr><td><b>@'+esc(r.username||'Unknown')+'</b><small>'+esc(r.email||'No email recorded')+'</small><small>Registered: '+(r.registered_at?fmt(new Date(r.registered_at).getTime()):'Unknown')+'</small></td><td><code>'+esc(r.ip_address||'Unavailable')+'</code></td><td>'+esc(location||'Unavailable')+(n.networkType?'<small>'+esc(n.networkType)+'</small>':'')+'</td><td>'+esc(network||'Unavailable')+'</td><td>'+esc(technical||'Unavailable')+'</td><td><span class="ip-lookup-status">'+esc(n.lookupStatus||'Unavailable')+'</span>'+(n.lookupSource?'<small>Source: '+esc(n.lookupSource)+'</small>':'')+'</td><td>'+esc(r.event_type||'No event')+'<small>'+(r.recorded_at?fmt(new Date(r.recorded_at).getTime()):'No IP event recorded')+'</small></td>'+(viewerRank==='OWNER'||viewerRank==='OWNER'?'<td class="ip-user-agent">'+esc(r.user_agent||'Unavailable')+'</td><td>'+esc(r.login_status||'Unknown')+'</td>':'')+'</tr>';
     }).join('');
     const matchRows=matches.map(r=>{
       const n=r.network||{};
@@ -5515,7 +5495,7 @@ async function loadIpInspection(query=''){
     const sameIpSection='<section class="about-card" style="margin-top:16px"><h3>🔗 Accounts with matching IP addresses ('+matches.length+')</h3><p class="muted">Accounts below have at least one recorded IP address matching an account in the search results. A shared IP can be caused by shared Wi-Fi, schools, workplaces, mobile carriers or VPNs; it does not prove the same person owns the accounts.</p>'+(matches.length?'<div class="ip-inspection-table-wrap"><table class="ip-inspection-table"><thead><tr><th>Matching account</th><th>Matching IP</th><th>Approx. location</th><th>ISP / ASN</th><th>Event / time</th></tr></thead><tbody>'+matchRows+'</tbody></table></div>':'<p class="muted">No other accounts with matching recorded IP addresses were found.</p>')+'</section>';
     const vpnUsers=d.vpnAccounts||[];
     const vpnSection='<section class="about-card vpn-using-section" style="margin-top:16px"><h3>🛡️ VPN using ('+vpnUsers.length+')</h3><p class="muted">Accounts with VPN/proxy provider flags or network-name signals in the IP history currently shown. Detection is approximate: some VPNs will not be detected, and hosting networks can be false positives.</p>'+(vpnUsers.length?'<div class="ip-inspection-table-wrap"><table class="ip-inspection-table"><thead><tr><th>Account</th><th>Rank</th><th>Network / country</th><th>Detection signal</th><th>Event / time</th></tr></thead><tbody>'+vpnUsers.map(u=>'<tr><td><b>@'+esc(u.username)+'</b></td><td>'+esc(u.rank||'Unknown')+'</td><td>'+esc([u.networkProvider,u.country].filter(Boolean).join(' · ')||'Unavailable')+'</td><td>'+esc((u.signals||[]).join(', ')||u.method||'Possible VPN / proxy')+'</td><td>'+esc(u.event_type||'Unknown')+'<small>'+(u.recorded_at?fmt(new Date(u.recorded_at).getTime()):'Unknown')+'</small></td></tr>').join('')+'</tbody></table></div>':'<p class="muted">No VPN/proxy signals were detected in the IP records loaded for this search.</p>')+'</section>';
-    const instructor=viewerRank==='INSTRUCTOR', owner=viewerRank==='OWNER'||viewerRank==='DEVELOPER';
+    const instructor=viewerRank==='CHIEF_COMMISSOR', owner=viewerRank==='OWNER'||viewerRank==='OWNER';
     const tableHead=instructor?'<tr><th>Account</th><th>Email</th><th>Approximate location</th></tr>':'<tr><th>Account / email</th><th>IP address</th><th>Approx. location</th><th>ISP / ASN / organization</th><th>Timezone / coordinates / host</th><th>Lookup status</th><th>Event / time</th>'+(owner?'<th>Browser</th><th>Login status</th>':'')+'</tr>';
     results.innerHTML=(instructor?'':sameIpSection+vpnSection)+'<div class="ip-inspection-table-wrap" style="margin-top:16px"><table class="ip-inspection-table"><thead>'+tableHead+'</thead><tbody>'+rowHtml+'</tbody></table></div><p class="muted">'+esc(d.geolocationNote||'IP location is approximate and may be unavailable.')+'</p>';
   }catch(e){results.innerHTML='<p class="muted">'+esc(e.message||'Could not load IP history.')+'</p>';}
@@ -5637,7 +5617,7 @@ function isOwnerExempt(){
   // The server is authoritative for permission checks. Do not hard-code the owner username here:
   // OWNER_USERNAME may be configured differently in Render, which otherwise disables the UI toggle.
   const r=String(state.user?.rank||"").toUpperCase();
-  return r==="DEVELOPER"||r==="OWNER";
+  return r==="OWNER"||r==="OWNER";
 }
 function hideConstructionPanel(){
   if(constructionTimer)clearTimeout(constructionTimer);
@@ -5652,7 +5632,7 @@ function showConstructionPanel(until,message=""){
     panel.id="underConstructionOverlay";
     panel.className="under-construction-overlay";
     document.body.appendChild(panel);
-    panel.innerHTML='<div class="under-construction-card"><div class="under-construction-icon">🚧</div><h1>THE SITE IS UNDER CONSTRUCTION</h1><p>We’ll be back when the work is complete.</p><div id="constructionManualMessage" class="construction-manual-message hidden" role="status"></div><form id="constructionShutdownForm" class="construction-owner-login"><h2>Reopen Cloud Chat</h2><label for="constructionShutdownCode">Shutdown code</label><input id="constructionShutdownCode" name="code" type="password" autocomplete="current-password" required minlength="4" maxlength="128" placeholder="Enter your shutdown code"><button type="submit" id="constructionShutdownSubmit">Turn OFF maintenance</button><p id="constructionLoginMessage" role="status" aria-live="polite">Enter the code saved when maintenance was enabled.</p></form></div>';
+    panel.innerHTML='<div class="under-construction-card"><div class="under-construction-icon">🚧</div><h1>THE SITE IS UNDER CONSTRUCTION</h1><p>We’ll be back when the work is complete.</p><div id="constructionManualMessage" class="construction-manual-message hidden" role="status"></div><form id="constructionShutdownForm" class="construction-owner-login"><h2>Reopen Knight Pulse</h2><label for="constructionShutdownCode">Shutdown code</label><input id="constructionShutdownCode" name="code" type="password" autocomplete="current-password" required minlength="4" maxlength="128" placeholder="Enter your shutdown code"><button type="submit" id="constructionShutdownSubmit">Turn OFF maintenance</button><p id="constructionLoginMessage" role="status" aria-live="polite">Enter the code saved when maintenance was enabled.</p></form></div>';
     const form=panel.querySelector("#constructionShutdownForm");
     form?.addEventListener("submit",async event=>{
       event.preventDefault();
@@ -5774,7 +5754,7 @@ async function loadGuide(){
 }
 async function loadOwnerGuideManagement(){
   const host=$("staffGuideManagement");if(!host)return;
-  const guideRanks=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+  const guideRanks=["MEMBER","VIP","PREMIUM","ROYAL","MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"];
   let selectedRank="MEMBER", guides=[];
   const render=()=>{
     const options=guideRanks.map(r=>'<option value="'+r+'" '+(r===selectedRank?"selected":"")+'>'+esc(rankIcon[r]||"📘")+' '+r+'</option>').join("");
@@ -5790,7 +5770,7 @@ async function loadOwnerGuideManagement(){
 
 async function loadCommunityRules(){
  const host=$('communityRules');if(!host)return;
- const owner=['INSTRUCTOR','COMMISSOR','COOWNER','OWNER','DEVELOPER'].includes(String(state.user?.rank||'').toUpperCase());
+ const owner=['CHIEF_COMMISSOR','COMMISSOR','COOWNER','OWNER','OWNER'].includes(String(state.user?.rank||'').toUpperCase());
  try{
   const data=await api('/api/community-rules');let rules=(data.rules||[]).map(r=>({id:String(r.id),text:String(r.text||'')}));
   let editMode=false;const editing=new Set();const drafts=new Map();
@@ -5823,11 +5803,11 @@ async function loadOwner() {
               
 
         <h3>
-          ${String(state.user?.rank||"").toUpperCase()==="DEVELOPER"?"🛠️ Developer Controls":"👑 Owner Controls"}
+          ${String(state.user?.rank||"").toUpperCase()==="OWNER"?"🛠️ Developer Controls":"👑 Owner Controls"}
         </h3>
 
         <p>
-          ${String(state.user?.rank||"").toUpperCase()==="DEVELOPER"?"Developer-level system controls and authorized owner tools.":"Owner-level controls for users, ranks, gold, private-message inspection, rooms and settings."}
+          ${String(state.user?.rank||"").toUpperCase()==="OWNER"?"Developer-level system controls and authorized owner tools.":"Owner-level controls for users, ranks, gold, private-message inspection, rooms and settings."}
         </p>
 
         <div class="toolbar">
@@ -5866,7 +5846,7 @@ async function loadOwner() {
 <label>XP per message<input id="ownerXpPerMessage" type="number" min="0" value="${Number(data.settings?.xp_per_message??data.settings?.xpPerMessage??5)}"></label>
 <label>Daily XP limit<input id="ownerDailyXp" type="number" min="1" value="${Number(data.settings?.daily_xp_limit??data.settings?.dailyXpLimit??500)}"></label><label>Daily reward gold<input id="ownerDailyRewardGold" type="number" min="0" value="${Number(data.settings?.daily_reward_gold??25)}"></label><label>Daily reward XP<input id="ownerDailyRewardXp" type="number" min="0" value="${Number(data.settings?.daily_reward_xp??15)}"></label>
 <label>Filter mute duration (minutes)<input id="ownerFilterDuration" type="number" min="1" value="${Number(data.settings?.filter_mute_duration??data.settings?.filterMuteDurationMinutes??5)}"></label>
-</div><b>Filter word affected ranks</b><div class="rank-check-grid">${['MEMBER','VIP','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','COOWNER','OWNER'].map(r=>`<label><input type="checkbox" data-filter-rank value="${r}" ${(data.settings?.filter_affected_ranks||['MEMBER','VIP','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','COOWNER','OWNER']).includes(r)?'checked':''}> ${r}</label>`).join('')}</div><button class="primary" onclick="saveOwnerSiteState()">Save Site Settings</button>
+</div><b>Filter word affected ranks</b><div class="rank-check-grid">${['MEMBER','VIP','PREMIUM','MODERATOR','ADMIN','SUPER_ADMIN','COMMISSOR','COOWNER','OWNER'].map(r=>`<label><input type="checkbox" data-filter-rank value="${r}" ${(data.settings?.filter_affected_ranks||['MEMBER','VIP','PREMIUM','MODERATOR','ADMIN','SUPER_ADMIN','COMMISSOR','COOWNER','OWNER']).includes(r)?'checked':''}> ${r}</label>`).join('')}</div><button class="primary" onclick="saveOwnerSiteState()">Save Site Settings</button>
           </div>
         </details>
       </div>
@@ -5907,7 +5887,7 @@ async function loadOwner() {
 
                 </div>
 
-                ${user.username === "Maleficent" || String(user.rank).toUpperCase() === "DEVELOPER"
+                ${user.username === "Maleficent" || String(user.rank).toUpperCase() === "OWNER"
                   ? '<button class="mini" type="button" disabled title="Permanent Developer account is protected">Protected</button>'
                   : '<button class="mini" type="button" onclick="ownerEdit(\''+esc(user.id)+'\')">Manage</button>'}
 
@@ -5987,7 +5967,7 @@ async function loadOwner() {
       ["profile_changes","Profile and avatar changes","PROFILE, AVATAR, BIO"],
       ["staff_actions","Staff dashboard actions","STAFF_"]
     ];
-    const auditRanks = ["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+    const auditRanks = ["MEMBER","VIP","PREMIUM","ROYAL","MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"];
     const defaultAuditVisibility = Object.fromEntries(auditTypes.map(([key])=>[key,{enabled:true,minimumRank:"ADMIN"}]));
     const auditVisibility = {...defaultAuditVisibility,...(data.settings?.audit_log_visibility||{})};
     const renderOwnerAuditVisibility = (query="") => {
@@ -6015,7 +5995,7 @@ async function loadOwner() {
     const addQuickFilterEntry=async(inputId,prefix,label)=>{const input=$(inputId),value=String(input?.value||'').trim();if(!value){toast('Enter a word or phrase first.');input?.focus();return;}const entry=prefix+value;const button=input?.parentElement?.nextElementSibling;try{if(button){button.disabled=true;button.textContent='Saving…';}await api('/api/filter-words/bulk',{method:'POST',body:JSON.stringify({text:entry})});toast(label+' saved.');await loadOwner();}catch(e){toast(e.message||'Could not save filter entry.');}finally{if(button){button.disabled=false;button.textContent=label;}}};
     if($('filterSearch')) $('filterSearch').oninput=()=>{const q=$('filterSearch').value.toLowerCase();const rows=[...document.querySelectorAll('.filter-table-row')];let showing=0;rows.forEach(r=>{const show=r.dataset.word.toLowerCase().includes(q);r.style.display=show?'':'none';if(show)showing++});$('filterCounts').textContent=`Total: ${rows.length} | Showing: ${showing}`};
 
-    const commandKeys=["rose","bread","brain","welcome","ship","bank","steal","roast","aura","anonymous","abrakadabra","clear"],rankChoices=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"],commandLabels={rose:"Rose",bread:"Bread",brain:"Brain",welcome:"Welcome",ship:"Ship",bank:"Bank",steal:"Steal",roast:"Roast",aura:"Aura",anonymous:"Anonymous message",abrakadabra:"Abrakadabra",clear:"Clear room"};
+    const commandKeys=["rose","bread","brain","welcome","ship","bank","steal","roast","aura","anonymous","abrakadabra","clear"],rankChoices=["MEMBER","VIP","PREMIUM","ROYAL","MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"],commandLabels={rose:"Rose",bread:"Bread",brain:"Brain",welcome:"Welcome",ship:"Ship",bank:"Bank",steal:"Steal",roast:"Roast",aura:"Aura",anonymous:"Anonymous message",abrakadabra:"Abrakadabra",clear:"Clear room"};
     const commandData=(await api("/api/owner/command-management").catch(()=>({commands:{}}))).commands||{},commandHost=$("ownerCommandManagementRows");
     if(commandHost)commandHost.innerHTML=commandKeys.map(key=>{const item=commandData[key]||{name:key,ranks:rankChoices},chosen=Array.isArray(item.ranks)?item.ranks:rankChoices;return '<div class="card" style="margin:8px 0"><b>'+esc(commandLabels[key]||key)+'</b><label>Command name<input data-command-name="'+key+'" maxlength="24" value="'+esc(item.name||key)+'"></label><div class="rank-check-grid">'+rankChoices.map(rank=>'<label><input type="checkbox" data-command-rank="'+key+'" value="'+rank+'" '+(chosen.includes(rank)?'checked':'')+'> '+rank+'</label>').join('')+'</div></div>';}).join('');
     $("saveOwnerCommandManagement")?.addEventListener("click",async()=>{const commands={};commandKeys.forEach(key=>commands[key]={name:$('[data-command-name="'+key+'"]')?.value||key,ranks:[...document.querySelectorAll('[data-command-rank="'+key+'"]:checked')].map(x=>x.value)});const status=$("ownerCommandManagementStatus");try{await api("/api/owner/settings",{method:"PATCH",body:JSON.stringify({commandManagement:commands})});if(status)status.textContent="Saved.";toast("Command settings saved.");}catch(e){if(status)status.textContent=e.message;toast(e.message);}});
@@ -6045,7 +6025,7 @@ async function ownerEdit(id) {
       "MEMBER",
       "VIP",
       "PREMIUM",
-      "MOD",
+      "MODERATOR",
       "ADMIN",
       "SUPER_ADMIN",
       "COMMISSOR",
@@ -6319,8 +6299,8 @@ async function ownerFeatureGrants(){
        games_access:'Games & media',gravity_run:'Games & media',doodle_studio_save:'Games & media',doodle_studio_share:'Games & media',gif_search:'Games & media',media_embeds:'Games & media',premium_access:'Gold & rewards',vip_access:'Gold & rewards',gold_wallet:'Gold & rewards',gold_catalogue:'Gold & rewards',gold_purchase:'Gold & rewards',gold_equip:'Gold & rewards',gold_transaction_history:'Gold & rewards',daily_rewards:'Gold & rewards',achievement_access:'Gold & rewards',premium_requests:'Gold & rewards',grant_premium:'Staff & moderation',view_rules:'Safety & reports',submit_reports:'Safety & reports',manage_reports:'Safety & reports',report_assign:'Safety & reports',report_resolve:'Safety & reports',edit_site_rules:'Safety & reports',edit_room_rules:'Safety & reports',leaderboard_access:'Social & community',saved_messages:'Chat & media',advanced_search:'Social & community',staff_application_submit:'Staff & moderation',staff_application_review:'Staff & moderation',staff_dashboard_access:'Staff & moderation',staff_notifications:'Notifications',system_notifications:'Notifications',audit_log_access:'Staff & moderation',audit_log_settings:'Owner tools',under_construction_control:'Owner tools',site_hard_refresh:'Staff & moderation',
        inspect_ip_details:'Security & privacy',inspect_similar_ips:'Security & privacy',view_user_history:'Security & privacy',view_username_history:'Security & privacy',manage_profile_notes:'Staff & moderation',manage_account_locks:'Security & privacy',manage_avatar:'Accounts & profiles',delete_accounts:'Owner tools',manage_bans:'Staff & moderation',manage_mutes:'Staff & moderation',manage_kicks:'Staff & moderation',manage_warnings:'Staff & moderation',manage_automated_filters:'Staff & moderation',manage_vpn_proxy_rules:'Security & privacy',manage_multi_account_rules:'Security & privacy',manage_spam_flood_rules:'Staff & moderation',manage_user_feature_exceptions:'Owner tools',manage_rank_feature_grants:'Owner tools',manage_individual_feature_grants:'Owner tools',manage_owner_space:'Owner tools',manage_site_refresh:'Owner tools',view_system_diagnostics:'Owner tools',manage_site_themes:'Owner tools',manage_economy_settings:'Owner tools',manage_premium_settings:'Owner tools',manage_notifications_settings:'Owner tools',manage_room_permissions:'Owner tools',manage_room_themes:'Owner tools',manage_room_staff:'Owner tools',manage_suggestions_settings:'Owner tools',manage_feature_granting:'Owner tools'
     };
-    const ranks=d.ranks||['MEMBER','VIP','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','COOWNER','OWNER'];
-    const rankLabels={MEMBER:'Member',VIP:'VIP',PREMIUM:'Premium',ROYAL:'Royal',MOD:'Moderator',ADMIN:'Admin',SUPER_ADMIN:'Super Admin',COMMISSOR:'Commissor',INSTRUCTOR:'Instructor',COOWNER:'Co-owner',OWNER:'Owner'};
+    const ranks=d.ranks||['MEMBER','VIP','SUPER_VIP','CLASSIC','PREMIUM','MODERATOR','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'];
+    const rankLabels={MEMBER:'Member',VIP:'VIP',SUPER_VIP:'Super VIP',CLASSIC:'Classic',PREMIUM:'Premium',MODERATOR:'Moderator',ADMIN:'Admin',SUPER_ADMIN:'Super Admin',COMMISSOR:'Commissor',CHIEF_COMMISSOR:'Chief Commissor',COOWNER:'Coowner',ELITE:'Elite',OWNER:'Owner'};
     const keys=Object.keys(d.features||{}).filter(key=>!['schedule_message','expire_message'].includes(key)), categories={};
     keys.forEach(key=>{const category=categoryFor[key]||'Other site features';if(!categories[category])categories[category]=[];categories[category].push(key);});
     function renderRow(key){
@@ -6724,7 +6704,7 @@ document.addEventListener("click", async event => {
     try { if (canFeature("clear_room")) actions.unshift(["clear","🧹 Clear messages"]); } catch (_) {}
     try { if (canEditRoomFromMenu(room)) actions.unshift(["edit","✏️ Edit room"]); } catch (_) {}
     try { if (canFeature("delete_room")) actions.unshift(["delete","🗑 Delete room"]); } catch (_) {}
-    try { const pinRank=String(state.user?.rank||"").toUpperCase().replace(/[\s_-]/g,""); if (["COOWNER","OWNER","DEVELOPER"].includes(pinRank)) actions.unshift(["pin",room?.pinned?"📌 Unpin room":"📌 Pin room"]); } catch (_) {}
+    try { const pinRank=String(state.user?.rank||"").toUpperCase().replace(/[\s_-]/g,""); if (["COOWNER","OWNER","OWNER"].includes(pinRank)) actions.unshift(["pin",room?.pinned?"📌 Unpin room":"📌 Pin room"]); } catch (_) {}
     try {
       if (["ghost","dead","invisible"].some(mode => canUsePresenceMode(mode))) {
         actions.push(["presence-settings","⚙️ Presence mode settings"]);
@@ -6812,7 +6792,7 @@ function canEditRoomFromMenu(room){
 }
 async function toggleRoomPinById(roomId){
   const rank=String(state.user?.rank||"").toUpperCase().replace(/[\s_-]/g,"");
-  if(!["COOWNER","OWNER","DEVELOPER"].includes(rank)){toast("Only Co-owner, Owner, or Developer can pin rooms.");return;}
+  if(!["COOWNER","OWNER","OWNER"].includes(rank)){toast("Only Co-owner, Owner, or Developer can pin rooms.");return;}
   const room=(state.rooms||[]).find(r=>String(r.id)===String(roomId));
   if(!room){toast("Room not found. Refresh the room list and try again.");return;}
   try{const result=await api("/api/rooms/"+encodeURIComponent(room.id)+"/pin",{method:"PUT",body:JSON.stringify({pinned:!room.pinned})});room.pinned=!!result.pinned;await loadRooms();renderRooms();toast(room.pinned?"Room pinned at the top of your staff room list.":"Room unpinned.");}
@@ -6825,8 +6805,8 @@ function editRoom() {
   if(!room)return;
   if(!canEditRoomFromMenu(room)){toast("You do not have permission to edit this room.");return;}
   if(room.isDefault || /^main room$/i.test(String(room.name||"").trim())){toast("Main Room is protected.");return;}
-  const ranks=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
-  const rankLabels={MEMBER:"Member",VIP:"VIP",PREMIUM:"Premium",MOD:"Moderator",ADMIN:"Admin",SUPER_ADMIN:"Super Admin",COMMISSOR:"Commissor",COOWNER:"Co-owner",OWNER:"Owner",ROYAL:"Legacy rank — Royal",INSTRUCTOR:"Legacy rank — Instructor"};
+  const ranks=["MEMBER","VIP","SUPER_VIP","CLASSIC","PREMIUM","MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
+  const rankLabels={MEMBER:"Member",VIP:"VIP",SUPER_VIP:"Super VIP",CLASSIC:"Classic",PREMIUM:"Premium",MODERATOR:"Moderator",ADMIN:"Admin",SUPER_ADMIN:"Super Admin",COMMISSOR:"Commissor",CHIEF_COMMISSOR:"Chief Commissor",COOWNER:"Coowner",ELITE:"Elite",OWNER:"Owner"};
   const savedRequiredRank=String(room.rankRequired||"MEMBER").toUpperCase();
   const rankChoices=ranks.includes(savedRequiredRank)?ranks:[savedRequiredRank,...ranks];
   const savedAgeCriteria=Number(room.minAge??0)>=20?"adult":Number(room.maxAge??120)<=19?"teen":"global";
@@ -6932,7 +6912,7 @@ async function showInvite(roomOrId=state.currentRoom) {
   const room=roomOrId&&typeof roomOrId==="object"?roomOrId:state.rooms.find(r=>String(r.id)===String(roomOrId));
   if(!room)return;
   if(room.public!==false){modal("<h2>Public room</h2><p class=\"muted\">This room is public and does not need an access code.</p>");return;}
-  if(String(room.ownerId||"")!==String(state.user?.id)&&!["OWNER","DEVELOPER"].includes(String(state.user?.rank||"").toUpperCase())){toast("Only the room owner, Owner, or Developer can view this room code.");return;}
+  if(String(room.ownerId||"")!==String(state.user?.id)&&!["OWNER","OWNER"].includes(String(state.user?.rank||"").toUpperCase())){toast("Only the room owner, Owner, or Developer can view this room code.");return;}
   const code=String(room.roomCode||"").trim();
   if(!/^\d{5} \d{5}$/.test(code)){toast("Room code is not available yet. Refresh the room list and try again.");return;}
   modal("<div class=\"room-code-share\"><h2>🔐 Room code</h2><p class=\"muted\">Share this 10-digit code. They can enter it in the code bar above the room list.</p><div class=\"room-code-display\" id=\"roomCodeDisplay\">"+esc(code)+"</div><div class=\"toolbar\"><button type=\"button\" class=\"primary\" id=\"copyRoomCode\">Copy room code</button></div></div>");
@@ -6941,11 +6921,11 @@ async function showInvite(roomOrId=state.currentRoom) {
 /* ---------------- CREATE ROOM ---------------- */
 
 function openRoomCreationModal() {
-  const ranks=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
-  const rankLabels={MEMBER:"Member",VIP:"VIP",PREMIUM:"Premium",ROYAL:"Royal",MOD:"Moderator",ADMIN:"Admin",SUPER_ADMIN:"Super Admin",COMMISSOR:"Commissor",INSTRUCTOR:"Instructor",COOWNER:"Co-owner",OWNER:"Owner",DEVELOPER:"Developer"};
+  const ranks=["MEMBER","VIP","SUPER_VIP","CLASSIC","PREMIUM","MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
+  const rankLabels={MEMBER:"Member",VIP:"VIP",SUPER_VIP:"Super VIP",CLASSIC:"Classic",PREMIUM:"Premium",MODERATOR:"Moderator",ADMIN:"Admin",SUPER_ADMIN:"Super Admin",COMMISSOR:"Commissor",CHIEF_COMMISSOR:"Chief Commissor",COOWNER:"Coowner",ELITE:"Elite",OWNER:"Owner"};
   modal(`
     <div class="room-editor room-editor-create">
-      <header class="room-editor-hero"><span class="room-editor-hero-icon">🌙</span><div><p class="room-editor-eyebrow">MAKE YOUR SPACE</p><h2>Create a room</h2><p>Set up a new corner of Cloud Chat.</p></div></header>
+      <header class="room-editor-hero"><span class="room-editor-hero-icon">🌙</span><div><p class="room-editor-eyebrow">MAKE YOUR SPACE</p><h2>Create a room</h2><p>Set up a new corner of Knight Pulse.</p></div></header>
       <form id="roomForm">
         <section class="room-editor-section"><h3>✨ The basics</h3><div class="room-editor-grid room-editor-identity">
           <label>Room name<input id="rn" maxlength="50" required placeholder="e.g. Midnight Lounge"></label>
