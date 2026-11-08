@@ -353,3 +353,37 @@ html[data-theme] body{background-image:radial-gradient(ellipse at 48% -18%,rgba(
     height:42px!important;min-height:42px!important;max-height:42px!important;
   }
 }
+
+
+/* Compact Send width; let the message field use the remaining row space. */
+#viewRooms.chatting .composer #message{flex:1 1 0!important;min-width:0!important}
+#viewRooms.chatting .composer .send{
+  flex:0 0 58px!important;
+  width:58px!important;
+  min-width:58px!important;
+  max-width:58px!important;
+  padding:0 5px!important;
+  white-space:nowrap!important;
+  font-size:12px!important;
+}
+.dm-composer #dmText{flex:1 1 0!important;min-width:0!important}
+.dm-composer .send{
+  flex:0 0 58px!important;
+  width:58px!important;
+  min-width:58px!important;
+  max-width:58px!important;
+  padding:0 5px!important;
+  white-space:nowrap!important;
+  font-size:12px!important;
+}
+@media(max-width:600px){
+  #viewRooms.chatting .composer .send,
+  .dm-composer .send{
+    flex-basis:52px!important;
+    width:52px!important;
+    min-width:52px!important;
+    max-width:52px!important;
+    padding:0 3px!important;
+    font-size:11px!important;
+  }
+}
