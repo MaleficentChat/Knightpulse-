@@ -1493,7 +1493,7 @@ if($('newWallPost'))$('newWallPost').onclick=async()=>{
 async function loadRankShop(){
   const d=await api('/api/shop'); const c=$('rankShop'); if(!c)return;
   const rank=String(state.user?.rank||'').toUpperCase();
-  const canBuySvip=rank==='MEMBER';
+  const canBuySvip=['MEMBER','VIP'].includes(rank);
   const canBuyPremium=!['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(rank);
   c.innerHTML=`<div class="panel shop-item"><div class="shop-icon">🏅</div><h3>Premium — $6 lifetime</h3><p>Request Premium from the owner, or unlock it instantly for 50,000 Diamonds.</p>${canBuyPremium?'<button class="primary" id="requestPremium">Request Premium — $6</button>':'<p class="muted">Premium purchase is unavailable for your current rank.</p>'}${canBuyPremium?'<button class="mini" id="buyPremiumDiamonds" style="margin-top:8px">💎 Buy with 50,000 Diamonds</button>':'<p class="muted">Premium purchase is unavailable for your current rank.</p>'}</div>${canBuySvip?d.vip.map(v=>`<div class="panel shop-item"><div class="shop-icon">💠</div><h3>SVIP — ${v.label}</h3><p>${v.price} gold</p><button class="mini" data-svip-plan="${v.label.includes('7')?'7':v.label.includes('month')&&v.label.includes('3')?'90':v.label.includes('year')?'365':'30'}">${v.price} gold</button></div>`).join(''):'<div class="panel shop-item"><div class="shop-icon">💠</div><h3>SVIP</h3><p>Higher ranks cannot buy SVIP</p></div>'}`;
   $('requestPremium').onclick=async()=>{try{await api('/api/shop/premium/request',{method:'POST'});toast('Premium request sent to owner.')}catch(e){toast(e.message)}};
