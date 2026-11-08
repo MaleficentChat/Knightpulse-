@@ -5853,6 +5853,7 @@ async function loadOwner() {
 
         <div class="toolbar">
           <button class="primary" onclick="inspectDMs()">Inspect private messages</button>
+          <button class="mini" type="button" onclick="openPermissionAudit()">🔎 Permission Audit</button>
         </div>
         <section class="card owner-message-refresh-card" style="margin-top:14px;border-color:var(--danger,#b84a68)">
           <h3>🧹 Refresh Site Messages</h3>
@@ -6269,6 +6270,22 @@ async function saveOwnerSiteState(){
     await api("/api/settings/save",{method:"POST",body:JSON.stringify({gifCost:$("ownerGifCost")?.value||10,goldPerMessage:$("ownerGoldPerMessage")?.value||0,xpPerMessage:$("ownerXpPerMessage")?.value||5,dailyXpLimit:$("ownerDailyXp")?.value||500,filterAffectedRanks:[...document.querySelectorAll('[data-filter-rank]:checked')].map(x=>x.value),filterMuteDuration:$("ownerFilterDuration")?.value||5,dailyRewardGold:$("ownerDailyRewardGold")?.value||25,dailyRewardXp:$("ownerDailyRewardXp")?.value||15})});
     toast("Site settings saved.");
   }catch(e){toast(e.message)}
+}
+
+async function openPermissionAudit(){
+  try{
+    const audit=await api('/api/owner/permission-audit');
+    const status=audit.overall==='PASS'?'All critical permission checks passed.':'Review the highlighted permission differences below.';
+    const checks=(audit.checks||[]).map(item=>{
+      const badge=item.passed?'✓ PASS':'⚠ REVIEW';
+      const actual=(item.actual||[]).join(', ')||'No ranks';
+      const expected=(item.expected||[]).join(', ')||'No ranks';
+      return '<article class="card permission-audit-row"><div class="toolbar" style="justify-content:space-between"><b>'+esc(item.label)+'</b><strong>'+badge+'</strong></div><p class="muted">Expected: '+esc(expected)+'</p><p>Configured: '+esc(actual)+'</p></article>';
+    }).join('');
+    const ceilings=Object.entries(audit.grantCeilings||{}).map(([rank,ceiling])=>'<div class="hub-row"><b>'+esc(rank.replaceAll('_',' '))+'</b><span>May grant up to <b>'+esc(ceiling.replaceAll('_',' '))+'</b></span></div>').join('');
+    const invalid=(audit.invalidGrantRanks||[]).map(item=>'<p class="error">'+esc(item.feature)+': unknown rank '+esc(item.rank)+'</p>').join('');
+    modal('<div class="permission-audit-modal"><h2>🔎 Permission Audit</h2><p class="muted">'+esc(status)+'</p><div class="card"><div class="toolbar" style="justify-content:space-between"><b>Overall result</b><strong>'+(audit.overall==='PASS'?'✓ PASS':'⚠ REVIEW')+'</strong></div><p class="muted">'+Number(audit.featureCount||0)+' supported features · '+Number(audit.configuredFeatureCount||0)+' configured feature entries · '+(audit.rankSchemaMatches?'Canonical rank schema matches':'Rank schema mismatch')+'</p></div><h3>Critical permission checks</h3><div class="stack">'+(checks||'<p class="muted">No checks returned.</p>')+'</div><h3>Rank-grant ceilings</h3><div class="card stack">'+ceilings+'</div>'+(invalid?'<h3>Invalid rank entries</h3>'+invalid:'<p class="muted">No invalid rank entries found.</p>')+'<p class="muted">Read-only audit. It does not change ranks, permissions, accounts, or messages.</p><div class="toolbar"><button class="mini" type="button" onclick="openPermissionAudit()">↻ Run again</button><button class="primary" type="button" onclick="closeModal()">Close</button></div></div>');
+  }catch(error){toast(error.message||'Could not run the permission audit.');}
 }
 
 async function ownerFeatureGrants(){
