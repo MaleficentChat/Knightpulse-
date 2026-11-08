@@ -561,7 +561,9 @@ function safeUser(u){
     id:u.id,
     username:u.username,
     displayName:u.displayName,
-    rank:u.rank,
+    // The configured permanent site-owner account uses the current Owner rank;
+    // legacy Developer is retained only for unrelated legacy accounts.
+    rank:u.username===DEFAULT_OWNER?"OWNER":u.rank,
     avatar:u.avatar||"",
     bio:u.bio||"",
     pronouns:u.pronouns||"",
@@ -901,12 +903,25 @@ function current(req){
     const tokenPayload=verifyToken(raw);
     if(!tokenPayload)continue;
     const tokenUser=db.users.find(u=>String(u.id)===String(tokenPayload.sub));
-    if(tokenUser)return tokenUser;
+    if(tokenUser){
+      // Normalize the configured site-owner account from the retired Developer
+      // label to Owner so permissions and UI use the same current hierarchy.
+      if(tokenUser.username===DEFAULT_OWNER && String(tokenUser.rank||"").toUpperCase()!=="OWNER"){
+        tokenUser.rank="OWNER";
+        saveSoon();
+      }
+      return tokenUser;
+    }
   }
 
   // Keep cookie-session authentication as a final fallback for existing clients.
   const sessionUid=req.session?.userId;
-  return sessionUid?db.users.find(u=>String(u.id)===String(sessionUid))||null:null;
+  const sessionUser=sessionUid?db.users.find(u=>String(u.id)===String(sessionUid))||null:null;
+  if(sessionUser && sessionUser.username===DEFAULT_OWNER && String(sessionUser.rank||"").toUpperCase()!=="OWNER"){
+    sessionUser.rank="OWNER";
+    saveSoon();
+  }
+  return sessionUser;
 }
 
 function clientIp(req){
