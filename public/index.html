@@ -1,0 +1,449 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Join Maleficent Chat for online chat rooms, friends, private messages, community posts and mini-games. Create an account and meet people through shared conversations.">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="theme-color" content="#07172a">
+<meta name="application-name" content="Maleficent Chat">
+<link rel="canonical" href="https://maleficentchat.onrender.com/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/favicon.svg">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Maleficent Chat">
+<meta property="og:title" content="Maleficent Chat — Online Chat Rooms &amp; Community">
+<meta property="og:description" content="Chat in community rooms, connect with friends, send private messages and enjoy community games on Maleficent Chat.">
+<meta property="og:url" content="https://maleficentchat.onrender.com/">
+<meta property="og:image" content="https://maleficentchat.onrender.com/favicon.svg">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Maleficent Chat — Online Chat Rooms &amp; Community">
+<meta name="twitter:description" content="Community chat rooms, friends, private messages and mini-games in one place.">
+<title>Maleficent Chat | Online Chat Rooms &amp; Community</title>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "Maleficent Chat",
+  "url": "https://maleficentchat.onrender.com/",
+  "description": "Join Maleficent Chat for online chat rooms, friends, private messages, community posts and mini-games."
+}
+</script>
+<link rel="stylesheet" href="/style.css?v=profile-avatar-popup-actions-20261107-3">
+<link rel="stylesheet" href="/social-features.css?v=1">
+ <link rel="manifest" href="/manifest.json">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+.profile-note-dot{width:9px;height:9px;border-radius:50%;background:#258cff;box-shadow:0 0 0 2px rgba(37,140,255,.18);font-size:0;vertical-align:middle;margin-left:5px}
+.staff-note-modal{display:flex;flex-direction:column;gap:12px}.staff-note-entry{border:1px solid var(--border-color,rgba(130,145,170,.25));border-radius:12px;padding:14px;background:rgba(100,120,150,.07)}.staff-note-entry-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.staff-note-author{font-size:.9em;margin-top:7px;color:var(--muted,#9299a8)}.staff-note-message{white-space:pre-wrap;overflow-wrap:anywhere;margin:10px 0 0}.staff-note-empty{padding:14px;border:1px dashed rgba(130,145,170,.35);border-radius:10px;color:var(--muted,#9299a8)}.community-rules-list{display:grid;gap:12px}.community-rule-card{padding:16px;border:1px solid rgba(130,145,170,.25);border-radius:12px;background:rgba(100,120,150,.06)}.community-rule-card h3{margin:0 0 8px}.community-rule-text{white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+
+.feature-grant-rank-checks{display:flex;flex-wrap:wrap;gap:6px;max-width:720px}.feature-grant-rank-checks label{display:inline-flex;align-items:center;gap:4px;padding:3px 6px;border:1px solid var(--border,#40364d);border-radius:7px;font-size:11px;white-space:nowrap}.feature-grant-rank-checks input{margin:0}.feature-grant-row{align-items:flex-start!important;gap:12px!important}.feature-grant-row>div:first-child{min-width:170px;max-width:240px}.feature-grant-row>div:first-child small{display:block}
+</style>
+<style id="profile-music-friends-styles">
+.profile-short-bio{margin:5px auto 0;max-width:90%;font-size:13px;opacity:.88;text-align:center}
+.profile-music-pill{display:flex;align-items:center;justify-content:center;gap:9px;width:max-content;max-width:88%;margin:12px auto 2px;padding:5px 12px 5px 6px;border-radius:24px;background:rgba(90,90,100,.25);border:1px solid rgba(255,255,255,.12);box-sizing:border-box}
+.profile-music-toggle{width:36px;height:36px;border:0;border-radius:50%;background:#12b99a;color:#fff;font-size:17px;font-weight:900;display:grid;place-items:center;cursor:pointer;flex:none}
+.profile-music-toggle.playing{background:#12b99a}
+.profile-music-bars{height:24px;display:flex;align-items:center;gap:3px}
+.profile-music-bars i{display:block;width:4px;height:9px;border-radius:4px;background:#fff;opacity:.9}
+.profile-music-bars i:nth-child(2){height:16px}.profile-music-bars i:nth-child(3){height:21px}.profile-music-bars i:nth-child(4){height:13px}
+.profile-music-pill:has(.profile-music-toggle.playing) .profile-music-bars i{animation:profileMusicWave .7s ease-in-out infinite alternate}
+.profile-music-pill:has(.profile-music-toggle.playing) .profile-music-bars i:nth-child(2){animation-delay:.15s}.profile-music-pill:has(.profile-music-toggle.playing) .profile-music-bars i:nth-child(3){animation-delay:.3s}.profile-music-pill:has(.profile-music-toggle.playing) .profile-music-bars i:nth-child(4){animation-delay:.45s}
+@keyframes profileMusicWave{from{transform:scaleY(.35)}to{transform:scaleY(1.2)}}
+.profile-music-title{max-width:155px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:700}
+.profile-friends-grid-wrap{width:100%;padding:8px 0 14px;box-sizing:border-box}
+.profile-friends-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;width:100%;margin:0}
+.profile-friend-tile{position:relative;display:block;aspect-ratio:1;min-width:0;padding:0;overflow:hidden;border:0;border-radius:7px;background:#202b33;color:#fff;cursor:pointer}
+.profile-friend-photo{position:absolute;inset:0;width:100%;height:100%;display:block;overflow:hidden;border-radius:0;background:#202b33}
+.profile-friend-photo .avatar{width:100%;height:100%;border-radius:0;font-size:20px}
+.profile-friend-photo img{width:100%;height:100%;object-fit:cover;border-radius:0}
+.profile-friend-name{position:absolute;left:0;right:0;bottom:0;display:block;max-width:100%;padding:4px 3px;background:linear-gradient(transparent,rgba(0,0,0,.78));color:#fff;font-size:11px;font-weight:500;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box}
+@media(max-width:540px){.profile-friends-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.profile-friend-name{font-size:11px}}
+</style>
+<style>
+.profile-music-card{width:min(92%,420px);margin:14px auto 4px;padding:10px 12px;border:1px solid rgba(182,154,255,.35);border-radius:14px;background:rgba(8,6,17,.58);text-align:left;box-sizing:border-box}.profile-music-heading{font-weight:750;font-size:13px;margin-bottom:7px;color:var(--text,#f6f0ff)}.profile-music-audio{display:block;width:100%;height:38px;max-width:100%}
+.profile-friends-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px;margin-top:14px}.profile-friend-tile{min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 5px;border:1px solid rgba(182,154,255,.22);border-radius:12px;background:rgba(35,25,52,.55);color:inherit;cursor:pointer}.profile-friend-photo{width:68px;height:68px;display:block;overflow:hidden;border-radius:9px;background:#21182e}.profile-friend-photo img{width:100%;height:100%;object-fit:cover;border-radius:0}.profile-friend-photo .avatar,.profile-friend-photo .big-avatar{width:100%;height:100%;border-radius:0}.profile-friend-name,.profile-friend-tile small{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile-friend-name{font-size:12px;font-weight:750}.profile-friend-tile small{font-size:10px;opacity:.72}@media(max-width:420px){.profile-friends-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.profile-friend-photo{width:64px;height:64px}}
+</style><style id="profile-music-upload-styles">
+.profile-music-upload{display:flex;flex-direction:column;gap:12px}.profile-music-file-label{display:flex;align-items:center;justify-content:center;min-height:54px;padding:12px;border:1px dashed rgba(182,154,255,.6);border-radius:12px;background:rgba(90,60,130,.15);font-weight:750;cursor:pointer}.profile-music-upload input[type=file]{width:100%;max-width:100%;padding:10px;border:1px solid rgba(182,154,255,.25);border-radius:10px;background:rgba(8,6,17,.4);color:inherit}.profile-music-current{padding:9px 12px;border-radius:10px;background:rgba(18,185,154,.1)}
+</style><link rel="stylesheet" href="/entertainment.css?v=20261106-3">
+</head>
+<body>
+<div id="auth" class="auth-screen">
+  <div class="auth-card">
+    <div class="brand-mark">🖤</div><h1>Maleficent Chat — Online Chat Rooms</h1>
+    <p class="muted">Enter the community. Login or create your account.</p>
+    <div class="auth-tabs"><button id="tabLogin" class="active" type="button">Login</button><button id="tabRegister" type="button">Register</button></div>
+    <form id="authForm">
+      <input id="username" placeholder="Username" required maxlength="24" autocomplete="username">
+      <input id="displayName" class="register-only hidden" placeholder="Display name" maxlength="32">
+      <input id="registerEmail" class="register-only hidden" type="email" placeholder="Email address" autocomplete="email">
+      <input id="dateOfBirth" class="register-only hidden" type="date" aria-label="Date of birth" title="Date of birth" autocomplete="bday">
+      
+      <select id="gender" class="register-only hidden" aria-label="Gender"><option value="">Select gender</option><option value="Male">Male</option><option value="Female">Female</option><option value="Non-binary">Non-binary</option><option value="Other">Other</option><option value="Prefer not to say">Prefer not to say</option></select>
+      <input id="password" type="password" placeholder="Password" required autocomplete="current-password"><input id="confirmPassword" class="register-only hidden" type="password" placeholder="Confirm password" autocomplete="new-password"><div id="passwordStrength" class="muted register-only hidden"></div>
+      <button class="primary" id="authSubmit">Login</button>
+      <div id="authMsg" class="error"></div>
+    </form>
+  </div>
+  <section class="seo-intro" id="community-info" aria-labelledby="community-info-title">
+      <h2 id="community-info-title">Meet people on Maleficent Chat</h2>
+      <p>Maleficent Chat is an online chat community where you can join conversations, discover people with shared interests and keep in touch with friends. Start by creating an account or signing in, then explore the community at your own pace.</p>
+      <nav class="seo-feature-links" aria-label="Explore Maleficent Chat">
+        <a href="#chat-rooms">Chat rooms</a>
+        <a href="#friend-connections">Friends &amp; messages</a>
+        <a href="#community-tools">Community features</a>
+      </nav>
+      <div class="seo-info-grid">
+        <article id="chat-rooms">
+          <h3>Chat rooms and live conversations</h3>
+          <p>Join Teen Chat or Adult Chat based on your age, or explore other available rooms. Room descriptions and room rules help you choose a conversation that suits you.</p>
+        </article>
+        <article id="friend-connections">
+          <h3>Friends and private messages</h3>
+          <p>Build your friends list, manage requests and continue one-to-one conversations with private messages. Profile tools help members discover one another.</p>
+        </article>
+        <article id="community-tools">
+          <h3>More ways to participate</h3>
+          <p>Share community posts, read announcements, play mini-games and use chat tools such as GIFs and doodles where available. Reporting and moderation features support respectful participation.</p>
+        </article>
+      </div>
+      <p class="seo-note">Be respectful, protect your personal information and report content that concerns you. Never share passwords, verification codes or sensitive details in a public chat.</p>
+  </section>
+</div>
+
+<div id="app" class="app hidden">
+<header class="top-header">
+  <div class="top-brand">
+    <button class="top-menu" id="mobileMenu" aria-label="Menu">☰</button>
+    <div class="brand-avatar">MC</div>
+    <div class="top-brand-copy"><b>Maleficent</b><span>Chat</span></div>
+  </div>
+  <div class="top-header-actions">
+    <button class="top-icon" id="topMessages" title="Private messages">✉<i id="topDmDot"></i></button><div id="topMessagesDropdown" class="notification-dropdown hidden"></div>
+    <button class="top-icon" id="topFriends" title="Friends & requests" aria-label="Friends & requests"><svg class="top-friends-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M16 21v-1.5a4.5 4.5 0 0 0-4.5-4.5h-5A4.5 4.5 0 0 0 2 19.5V21M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-1.5a4.5 4.5 0 0 0-3.4-4.36M16.5 3.2a4 4 0 0 1 0 7.6"/></svg><i id="topFriendDot"></i></button><div id="topFriendsDropdown" class="notification-dropdown hidden"></div>
+    <button class="top-icon" id="topNotifications" title="Notifications">🔔<i id="topNotifDot"></i></button><div id="notificationDropdown" class="notification-dropdown hidden"></div>
+    <button class="top-icon staff-only hidden" id="topFlag" title="Reports">⚑<i id="topReportDot"></i></button><div id="reportDropdown" class="notification-dropdown hidden"></div>
+    <button class="top-profile" id="topProfile" title="Profile and chat options"></button><div id="topProfileDropdown" class="notification-dropdown profile-quick-dropdown hidden"><div class="notification-dropdown-head"><div><b>👤 Your space</b><small class="notification-unread-summary">Profile & chat controls</small></div></div><button type="button" class="profile-quick-item" onclick="openProfileEditMenu()">✏️ Edit profile</button></div>
+  </div>
+</header>
+<aside class="sidebar" id="sidebar">
+  <div class="logo"><div class="rail-logo">MC</div><div class="rail-brand"><b>Maleficent</b><span>Chat</span></div></div>
+  <button class="nav active" data-view="rooms">🏠 <span>Rooms</span></button>
+  <details class="nav-group" open><summary>✦ <span>Community</span><i>⌄</i></summary>
+    <button class="nav" data-view="news">📰 <span>News</span></button>
+    <button class="nav" data-view="brandNews">✦ <span>Brand News</span></button>
+    <button class="nav" data-view="wall">🌘 <span>Shadow Feed</span></button>
+    <button class="nav" data-view="suggestions">💡 <span>Suggestions</span></button>
+  </details>
+  <details class="nav-group"><summary>✧ <span>Explore</span><i>⌄</i></summary>
+    <button class="nav" data-view="entertainment">🎬 <span>Entertainment</span></button>
+    <button class="nav" data-view="games">🎮 <span>Games</span></button>
+    <button class="nav" data-view="shop">🛍️ <span>Premium / VIP</span></button>
+    <button class="nav" data-view="rules">📜 <span>Rules</span></button>
+    <button class="nav" data-view="leaderboard">🏆 <span>Leaderboards</span></button>
+    <button class="nav" data-view="guide">📘 <span>Guide</span></button>
+  </details>
+  <details class="nav-group"><summary>⌕ <span>My space</span><i>⌄</i></summary>
+    <button class="nav" data-view="wallet">🏦 <span>MC Wallet</span></button>
+    <button class="nav" data-view="saved">🔖 <span>Saved Messages</span></button>
+    <button class="nav" data-view="search">🔎 <span>Advanced Search</span></button>
+    <button class="nav" data-view="profile">👤 <span>My Profile</span></button>
+    <button class="nav" data-view="settings">⚙️ <span>Settings</span></button>
+  </details>
+  <details class="nav-group"><summary>♜ <span>Staff tools</span><i>⌄</i></summary>
+    <button class="nav" data-view="staffApplications">📝 <span>Staff Application</span></button>
+    <button class="nav staff-only hidden" data-view="management" id="managementSpaceNav">🛡️ <span id="managementSpaceNavLabel">Management Space</span><i id="reportDot"></i></button>
+  </details>
+  <div class="side-spacer"></div>
+  <button class="nav" id="notifications">🔔 <span>Notifications</span><i id="notifDot"></i></button>
+  <button class="nav" id="logout">🚪 <span>Logout</span></button>
+  <div class="me-mini" id="meMini"></div>
+</aside>
+
+<main class="main">
+  <div id="viewRooms" class="view">
+    <div class="topbar">
+      <div><h2>Age-appropriate Chats & Community</h2><p class="muted">Teen Chat and Adult Chat, based on your account age.</p></div>
+      <div class="top-actions"><input id="roomSearch" placeholder="Search rooms…"><button class="mini hidden" id="hiddenRoomsToggle" type="button" onclick="toggleHiddenRoomsView()" aria-pressed="false">🔒 Hidden rooms</button><label class="room-code-search-wrap"><span>🔐</span><input id="roomCodeSearch" inputmode="numeric" autocomplete="off" maxlength="11" placeholder="Room code · 12345 67890" aria-label="Enter secret room code"><small id="roomCodeFeedback">Enter the 10-digit room code</small></label><button class="primary age-chat-open-button" id="refreshRoomsBtn" type="button" title="Join" aria-label="Join" onclick="goToMainRoomFromRoomRefresh()">Join</button><button class="primary hidden room-create-button" id="newRoom">＋ Room</button></div>
+    </div>
+    <div id="rooms" class="room-grid"></div>
+    <div id="chatWrap" class="chat-wrap hidden">
+<section class="chat-card">
+        <div class="chat-head">
+          <div class="chat-title-wrap">
+            <button class="icon-btn room-switch" id="backRooms" title="Switch room">☷</button>
+            <div><b id="roomName">Chat</b><small id="roomDesc"></small></div>
+          </div>
+          <div class="chat-head-actions"><span id="onlineCount"></span><button class="icon-btn mobile-people-toggle" id="openOnlinePanel" type="button" title="Show people">♟</button><button class="icon-btn" id="siteHardRefresh" type="button" title="Refresh room messages" aria-label="Refresh room messages">⟳</button><button class="icon-btn" id="roomMenu" title="Room menu">⋯</button></div>
+        </div>
+        <nav id="roomQuickNav" class="room-quick-nav" aria-label="Switch chat room"></nav>
+        <div id="announcement" class="announcement hidden"></div>
+        <div id="messages" class="messages"></div>
+        <div id="replyBar" class="replybar hidden"></div>
+        <div id="typing" class="typing"></div>
+        <form id="composer" class="composer" onsubmit="return false;">
+          <button type="button" id="chatToolsToggle" class="chat-tools-toggle" aria-label="More chat tools">☷</button>
+          <div id="chatToolsDrawer" class="chat-tools-drawer"><button type="button" id="attach" title="Attach image, audio or file">📎 Attach</button><button type="button" id="chatGifBtn" title="Search and send a GIF">🎞 GIF</button><button type="button" id="doodleBtn" title="Draw and send a doodle">🖌️ Doodle</button><button type="button" class="icon-btn" id="youtubeComposerBtn" title="Search and share a YouTube video">▶️ YouTube</button><button type="button" class="icon-btn" id="reelComposerBtn" title="Share a Shadow Reel to the current room">🎬 Reels</button></div>
+          <input id="message" maxlength="4000" placeholder="Write a message… Use @username to mention">
+          <span id="fileName" class="composer-file-name" aria-live="polite"></span>
+          <button class="send" type="submit">Send</button>
+          <input id="file" type="file" accept="image/*,audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac,.opus" hidden>
+        </form>
+      </section>
+      <aside class="online-panel" id="onlinePanel">
+          <div class="panel-head mobile-users-head"><b>People</b><button class="panel-more" id="closeOnlinePanel" type="button">×</button></div>
+          <div class="online-tabs" id="onlineTabs">
+            <button type="button" class="active" data-online-tab="online" title="Online users">♟</button>
+            <button type="button" data-online-tab="offline" title="Offline users">◌</button>
+            <button type="button" data-online-tab="all" title="All users">♙</button>
+            <button type="button" data-online-tab="staff" title="Site staff">🛡️</button>
+            <button type="button" data-online-tab="roomstaff" title="Room staff">🏠</button>
+            <button type="button" data-online-tab="recent" title="Recently active">🕘</button>
+            <button type="button" data-online-tab="friends" title="Friends">💜</button>
+          </div>
+          <div class="panel-head"><b id="onlinePanelTitle">Online <span class="online-badge" id="roomOnlineBadge"></span></b><button class="panel-more" type="button" onclick="openOnlinePanelMenu()">⋯</button></div>
+          <div id="onlineUsers"></div>
+        </aside>
+    </div>
+  </div>
+
+    <div id="viewEntertainment" class="view hidden"><div class="topbar"><div><h2>🎬 Entertainment</h2><p class="muted">Two public rooms. Everyone can join — no age or rank restrictions.</p></div></div><div id="entertainmentRoot" class="entertainment-root"><div class="et-empty">Loading entertainment rooms…</div></div></div>
+    <div id="viewGames" class="view hidden"><div class="topbar"><div><h2>🎮 Maleficent Arcade</h2><p class="muted">Pick a mini-game and chase a new high score.</p></div></div><div id="gamesRoot" class="games-root"></div></div>
+  <div id="viewNews" class="view hidden"><div class="topbar"><div><h2>📰 News</h2><p class="muted">Community announcements.</p></div><button class="primary admin-only hidden" id="publishNews">Publish</button></div><div id="news" class="stack"></div></div>
+  <div id="viewBrandNews" class="view hidden">
+    <section class="brand-news-masthead">
+      <div class="brand-news-orbit" aria-hidden="true">✦</div>
+      <div class="brand-news-kicker">THE OFFICIAL MALEFICENT CHAT JOURNAL</div>
+      <h1>Brand <span>News</span></h1>
+      <p>Official product updates, upcoming experiences and important announcements from the Maleficent Chat team.</p>
+      <div class="brand-news-masthead-foot"><span>✧ DIRECT FROM THE TEAM</span><span>•</span><span>COMMUNITY FIRST</span></div>
+    </section>
+    <div class="brand-news-toolbar"><div><b>Latest from Maleficent Chat</b><small>Official updates, in one place.</small></div><button class="primary hidden" id="publishBrandNews" type="button">＋ Create update</button></div>
+    <div id="brandNewsFeed" class="brand-news-feed" aria-live="polite"><div class="brand-news-empty">Loading official updates…</div></div>
+  </div>
+  <div id="viewLeaderboard" class="view hidden"><div class="topbar"><h2>🏆 XP, Gold & Diamonds Leaderboards</h2></div><div id="leaderboard" class="grid2"></div></div>
+  <div id="viewSaved" class="view hidden"><div class="topbar"><h2>🔖 Saved / Bookmarked Messages</h2></div><div id="saved" class="stack"></div></div>
+  <div id="viewSearch" class="view hidden"><div class="topbar"><div><h2>🔎 Advanced Message Search</h2><p class="muted">Search text, room or author.</p></div></div><form id="searchForm" class="searchbar"><input id="sq" placeholder="Keyword"><input id="sa" placeholder="Author username"><select id="sr"><option value="">All rooms</option></select><button class="primary">Search</button></form><div id="searchResults" class="stack"></div></div>
+  <div id="viewProfile" class="view hidden"><div id="profile">
+    <!-- Fallback mirrors the real Account and More profile tabs if profile rendering fails. -->
+    <div class="my-profile-wrap"><div class="profile-settings-card">
+      <div class="profile-settings-head"><h2>My Profile</h2><p>Account options</p><div class="profile-media-actions"><button class="mini profile-media-action" type="button" onclick="uploadAvatar()" title="Add or change profile picture" aria-label="Add or change profile picture">📷 Profile picture</button><button class="mini profile-media-action" type="button" onclick="uploadBanner()" title="Add or change profile banner" aria-label="Add or change profile banner">🖼️ Profile banner</button></div></div>
+      <div class="settings-tabs"><button class="settings-tab active" id="fallbackAccountTab" type="button" onclick="document.getElementById('fallbackAccountOptions').hidden=false;document.getElementById('fallbackMoreOptions').hidden=true;this.classList.add('active');document.getElementById('fallbackMoreTab').classList.remove('active')">Account</button><button class="settings-tab" id="fallbackMoreTab" type="button" onclick="document.getElementById('fallbackAccountOptions').hidden=true;document.getElementById('fallbackMoreOptions').hidden=false;this.classList.add('active');document.getElementById('fallbackAccountTab').classList.remove('active')">More</button></div>
+      <div class="settings-list" id="fallbackAccountOptions">
+        <button class="settings-row" type="button" onclick="editProfileInfo()"><span>🪪</span><b>Edit info</b><small>Display name, pronouns and profile details</small><strong>›</strong></button>
+        <button class="settings-row" type="button" onclick="editRelationship()"><span>♥</span><b>Edit relationship</b><small>Relationship status</small><strong>›</strong></button>
+        <button class="settings-row" type="button" onclick="editUsername()"><span>✎</span><b>Edit username</b><small>Change your username</small><strong>›</strong></button>
+        <button class="settings-row" type="button" onclick="editAboutMe()"><span>?</span><b>Edit about me</b><small>Profile bio</small><strong>›</strong></button>
+        <button class="settings-row" type="button" onclick="editMood()"><span>☻</span><b>Edit mood</b><small>Current mood</small><strong>›</strong></button>
+        <button class="settings-row" type="button" onclick="editEmail()"><span>✉</span><b>Edit email</b><small>Email settings</small><strong>›</strong></button>
+        <button class="settings-row" type="button" onclick="showBlockedUsers()"><span>🚫</span><b>Blocked users</b><small>View and unblock people</small><strong>›</strong></button>
+        <button class="settings-row" type="button" onclick="changePasswordModal()"><span>🔑</span><b>Change password</b><small>Update your login password</small><strong>›</strong></button>
+        <button class="settings-row" data-daily-reward type="button" onclick="claimDailyReward()"><span>💎</span><b>Daily Diamond Reward</b><small>Claim your daily Diamonds, Gold and XP</small><strong>›</strong></button>
+      </div>
+      <div class="settings-list" id="fallbackMoreOptions" hidden>
+        <button class="settings-row" type="button" onclick="privacyModal()"><span>🔒</span><b>Privacy Control</b><small>Choose which profile details other members can see</small><strong>›</strong></button>
+        
+        <button class="settings-row" type="button" onclick="usernameHistory()"><span>📜</span><b>Username history</b><small>View recorded username changes</small><strong>›</strong></button>
+        <button class="settings-row danger-row" type="button" onclick="deleteAccount()"><span>⊘</span><b>Delete account</b><small>This action is permanent</small><strong>›</strong></button>
+      </div>
+    </div></div>
+  </div></div>
+  <div id="viewSettings" class="view hidden"><div class="topbar"><div><h2>⚙️ Account Settings</h2><p class="muted">Security, status, appearance and notification controls.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="mini" id="enableSiteNotifications" type="button">🔔 Enable site notifications</button><button class="mini" id="testSiteNotifications" type="button">🧪 Send test</button></div></div><div id="settings" class="settings-grid"></div></div>
+  <div id="viewWallet" class="view hidden"><div class="topbar"><div><h2>🏦 MC Wallet</h2><p class="muted">Diamonds, Gold, rewards and secure transfers.</p></div></div><div id="walletRoot"></div></div>
+  <div id="viewStaffApplications" class="view hidden"><div class="topbar"><div><h2>📝 Staff Application</h2><p class="muted">Apply to join the Maleficent Chat moderation team.</p></div></div><div id="staffApplicationFormRoot"></div></div>
+  <div id="viewManagement" class="view hidden">
+    <div class="topbar"><div><h2 id="managementSpaceTitle">🛡️ Management Space</h2><p class="muted" id="managementSpaceDescription">Tools available to your rank and individual permissions.</p></div></div>
+    <div id="staff"></div>
+    <div id="owner" class="hidden"></div>
+  </div>
+  <div id="viewWall" class="view hidden"><div class="topbar"><div><h2>🌘 Shadow Feed</h2><p class="muted">Community posts, saved posts, and updates from accepted friends.</p></div><div class="toolbar"><button class="mini" id="wallSavedToggle" type="button" aria-pressed="false">🔖 Saved posts</button><button class="mini" id="wallFriendsToggle" type="button" aria-pressed="false">💜 Friends activity</button><button class="mini" id="wallReelsToggle" type="button" aria-pressed="false">🎬 Reels</button><button class="mini" id="newWallReel" type="button">🎬 ＋ Reel</button><button class="primary" id="newWallPost" type="button">＋ Post</button></div></div><div id="wallFeed" class="wall-feed"></div></div>
+  <div id="viewSuggestions" class="view hidden"><div class="topbar"><div><h2>💡 Suggestions</h2><p class="muted">Report a feature that is not working, suggest an improvement, or request an additional feature.</p></div></div><section class="card suggestions-submit-card"><form id="suggestionForm" class="stack"><label for="suggestionCategory">Reason for suggestion</label><select id="suggestionCategory" required><option value="Feature not working">Feature not working</option><option value="Improvement suggestion">Improvement suggestion</option><option value="Additional feature">Additional feature</option></select><label for="suggestionDescription">Describe your suggestion</label><textarea id="suggestionDescription" rows="5" maxlength="4000" required placeholder="Describe the issue or feature in detail…"></textarea><div class="toolbar"><span class="muted">Only the Developer can view submitted suggestions.</span><button class="primary" type="submit">Submit suggestion</button></div></form></section><div id="suggestionsList" class="stack"></div></div>
+  <div id="viewShop" class="view hidden"><div class="topbar"><div><h2>🛍️ Premium / VIP</h2><p class="muted">Premium requests and gold-funded temporary VIP.</p></div></div><div id="rankShop" class="shop-grid"></div></div>
+  <div id="viewRules" class="view hidden"><div class="topbar"><div><h2>📜 Rules</h2><p class="muted">Community rules for Maleficent Chat.</p></div></div><div id="communityRules" class="community-rules-list"><p class="muted">Loading rules…</p></div></div>
+  <div id="viewGuide" class="view hidden"><div class="topbar"><div><h2>📘 Rank Guide</h2><p class="muted">Instructions and information for your current rank.</p></div></div><div id="guideContent" class="stack"></div></div>
+
+</main>
+</div>
+
+<div id="modal" class="modal hidden"><div class="modal-card"><button class="modal-close" onclick="closeModal()">×</button><div id="modalBody"></div></div></div>
+<div id="toast"></div><div id="actionLock" class="action-lock hidden"></div>
+<script>
+// Keep the Login/Register tabs responsive even if the main application bundle is stale in cache.
+(function(){
+  const login=document.getElementById("tabLogin"), register=document.getElementById("tabRegister");
+  if(!login||!register)return;
+  function showLoginMode(isLogin){
+    login.classList.toggle("active",isLogin); register.classList.toggle("active",!isLogin);
+    document.querySelectorAll("#auth .register-only").forEach(function(el){el.classList.toggle("hidden",isLogin);});
+    ["displayName","registerEmail","dateOfBirth","gender","confirmPassword"].forEach(function(id){const el=document.getElementById(id);if(el)el.required=!isLogin;});
+    const pass=document.getElementById("password"); if(pass)pass.autocomplete=isLogin?"current-password":"new-password";
+    const submit=document.getElementById("authSubmit"); if(submit)submit.textContent=isLogin?"Login":"Register";
+    const msg=document.getElementById("authMsg"); if(msg)msg.textContent="";
+  }
+  login.addEventListener("click",function(){showLoginMode(true);},true);
+  register.addEventListener("click",function(){showLoginMode(false);},true);
+
+  // Do not authenticate and reload while the main bundle is still starting.
+  // That old recovery path created an endless login loop whenever app.js was
+  // delayed or failed before registering its real submit handler.
+  const form=document.getElementById("authForm");
+  if(form&&!form.dataset.safeSubmitGuard){
+    form.dataset.safeSubmitGuard="true";
+    form.addEventListener("submit",function(event){
+      if(window.__MC_APP_READY__) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const msg=document.getElementById("authMsg");
+      const button=document.getElementById("authSubmit");
+      if(msg)msg.textContent="Maleficent Chat is still loading. Please wait a moment, then tap Login again.";
+      if(button){
+        button.disabled=true;
+        button.textContent="Loading…";
+        setTimeout(function(){
+          if(window.__MC_APP_READY__){
+            button.disabled=false;
+            button.textContent="Login";
+            if(msg)msg.textContent="";
+          }
+        },1200);
+      }
+    },true);
+  }
+})();
+</script>
+<script>
+  // Surface app.js startup failures on the login screen so mobile users do not
+  // get trapped in the standalone login/reload fallback without an explanation.
+  (function(){
+    function showStartupError(message){
+      if(window.__MC_APP_READY__)return;
+      var box=document.getElementById("authMsg");
+      if(box)box.textContent="Maleficent Chat could not start: "+String(message||"Unknown JavaScript error").slice(0,220)+" — please send this message to support.";
+      console.error("[Maleficent Chat startup]",message);
+    }
+    window.addEventListener("error",function(event){
+      var file=String(event.filename||"");
+      if(!file||/\/app\.js(?:\?|$)/.test(file)) {
+        showStartupError((event.message||"Script error")+(event.lineno?" (line "+event.lineno+")":""));
+      }
+    });
+    window.addEventListener("unhandledrejection",function(event){
+      if(!window.__MC_APP_READY__)showStartupError(event.reason&&event.reason.message||event.reason||"Unhandled startup rejection");
+    });
+    setTimeout(function(){
+      if(!window.__MC_APP_READY__)showStartupError("app.js did not finish initializing. Please send this message and your browser/device details.");
+    },3500);
+  })();
+</script>
+<script>
+// Independent fallback for the room menu. It is used only if app.js failed
+// before registering its permission-aware handler.
+(function(){
+  document.addEventListener("click",function(event){
+    var trigger=event.target&&event.target.closest?event.target.closest("#roomMenu"):null;
+    if(!trigger||window.__MC_ROOM_MENU_HANDLER_READY__)return;
+    event.preventDefault();
+    event.stopPropagation();
+    if(event.stopImmediatePropagation)event.stopImmediatePropagation();
+    try{
+      var overlay=document.getElementById("modal");
+      var body=document.getElementById("modalBody");
+      if(!overlay||!body)throw new Error("Menu dialog is unavailable.");
+      var actions=[
+        ["edit","✏️ Edit room"],
+        ["pin","📌 Pin / unpin room"],
+        ["announcement","📢 Room announcement"],
+        ["pinned","📌 Pinned messages"],
+        ["youtube","▶️ YouTube"],
+        ["invite","🔐 Room code"],
+        ["theme","🎨 Site Theme"]
+      ];
+      body.innerHTML='<div class="room-menu-panel"><h2>Room options</h2><div class="room-menu-actions">'+
+        actions.map(function(item){return '<button type="button" class="room-menu-action" data-room-menu-fallback="'+item[0]+'">'+item[1]+'</button>';}).join("")+
+        '</div></div>';
+      overlay.classList.remove("hidden");
+      overlay.setAttribute("aria-hidden","false");
+      body.querySelectorAll("[data-room-menu-fallback]").forEach(function(button){
+        button.addEventListener("click",function(){
+          var action=button.getAttribute("data-room-menu-fallback");
+          try{
+            if(action==="edit"&&typeof editRoom==="function")editRoom();
+            else if(action==="pin"&&typeof toggleCurrentRoomPin==="function")toggleCurrentRoomPin();
+            else if(action==="announcement"&&typeof postRoomAnnouncement==="function")postRoomAnnouncement();
+            else if(action==="pinned"&&typeof showPinnedMessages==="function")showPinnedMessages();
+            else if(action==="youtube"&&typeof openYoutubePanel==="function")openYoutubePanel();
+            else if(action==="invite"&&typeof showInvite==="function")showInvite();
+            else if(action==="theme"&&typeof openRoomThemePicker==="function")openRoomThemePicker();
+            else throw new Error("This option is unavailable while the main app script is not running.");
+          }catch(error){console.error("Room menu fallback action failed:",error);alert(error.message||"Could not open this option.");}
+        });
+      });
+    }catch(error){console.error("Room menu fallback failed:",error);alert("Room options could not open: "+(error.message||"unknown error"));}
+  },true);
+})();
+</script>
+
+<script>
+/* Independent sidebar Notifications handler: works even if app.js modal/navigation
+   handlers fail to initialize. Keep this before app.js so it owns the tap. */
+(function(){
+  var trigger=document.getElementById("notifications");
+  if(!trigger||trigger.dataset.notificationFallbackBound)return;
+  trigger.dataset.notificationFallbackBound="true";
+  function escapeHtml(value){return String(value==null?"":value).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+  function openCenter(){
+    var old=document.getElementById("mcStandaloneNotificationCenter");
+    if(old)old.remove();
+    var overlay=document.createElement("div");
+    overlay.id="mcStandaloneNotificationCenter";
+    overlay.style.cssText="position:fixed;inset:0;z-index:2147483000;background:rgba(4,3,10,.82);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box;";
+    overlay.innerHTML='<section role="dialog" aria-modal="true" aria-label="Notifications" style="width:min(680px,100%);max-height:88dvh;overflow:auto;background:#100d1b;color:#f8f4ff;border:1px solid #7545a8;border-radius:18px;padding:18px;box-sizing:border-box;box-shadow:0 20px 70px #000b"><header style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><h2 style="margin:0">🔔 Notifications</h2><div style="display:flex;gap:8px;align-items:center"><button type="button" data-nc-clear style="background:#4b244f;color:white;border:1px solid #a66be0;border-radius:9px;padding:8px 11px">Clear all</button><button type="button" data-nc-close aria-label="Close notifications" style="font-size:24px;background:#292039;color:white;border:0;border-radius:10px;padding:4px 12px">×</button></div></header><p data-nc-status style="color:#c9bdd8">Loading notifications…</p><div data-nc-list></div></section>';
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click",function(event){if(event.target===overlay||event.target.closest("[data-nc-close]"))overlay.remove();});
+    overlay.addEventListener("click",function(event){
+      var remove=event.target.closest("[data-nc-remove]");
+      var clear=event.target.closest("[data-nc-clear]");
+      if(!remove&&!clear)return;
+      event.preventDefault();
+      var button=remove||clear;
+      var endpoint=remove?("/api/notifications/"+encodeURIComponent(remove.getAttribute("data-nc-remove"))):"/api/notifications";
+      button.disabled=true;
+      var previous=button.textContent;
+      button.textContent=remove?"Removing…":"Clearing…";
+      fetch(endpoint,{method:"DELETE",credentials:"same-origin",cache:"no-store",headers:headers})
+        .then(async function(response){var data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.error||("Request failed ("+response.status+")"));return data;})
+        .then(function(){
+          if(remove){var card=remove.closest("[data-nc-item]");if(card)card.remove();}
+          else list.innerHTML="";
+          var remaining=list.querySelectorAll("[data-nc-item]").length;
+          status.textContent=remaining+" notification"+(remaining===1?"":"s")+" remaining";
+          if(!remaining)list.innerHTML='<p style="color:#c9bdd8">✨ You’re all caught up. No notifications.</p>';
+          if(clear)status.textContent="All removable notifications cleared. Protected warnings may remain.";
+        })
+        .catch(function(error){button.disabled=false;button.textContent=previous;status.textContent="Could not "+(remove?"remove notification: ":"clear notifications: ")+(error.message||"Unknown error");});
+    });
+    var status=overlay.querySelector("[data-nc-status]"),list=overlay.querySelector("[data-nc-list]");
+    var headers={};
+    try{var token=localStorage.getItem("mc_token");if(token)headers["x-auth-token"]=token;}catch(e){}
+    fetch("/api/notifications",{method:"GET",credentials:"same-origin",cache:"no-store",headers:headers})
+      .then(async function(response){var data=await response.json().catch(function(){return {};});if(!response.ok)throw new Error(data.error||("Request failed ("+response.status+")"));return data;})
+      .then(function(data){
+        var rows=Array.isArray(data.notifications)?data.notifications:[];
+        status.textContent=rows.filter(function(n){return !n.read;}).length+" unread";
+        if(!rows.length){list.innerHTML='<p style="color:#c9bdd8">✨ You’re all caught up. No notifications.</p>';return;}
+        list.innerHTML=rows.map(function(n){return '<article data-nc-item="'+escapeHtml(n.id)+'" style="padding:12px;margin:10px 0;border:1px solid '+(n.read?'#40364e':'#a66be0')+';border-radius:12px;background:'+(n.read?'#171321':'#241832')+'"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><b>'+escapeHtml(n.title||n.type||"Notification")+'</b>'+(n.type==="warning"?'<small style="color:#e8c58a">Staff acknowledgement required</small>':'<button type="button" data-nc-remove="'+escapeHtml(n.id)+'" aria-label="Remove notification" title="Remove notification" style="flex:none;background:#392033;color:#ffd9e8;border:1px solid #8b496d;border-radius:8px;padding:6px 9px">✕ Remove</button>')+'</div><p style="margin:6px 0">'+escapeHtml(n.text||n.message||"")+'</p><small style="color:#bbaecb">'+escapeHtml(n.time||"")+(n.read?" · Read":" · Unread")+'</small></article>';}).join("");
+      })
+      .catch(function(error){status.textContent="Could not load notifications: "+(error.message||"Unknown error");});
+  }
+  trigger.addEventListener("click",function(event){
+    event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
+    openCenter();
+  },true);
+})();
+</script>
+<script src="/app.js?v=socket-live-20261107-3"></script>
+<script src="/social-features.js?v=1"></script>
+<script src="/entertainment.js?v=20261106-7"></script>
+</body>
+</html>
