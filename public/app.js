@@ -96,12 +96,12 @@ const rankOrder = {
   VIP: 1,
   SVIP: 2,
   PREMIUM: 3,
-  ROYAL: 3,
-  MOD: 4,
-  ADMIN: 5,
-  SUPER_ADMIN: 6,
-  COMMISSOR: 7,
-  INSTRUCTOR: 8,
+  ROYAL: 4,
+  MOD: 5,
+  ADMIN: 6,
+  SUPER_ADMIN: 7,
+  COMMISSOR: 8,
+  INSTRUCTOR: 9,
   COOWNER: 10,
   ELITE: 11,
   OWNER: 12,
@@ -3524,7 +3524,7 @@ function renderUserProfileModal(user,data={}){
         const gifts=giftData.gifts||[],catalog=catalogData.gifts||[];
         box.innerHTML='<div class="about-card"><h3>🎁 Gifts</h3><p class="muted">Gifts received by @'+esc(user.username)+'.</p>'+
           (isSelf?'<label class="gift-visibility-toggle"><input type="checkbox" id="giftVisibilityToggle" '+(user.privacy?.showGifts===false?'':'checked')+'> Show my gifts on my public profile</label>':'')+
-          (!isSelf?'<button class="primary gift-open-send" id="sendGiftFromProfile">🎁 Send a gift · Use gold</button>':'')+
+          (!isSelf&&['SVIP','PREMIUM','ROYAL','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','INSTRUCTOR','COOWNER','ELITE','OWNER','DEVELOPER'].includes(String(state.user?.rank||'').toUpperCase())?'<button class="primary gift-open-send" id="sendGiftFromProfile">🎁 Send a gift · Use gold</button>':'')+
           '<div class="gift-profile-list">'+(gifts.length?gifts.map(g=>'<article class="gift-profile-item"><span class="gift-profile-icon">'+esc(g.gift_icon||'🎁')+'</span><div class="gift-profile-copy"><b>'+esc(g.gift_name)+'</b><small>From @'+esc(g.sender_username||'deleted')+' · 🪙 '+Number(g.goldCost||0).toLocaleString()+'</small>'+(g.message?'<p>'+esc(g.message)+'</p>':'')+'</div></article>').join(''):'<p class="muted">No gifts yet. Send the first one! 💜</p>')+'</div></div>';
         $('giftVisibilityToggle')?.addEventListener('change',async e=>{try{await api('/api/users/me/gift-visibility',{method:'PATCH',body:JSON.stringify({showGifts:e.target.checked})});user.privacy={...(user.privacy||{}),showGifts:e.target.checked};if(state.user&&String(state.user.id)===String(user.id))state.user.privacy={...(state.user.privacy||{}),showGifts:e.target.checked};toast(e.target.checked?'Gifts are visible on your profile.':'Gifts are now hidden from your profile.');}catch(err){e.target.checked=!e.target.checked;toast(err.message)}});
         $('sendGiftFromProfile')?.addEventListener('click',()=>openGiftPicker(user,catalog));
