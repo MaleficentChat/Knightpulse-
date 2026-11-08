@@ -1,5 +1,5 @@
 'use strict';
-const express=require('express'),http=require('http'),crypto=require('crypto'),bcrypt=require('bcryptjs');
+const express=require('express'),http=require('http'),crypto=require('crypto'),bcrypt=require('bcryptjs'),path=require('path');
 const {Pool}=require('pg');
 const PORT=Number(process.env.PORT||10000),DB=String(process.env.DATABASE_URL||''),SECRET=String(process.env.CLOUDCHAT_SESSION_SECRET||'');
 if(!DB)throw new Error('DATABASE_URL is required.');
@@ -11,7 +11,7 @@ const {Server}=require('socket.io');
 const io=new Server(server,{cors:{origin:origins.length?origins:false,credentials:true},transports:['websocket','polling']});
 const RANKS=['Member','VIP','Super VIP','Classic','Premium','Moderator','Admin','Super Admin','Commissor','Chief Commissor','Coowner','Elite','Owner'];
 const originSet=new Set(origins),onlineSockets=new Map(),attempts=new Map(),lastSent=new Map();
-app.disable('x-powered-by');app.set('trust proxy',1);app.use(express.json({limit:'32kb'}));
+app.disable('x-powered-by');app.set('trust proxy',1);app.use(express.json({limit:'32kb'}));app.use(express.static(__dirname,{index:'index.html',fallthrough:true,maxAge:process.env.NODE_ENV==='production'?'1h':0}));
 function clean(v,n=2000){return String(v||'').replace(/\u0000/g,'').trim().slice(0,n)}
 function safeUser(u){return{id:Number(u.id),username:u.username,rank:u.rank,avatar:u.avatar||'',online:!!u.online,createdAt:u.created_at}}
 function tokenFor(id){const p=Buffer.from(JSON.stringify({sub:String(id),exp:Date.now()+1209600000})).toString('base64url');return p+'.'+crypto.createHmac('sha256',SECRET).update(p).digest('base64url')}
