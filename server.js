@@ -237,8 +237,8 @@ const rankIcons={
 const rankOrder=Object.fromEntries(ranks.map((r,i)=>[r,i]));
 // Legacy role aliases keep existing permission checks compatible while old
 // account records are migrated to the Knight Pulse rank names.
-Object.assign(rankOrder,{ROYAL:rankOrder.PREMIUM,MOD:rankOrder.MODERATOR,INSTRUCTOR:rankOrder.CHIEF_COMMISSOR,DEVELOPER:rankOrder.OWNER});
-function normalizedRank(value){const key=String(value||"").toUpperCase();return ({ROYAL:"PREMIUM",MOD:"MODERATOR",INSTRUCTOR:"CHIEF_COMMISSOR",DEVELOPER:"OWNER"})[key]||key;}
+Object.assign(rankOrder,{ROYAL:rankOrder.PREMIUM});
+function normalizedRank(value){const key=String(value||"").toUpperCase();return key==="ROYAL"?"PREMIUM":key;}
 function hasRank(u,r){return !!u&&(rankOrder[normalizedRank(u.rank)]??-1)>=(rankOrder[normalizedRank(r)]??999);}
 
 // Staff may inspect or manage staff-only records only for accounts strictly below their rank.
