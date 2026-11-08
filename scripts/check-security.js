@@ -644,7 +644,7 @@ assert.match(staffUi,/profile-actions-row[\s\S]*?kp-profile-tabs-label/,
   "member profiles must use the refreshed identity and navigation layout");
 assert.match(staffCss,/\.kp-staff-groups[\s\S]*\.kp-audit-filters[\s\S]*\.kp-profile-tabs-label/,
   "profile, staff workspace and audit category layouts must be styled");
-assert.ok(indexHtml.includes("knightpulse-complete.css?v=profile-staff-layout-20261108-3"),
+assert.ok(indexHtml.includes("knightpulse-complete.css?v=public-profile-premium-20261108-1"),
   "the HTML must request the refreshed profile, staff and audit styles");
 
 assert.match(staffUi,/kp-profile-quick-stats[\s\S]*?<small>Experience<\/small>[\s\S]*?<small>Likes<\/small>/,
@@ -657,3 +657,13 @@ assert.match(staffCss,/\.kp-staff-dropdown-section[\s\S]*?\.kp-staff-regular-sec
   "staff dropdown options must be positioned above non-dropdown tools");
 
 
+
+
+assert.match(staffUi,/profile-modal kp-public-profile[\\s\\S]*?profile-banner/,
+  "public profiles must use the premium shared profile presentation");
+assert.match(staffCss,/\\.profile-modal\\.kp-public-profile[\\s\\S]*?profile-settings-head|\\.profile-modal\\.kp-public-profile[\\s\\S]*?profile-banner/,
+  "public profiles must use the premium account-editor visual system");
+assert.match(staffCss,/\\.profile-modal\\.kp-public-profile \\.profile-tabs[\\s\\S]*?profile-tab\\.active/,
+  "public profile navigation must use the premium segmented account tabs");
+assert.match(staffCss,/\\.profile-modal\\.kp-public-profile \\.profile-photo-grid[\\s\\S]*?grid-template-columns/,
+  "public profile photo galleries must retain a responsive premium grid");
