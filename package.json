@@ -1,8 +1,8 @@
 {
-  "name": "cloud-chat",
+  "name": "knight-pulse",
   "version": "3.6.9",
   "private": true,
-  "description": "Cloud Chat 3.6.9 - request error handling and room repair",
+  "description": "Knight Pulse 3.6.9 - request error handling and room repair",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
