@@ -4983,6 +4983,7 @@ app.get("/api/staff/system-center/audit",auth,async(req,res)=>{
 });
 
 /* Staff applications persist in PostgreSQL so submissions survive redeploys. */
+let staffApplicationRanksMigrated=false;
 async function ensureStaffApplicationsTable(){
   await pool.query(`CREATE TABLE IF NOT EXISTS staff_applications(
     id BIGSERIAL PRIMARY KEY,
@@ -4998,7 +4999,10 @@ async function ensureStaffApplicationsTable(){
     reviewed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
-  await pool.query("UPDATE staff_applications SET requested_rank=CASE UPPER(requested_rank) WHEN 'USER' THEN 'MEMBER' WHEN 'MODERATOR' THEN 'MOD' WHEN 'SUPERADMIN' THEN 'SUPER_ADMIN' WHEN 'CO-OWNER' THEN 'COOWNER' WHEN 'CO_OWNER' THEN 'COOWNER' WHEN 'ROYAL' THEN 'PREMIUM' WHEN 'INSTRUCTOR' THEN 'CHIEF_COMMISSOR' WHEN 'DEVELOPER' THEN 'OWNER' ELSE UPPER(requested_rank) END WHERE UPPER(requested_rank) IN ('USER','MEMBER','VIP','SVIP','PREMIUM','ROYAL','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','INSTRUCTOR','CHIEF_COMMISSOR','COOWNER','CO-OWNER','CO_OWNER','ELITE','OWNER','DEVELOPER')");
+  if(!staffApplicationRanksMigrated){
+    await pool.query("UPDATE staff_applications SET requested_rank=CASE UPPER(requested_rank) WHEN 'USER' THEN 'MEMBER' WHEN 'MODERATOR' THEN 'MOD' WHEN 'SUPERADMIN' THEN 'SUPER_ADMIN' WHEN 'CO-OWNER' THEN 'COOWNER' WHEN 'CO_OWNER' THEN 'COOWNER' WHEN 'ROYAL' THEN 'PREMIUM' WHEN 'INSTRUCTOR' THEN 'CHIEF_COMMISSOR' WHEN 'DEVELOPER' THEN 'OWNER' ELSE UPPER(requested_rank) END WHERE UPPER(requested_rank) IN ('USER','MEMBER','VIP','SVIP','PREMIUM','ROYAL','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','INSTRUCTOR','CHIEF_COMMISSOR','COOWNER','CO-OWNER','CO_OWNER','ELITE','OWNER','DEVELOPER')");
+    staffApplicationRanksMigrated=true;
+  }
 }
 app.get('/api/staff-applications/mine',auth,async(req,res)=>{
   try{
