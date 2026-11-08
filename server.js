@@ -409,7 +409,7 @@ view_online_users:RANK_TIERS.all,manage_push_notifications:RANK_TIERS.all,modera
 };
 
 const REQUESTED_COMMAND_RANKS={clear:RANK_TIERS.admin,abrakadabra:RANK_TIERS.all,aura:RANK_TIERS.all,roast:RANK_TIERS.all,anonymous:RANK_TIERS.superAdmin,bank:RANK_TIERS.all,convert:RANK_TIERS.all,ship:RANK_TIERS.vip,welcome:RANK_TIERS.vip,steal:RANK_TIERS.premium,bread:RANK_TIERS.premium,rose:RANK_TIERS.premium,brain:RANK_TIERS.premium};
-const REQUESTED_MODE_RANKS={invisible:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],dead:["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],ghost:["OWNER","OWNER"]};
+const REQUESTED_MODE_RANKS={invisible:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],dead:["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],ghost:["OWNER"]};
 function modeRankAllowed(mode,rank){
   const normalized=String(rank||"").toUpperCase();
   if(normalized==="OWNER")return true;
@@ -1173,7 +1173,7 @@ app.post("/api/staff/under-construction",express.json(),auth,ownerOnly,async(req
 });
 
 function staff(r){
-  return ["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER","OWNER"].includes(String(r).toUpperCase());
+  return ["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(r).toUpperCase());
 }
 
 function ownerOnly(req,res,next){
@@ -2299,7 +2299,7 @@ app.get("/api/rooms",auth,async(req,res)=>{
   const {rows}=await pool.query(`SELECT r.*,u.username AS creator FROM rooms r LEFT JOIN users u ON r.created_by=u.id ORDER BY r.is_default DESC,r.created_at ASC,r.id ASC`);
   if(!rows.length) return res.status(503).json({error:'Rooms are not initialized yet. Please retry in a moment.',rooms:[]});
   const viewer=current(req);
-  const canSeeRoomPins=["COOWNER","CO-OWNER","CO_OWNER","OWNER","OWNER"].includes(String(viewer.rank||"").toUpperCase().replace(/\s+/g,""));
+  const canSeeRoomPins=["COOWNER","CO-OWNER","CO_OWNER","ELITE","OWNER"].includes(String(viewer.rank||"").toUpperCase().replace(/\s+/g,""));
    const allRooms=rows.map(r=>{const room={id:String(r.id),name:r.name,icon:r.icon||"💬",description:r.description||"",category:r.category||"Community",public:r.is_public!==false,passwordHash:r.password_hash||null,rankRequired:String(r.rank_required||"MEMBER").toUpperCase(),limit:Number(r.room_limit||100),slowMode:Number(r.slow_mode||0),announcement:r.announcement||"",ownerId:r.created_by?String(r.created_by):null,banner:r.banner||"",inviteToken:r.invite_token||"",creator:r.creator||null,isDefault:!!r.is_default,minAge:Number(r.min_age??0),maxAge:Number(r.max_age??120),friendsOnly:!!(db.settings?.room_access?.[String(r.id)]?.friendsOnly),roomTheme:String(db.settings?.room_themes?.[String(r.id)]||"obsidian"),locked:!!r.password_hash,roomCode:r.is_public===false?formatRoomCode(r.room_code):null,onlineCount:visibleRoomOnlineCount(r.id),...(canSeeRoomPins?{pinned:!!db.settings?.room_pins?.[String(r.id)]}:{})};return room;});
   db.rooms=allRooms;
   const joinToken=String(req.headers["x-room-join-token"]||"");
@@ -2309,12 +2309,12 @@ app.get("/api/rooms",auth,async(req,res)=>{
     if(!roomIsPrivate(room))return true;
     if(roomOwnerOrGlobal(viewer,room)||roomRole(room.id,viewer.id)!=="USER")return true;
     return verifyRoomJoinToken(joinToken,viewer.id,room);
-  }).map(room=>{const safe={...room,passwordHash:undefined,inviteToken:undefined};if(room.public===false&&String(room.ownerId||"")!==String(viewer.id)&&!["OWNER","OWNER"].includes(String(viewer.rank||"").toUpperCase()))delete safe.roomCode;return safe;});
+  }).map(room=>{const safe={...room,passwordHash:undefined,inviteToken:undefined};if(room.public===false&&String(room.ownerId||"")!==String(viewer.id)&&!["OWNER"].includes(String(viewer.rank||"").toUpperCase()))delete safe.roomCode;return safe;});
   res.json({rooms});
 });
 
 function roomAgeAllowed(user,room){
-  const staff=["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(String(user?.rank||"").toUpperCase());
+  const staff=["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(user?.rank||"").toUpperCase());
   // Staff may enter any room; the age-appropriate shortcut still routes them to Teen Chat.
   if(staff)return true;
   const minAge=Number(room?.minAge??room?.min_age??0),maxAge=Number(room?.maxAge??room?.max_age??120);
@@ -2348,7 +2348,7 @@ async function createRoomHandler(req,res){
   // Keep server authorization aligned with the room-creation UI.
   // Premium/Royal and designated staff ranks may create rooms; explicit feature grants
   // remain available for other accounts configured by the Owner/Developer.
-  const roomCreatorRanks=["PREMIUM","PREMIUM","MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"];
+  const roomCreatorRanks=["PREMIUM","MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
   if(!roomCreatorRanks.includes(String(u.rank||"").toUpperCase()) && !(featureGrantAllowed(u,"create_rooms")||hasFeature(u,"create_room"))) {
     return res.status(403).json({error:`Create room requires ${featureRank("create_room")} or an explicit create-room permission.`});
   }
@@ -2595,7 +2595,7 @@ app.put("/api/rooms/:id",auth,async(req,res)=>{
 app.put("/api/rooms/:id/pin",auth,(req,res)=>{
   const actor=current(req),room=db.rooms.find(item=>String(item.id)===String(req.params.id));
   if(!room)return res.status(404).json({error:"Room not found"});
-  if(!["COOWNER","CO-OWNER","CO_OWNER","OWNER","OWNER"].includes(String(actor.rank||"").toUpperCase().replace(/\s+/g,"")))return res.status(403).json({error:"Only Co-owner, Owner, and Developer can pin rooms."});
+  if(!["COOWNER","CO-OWNER","CO_OWNER","ELITE","OWNER"].includes(String(actor.rank||"").toUpperCase().replace(/\s+/g,"")))return res.status(403).json({error:"Only Co-owner, Owner, and Developer can pin rooms."});
   const pinned=typeof req.body?.pinned==="boolean"?req.body.pinned:!db.settings?.room_pins?.[String(room.id)];
   db.settings ||= {};db.settings.room_pins ||= {};db.settings.room_pins[String(room.id)]=pinned;
   save();log(actor,pinned?"ROOM_PIN":"ROOM_UNPIN",room.name,{roomId:String(room.id)});
@@ -2669,7 +2669,7 @@ app.post(
     if(kicked&&Number(kicked.until)>Date.now())return res.status(403).json({error:"You were removed from this room temporarily. Reason: "+String(kicked.reason||"Room rules").slice(0,240)});
     if(kicked&&Number(kicked.until)<=Date.now())delete roomState.room_kicks[roomKey][uid];
     const isAgeRoom=/^(teen chat|adult chat)$/i.test(String(r.name||"").trim());
-    const isStaffAccount=["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(String(u.rank||"").toUpperCase());
+    const isStaffAccount=["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(u.rank||"").toUpperCase());
     if(!isAgeRoom&&!isStaffAccount&&!hasFeature(u,"join_rooms")){
       return res.status(403).json({error:"Your account does not have permission to join rooms."});
     }
@@ -3928,7 +3928,7 @@ app.post("/api/native/dm/reply",async(req,res)=>{
     const networkDecision=await networkAccessDecision(req,u);
     if(!networkDecision.allowed)return res.status(403).json({error:networkDecision.reason||"Network access is restricted."});
     const construction=db.settings?.under_construction||{};
-    if(construction.enabled===true&&!["OWNER","OWNER"].includes(String(u.rank||"").toUpperCase()))return res.status(503).json({error:"The site is under construction."});
+    if(construction.enabled===true&&!["OWNER"].includes(String(u.rank||"").toUpperCase()))return res.status(503).json({error:"The site is under construction."});
     if(isUserFeatureBlocked(u,"private_messages")||!hasFeature(u,"private_messages"))return res.status(403).json({error:"Private messaging is not available for this account."});
     if(privateMessagesBlocked(u,v))return res.status(403).json({error:"Messaging blocked."});
     const m={id:id(),from:u.id,to:v.id,text:message.slice(0,4000),attachment:null,replyTo:null,time:Date.now(),read:false,delivered:true};
