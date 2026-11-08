@@ -2604,7 +2604,7 @@ app.put("/api/rooms/:id",auth,async(req,res)=>{
 app.put("/api/rooms/:id/pin",auth,(req,res)=>{
   const actor=current(req),room=db.rooms.find(item=>String(item.id)===String(req.params.id));
   if(!room)return res.status(404).json({error:"Room not found"});
-  if(!["COOWNER","CO-OWNER","CO_OWNER","ELITE","OWNER"].includes(String(actor.rank||"").toUpperCase().replace(/\s+/g,"")))return res.status(403).json({error:"Only Co-owner, Elite, or Owner can pin rooms."});
+  if(!["COOWNER","ELITE","OWNER"].includes(String(actor.rank||"").toUpperCase()))return res.status(403).json({error:"Only Co-owner, Elite, or Owner can pin rooms."});
   const pinned=typeof req.body?.pinned==="boolean"?req.body.pinned:!db.settings?.room_pins?.[String(room.id)];
   db.settings ||= {};db.settings.room_pins ||= {};db.settings.room_pins[String(room.id)]=pinned;
   save();log(actor,pinned?"ROOM_PIN":"ROOM_UNPIN",room.name,{roomId:String(room.id)});
@@ -2678,7 +2678,7 @@ app.post(
     if(kicked&&Number(kicked.until)>Date.now())return res.status(403).json({error:"You were removed from this room temporarily. Reason: "+String(kicked.reason||"Room rules").slice(0,240)});
     if(kicked&&Number(kicked.until)<=Date.now())delete roomState.room_kicks[roomKey][uid];
     const isAgeRoom=/^(teen chat|adult chat)$/i.test(String(r.name||"").trim());
-    const isStaffAccount=["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(u.rank||"").toUpperCase());
+    const isStaffAccount=["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(u.rank||"").toUpperCase());
     if(!isAgeRoom&&!isStaffAccount&&!hasFeature(u,"join_rooms")){
       return res.status(403).json({error:"Your account does not have permission to join rooms."});
     }
