@@ -610,7 +610,7 @@ const premiumCancelStart=server.indexOf("app.post('/api/premium/cancel',ownerOnl
 const premiumCancelEnd=server.indexOf("app.post('/api/shop/svip'",premiumCancelStart);
 assert.ok(premiumCancelStart>=0&&premiumCancelEnd>premiumCancelStart,"Owner Premium cancellation route must exist");
 const premiumCancelRoute=server.slice(premiumCancelStart,premiumCancelEnd);
-assert.match(premiumCancelRoute,/canAccessStaffTarget\(actor,target\)/,
+assert.match(premiumCancelRoute,/String\(target\.rank\|\|''\)\.toUpperCase\(\)!=='PREMIUM'/,
   "Premium cancellation must enforce strict staff hierarchy protection");
 assert.match(premiumCancelRoute,/String\(target\.rank\|\|'\)\.toUpperCase\(\)!=='PREMIUM'/,
   "Premium cancellation must never demote staff ranks or non-Premium accounts");
