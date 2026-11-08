@@ -229,3 +229,52 @@ input:focus,textarea:focus,select:focus{border-color:var(--kp-blue)!important;bo
  #onlinePanel .online-tabs{gap:6px;padding-inline:12px!important}
  #onlinePanel .online-user{padding:10px!important}
 }
+
+
+/* Knightpulse — refined member profile, sapphire & champagne edition */
+#viewProfile{--kp-gold:#e8cc91;--kp-gold-soft:rgba(232,204,145,.16);--kp-blue:#83baff}
+#viewProfile .my-profile-wrap{width:min(100%,900px);margin:clamp(8px,2vw,22px) auto 34px;padding:0 10px;box-sizing:border-box}
+#viewProfile .profile-settings-card{position:relative;isolation:isolate;overflow:hidden;border:1px solid rgba(153,184,224,.2)!important;border-radius:24px!important;background:linear-gradient(155deg,#101f35 0%,#0b1729 48%,#091321 100%)!important;box-shadow:0 24px 70px rgba(0,0,0,.34),inset 0 1px rgba(255,255,255,.045)!important;color:#edf4ff}
+#viewProfile .profile-settings-card:before{content:"";position:absolute;z-index:-1;inset:0 0 auto;height:270px;background:radial-gradient(ellipse at 50% 0%,rgba(91,151,222,.2),transparent 68%),linear-gradient(180deg,rgba(20,43,70,.38),transparent);pointer-events:none}
+#viewProfile .profile-settings-head{position:relative;display:flex;flex-direction:column;align-items:center;min-height:260px;padding:20px 20px 25px!important;box-sizing:border-box;background-color:#102039!important;background-position:center 42%!important;background-size:cover!important;border-bottom:1px solid rgba(232,204,145,.2)!important;text-align:center}
+#viewProfile .profile-settings-head:before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,13,25,.22),rgba(5,13,25,.72) 72%,#0b1729);pointer-events:none}
+#viewProfile .profile-settings-top,#viewProfile .profile-media-actions,#viewProfile .profile-settings-head>.big-avatar,#viewProfile .profile-rank,#viewProfile .profile-name,#viewProfile .profile-handle,#viewProfile .profile-extra{position:relative;z-index:1}
+#viewProfile .profile-settings-top{width:100%;display:flex;align-items:center;gap:8px;margin:0 0 15px;color:#f0d9a9;font-size:12px;font-weight:800}
+#viewProfile .profile-settings-top>span{padding:6px 10px;border:1px solid rgba(232,204,145,.24);border-radius:999px;background:rgba(8,18,32,.62);backdrop-filter:blur(10px)}
+#viewProfile .profile-settings-top .profile-edit-launch{margin-left:auto}
+#viewProfile .profile-settings-top button,#viewProfile .profile-media-actions button{border:1px solid rgba(232,204,145,.32)!important;border-radius:999px!important;background:rgba(9,20,35,.72)!important;color:#f3dfb5!important;backdrop-filter:blur(12px);font-size:11px!important}
+#viewProfile .profile-media-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:7px;width:100%;margin:0 0 13px}
+#viewProfile .profile-settings-head>.big-avatar{width:106px!important;height:106px!important;min-width:106px!important;border:3px solid #e4c991!important;border-radius:50%!important;background:linear-gradient(145deg,#243e60,#101d32)!important;box-shadow:0 0 0 6px rgba(232,204,145,.12),0 12px 32px rgba(0,0,0,.42)!important;overflow:hidden;font-size:38px!important}
+#viewProfile .profile-settings-head>.big-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+#viewProfile .profile-rank{margin-top:13px}
+#viewProfile .profile-rank .rank{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:1px solid rgba(232,204,145,.38);border-radius:999px;background:rgba(12,26,43,.78);color:#f0d6a0;font-size:10px;font-weight:850;letter-spacing:.06em;text-transform:uppercase}
+#viewProfile .profile-name{margin-top:9px;color:#f7f4ed!important;font-family:Georgia,serif;font-size:clamp(25px,5vw,35px)!important;font-weight:700;letter-spacing:-.035em;text-shadow:0 2px 16px rgba(0,0,0,.55)}
+#viewProfile .profile-handle{margin-top:3px;color:#9db2ce!important;font-size:12px;letter-spacing:.04em}
+#viewProfile .profile-extra{display:flex;flex-wrap:wrap;justify-content:center;gap:7px;margin-top:13px}
+#viewProfile .profile-extra>span{padding:6px 10px;border:1px solid rgba(153,184,224,.17);border-radius:999px;background:rgba(8,19,33,.72);color:#c6d5e8;font-size:10px}
+#viewProfile .profile-extra a{color:#b8d7ff}
+#viewProfile #selfAchievementsBtn{display:block;margin:14px auto 4px;border:1px solid rgba(232,204,145,.3)!important;border-radius:999px!important;background:rgba(232,204,145,.08)!important;color:#f0d6a0!important}
+#viewProfile .settings-tabs{display:flex;gap:7px;margin:14px 16px 0;padding:5px;border:1px solid rgba(153,184,224,.14);border-radius:14px;background:rgba(5,14,25,.62)}
+#viewProfile .settings-tabs .settings-tab{flex:1;min-height:39px;border:0!important;border-radius:10px!important;background:transparent!important;color:#91a7c4!important;font-size:12px;font-weight:800}
+#viewProfile .settings-tabs .settings-tab.active{background:linear-gradient(135deg,rgba(78,133,196,.3),rgba(232,204,145,.12))!important;color:#f2dfb8!important;box-shadow:inset 0 0 0 1px rgba(232,204,145,.22),0 5px 16px rgba(0,0,0,.16)}
+#viewProfile #myProfileSettings{padding:13px 16px 18px}
+#viewProfile #myProfileSettings .settings-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+#viewProfile #myProfileSettings .settings-row{position:relative;display:grid;grid-template-columns:34px minmax(0,1fr) 14px;grid-template-rows:auto auto;align-items:center;column-gap:10px;min-width:0;min-height:66px;padding:11px 12px!important;border:1px solid rgba(143,176,218,.15)!important;border-radius:14px!important;background:linear-gradient(135deg,rgba(24,45,71,.76),rgba(12,27,45,.88))!important;color:#eaf2fc!important;text-align:left;transition:transform .18s,border-color .18s,background .18s}
+#viewProfile #myProfileSettings .settings-row:hover{transform:translateY(-2px);border-color:rgba(232,204,145,.38)!important;background:linear-gradient(135deg,rgba(35,62,94,.86),rgba(15,31,51,.96))!important}
+#viewProfile #myProfileSettings .settings-row>span{grid-row:1/3;display:grid;place-items:center;width:32px;height:32px;border:1px solid rgba(232,204,145,.2);border-radius:10px;background:rgba(232,204,145,.08);font-size:15px}
+#viewProfile #myProfileSettings .settings-row>b{min-width:0;color:#edf4ff;font-size:11px;font-weight:800}
+#viewProfile #myProfileSettings .settings-row>small{min-width:0;overflow:hidden;color:#8fa5c1;font-size:9px;text-overflow:ellipsis;white-space:nowrap}
+#viewProfile #myProfileSettings .settings-row>strong{grid-column:3;grid-row:1/3;color:#d8bd8a;font-size:19px}
+#viewProfile #myProfileSettings .settings-row.danger-row{border-color:rgba(224,113,128,.2)!important}
+@media(max-width:600px){
+ #viewProfile .my-profile-wrap{padding:0 4px;margin:4px auto 24px}
+ #viewProfile .profile-settings-card{border-radius:19px!important}
+ #viewProfile .profile-settings-head{min-height:245px;padding:15px 12px 20px!important}
+ #viewProfile .profile-settings-head>.big-avatar{width:92px!important;height:92px!important;min-width:92px!important}
+ #viewProfile .profile-media-actions{gap:5px}
+ #viewProfile .profile-media-actions button{padding:6px 9px!important;font-size:10px!important}
+ #viewProfile .settings-tabs{margin-inline:10px}
+ #viewProfile #myProfileSettings{padding:11px 10px 14px}
+ #viewProfile #myProfileSettings .settings-list{grid-template-columns:1fr;gap:7px}
+ #viewProfile #myProfileSettings .settings-row{min-height:60px}
+}
