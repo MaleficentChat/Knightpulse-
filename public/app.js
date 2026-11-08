@@ -3357,7 +3357,7 @@ function renderUserProfileModal(user,data={}){
     <div class="profile-banner" ${bannerStyle}>
       <div class="equipped-profile-frame ${frame?esc(frame.id):''}" title="${frame?esc(frame.name):'Profile avatar'}">${avatar(user,'big-avatar')}</div>
       ${user.profileMusicUrl?`<div class="profile-music-pill"><button type="button" class="profile-music-toggle" id="profileMusicToggle" aria-label="Play profile music">▶</button><span class="profile-music-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="profile-music-title">${esc(user.profileMusicTitle||'Profile music')}</span><audio id="profileMusicAudio" preload="none" src="${esc(safeProfileUrl(user.profileMusicUrl))}"></audio></div>`:''}
-      <div class="profile-stats"><span class="profile-stat">⭐ ${user.level||1}</span><span class="profile-stat">XP ${user.xp||0}</span><span class="profile-stat">❤️ ${user.profileLikes||data.profileLikes||0}</span>${!isSelf && (String(state.user?.rank||"").toUpperCase()==="OWNER" || (state.user?.username==="Maleficent" && String(state.user?.rank||"").toUpperCase()==="OWNER") || canFeature("staff_rank_assignment")) ? `<button class="mini profile-rank-btn" id="profileRankBtn">🏅 Rank</button>` : ""}${isSelf?'<button class="mini profile-hamburger" id="profileMenuBtn" title="Profile actions">☰</button><button class="mini profile-edit-btn" id="profileEditBtn" title="Edit account">✏️ Edit</button>':((canFeature("account_modifications")||canFeature("edit_email")||canFeature("change_password")||canFeature("manage_staff_accounts")) && canAccessStaffTarget(user) ? '<button class="mini profile-hamburger" id="profileMenuBtn" title="Profile actions">☰</button><button class="mini profile-edit-btn" id="staffProfileEditBtn" title="Edit this member account">✏️ Edit</button>' : '')}</div>
+      <div class="profile-stats kp-profile-quick-stats"><span class="profile-stat"><b>⭐ ${user.level||1}</b><small>Level</small></span><span class="profile-stat"><b>XP ${user.xp||0}</b><small>Experience</small></span><span class="profile-stat"><b>❤️ ${user.profileLikes||data.profileLikes||0}</b><small>Likes</small></span>${!isSelf && (String(state.user?.rank||"").toUpperCase()==="OWNER" || (state.user?.username==="Maleficent" && String(state.user?.rank||"").toUpperCase()==="OWNER") || canFeature("staff_rank_assignment")) ? `<button class="mini profile-rank-btn" id="profileRankBtn">🏅 Rank</button>` : ""}${isSelf?'<button class="mini profile-hamburger" id="profileMenuBtn" title="Profile actions">☰</button><button class="mini profile-edit-btn" id="profileEditBtn" title="Edit account">✏️ Edit</button>':((canFeature("account_modifications")||canFeature("edit_email")||canFeature("change_password")||canFeature("manage_staff_accounts")) && canAccessStaffTarget(user) ? '<button class="mini profile-hamburger" id="profileMenuBtn" title="Profile actions">☰</button><button class="mini profile-edit-btn" id="staffProfileEditBtn" title="Edit this member account">✏️ Edit</button>' : '')}</div>
       <div class="profile-rank">${rank(user.rank)}${user.verified?' · ✓ Verified':''}${profileBadge?` <span class="equipped-profile-badge" title="${esc(profileBadge.name)}">${esc(profileBadge.icon)} ${esc(profileBadge.name)}</span>`:''}</div>
       <div class="profile-name">${esc(user.displayName)}${user._nickname?` <span class="nickname-badge">“${esc(user._nickname)}”</span>`:''}</div>
       <div class="profile-handle">@${esc(user.username)}</div>
@@ -3369,8 +3369,9 @@ function renderUserProfileModal(user,data={}){
       </div>
       ${!isSelf?`<div class="profile-primary-actions"><button class="profile-social-button profile-message-button" id="profileSendPM"><span>✉</span> Send PM</button><button class="profile-social-button profile-friend-button" id="profileAddFriend"><span>＋</span> Add Friend</button></div>`:""}
     </div>
+    <div class="kp-profile-tabs-label"><span>PROFILE</span><small>Explore ${esc(user.displayName||user.username)}’s space</small></div>
     <div class="profile-tabs">
-      <button class="profile-tab active" data-tab="info">Account</button>
+      <button class="profile-tab active" data-tab="info">Overview</button>
       ${user.privacy?.bio!==false?'<button class="profile-tab" data-tab="about">About Me</button>':''}
       ${isSelf||user.privacy?.friends!==false?'<button class="profile-tab" data-tab="friends">Friends</button>':''}
       ${isSelf||user.privacy?.showGuestbook!==false?'<button class="profile-tab" data-tab="guestbook">📖 Guestbook</button>':''}
@@ -4638,9 +4639,9 @@ async function loadProfile(user){
   const profileTheme=cosmetics.find(x=>x.category==='theme');
   const profileBadge=cosmetics.find(x=>x.category==='badge');
   const banner=user.banner?`style="background-image:linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.72)),url('${esc(user.banner)}')"`:'';
-  $('profile').innerHTML=`<div class="my-profile-wrap"><div class="profile-settings-card ${profileTheme?esc(profileTheme.id):''} profile-theme-${['obsidian','midnight','rose','emerald'].includes(user.theme)?esc(user.theme):'obsidian'}">
+  $('profile').innerHTML=`<div class="my-profile-wrap kp-my-profile-wrap"><div class="profile-settings-card kp-self-profile-card ${profileTheme?esc(profileTheme.id):''} profile-theme-${['obsidian','midnight','rose','emerald'].includes(user.theme)?esc(user.theme):'obsidian'}">
     <div class="profile-settings-head" ${banner}>
-      <div class="profile-settings-top"><span>⭐ ${user.level||1}</span><span>❤️ ${user.profileLikes||0}</span><button class="mini profile-edit-launch" onclick="openProfileEditMenu()" title="Edit account">✏️ Edit</button><button class="mini" id="myProfileMenuBtn" title="More">☰</button></div>
+      <div class="profile-settings-top"><span>⭐ ${user.level||1} <small>LEVEL</small></span><span>❤️ ${user.profileLikes||0} <small>LIKES</small></span><button class="mini profile-edit-launch" onclick="openProfileEditMenu()" title="Edit account">✏️ Edit</button><button class="mini" id="myProfileMenuBtn" title="More">☰</button></div>
       <div class="profile-media-actions"><button class="mini profile-media-action" type="button" onclick="uploadAvatar()">📷 Change picture</button>${user.avatar?'<button class="mini danger profile-media-action" type="button" onclick="deleteAvatar()">Remove picture</button>':''}<button class="mini profile-media-action" type="button" onclick="uploadBanner()">🖼️ Change background</button>${user.banner?'<button class="mini danger profile-media-action" type="button" onclick="deleteBanner()">Remove background</button>':''}</div>
       ${avatar(user,'big-avatar')}
       <div class="profile-rank">${rank(user.rank)}${user.verified?' · ✓ Verified':''}</div>
@@ -5024,6 +5025,26 @@ function formatAuditDetail(value) {
     return '<div class="audit-detail-item"><b>' + esc(label) + ':</b> ' + esc(display) + '</div>';
   }).join("") + '</div>';
 }
+function auditCategoryFor(row){
+  const action=String(row?.action||'').toLowerCase(),source=String(row?.source||'').toLowerCase(),detail=JSON.stringify(row?.meta||'').toLowerCase();
+  if(/warn|mute|kick|ban|unban|report|moderation|clear.?room|delete.?message/.test(action+' '+source))return 'moderation';
+  if(/rank|account|username|profile|password|email|staff.?point|premium|svip|grant/.test(action+' '+source))return 'accounts';
+  if(/ip|network|security|filter|setting|system|site|notification|permission|deploy/.test(action+' '+source+' '+detail))return 'system';
+  return 'other';
+}
+function renderAuditCollection(target,rows,emptyText='No audit events are visible for your rank or search.'){
+  if(!target)return;
+  const list=Array.isArray(rows)?rows:[];
+  const categories=[['all','All activity'],['moderation','Moderation'],['accounts','Accounts & ranks'],['system','System & security'],['other','Other']];
+  const counts=Object.fromEntries(categories.map(([key])=>[key,key==='all'?list.length:list.filter(row=>auditCategoryFor(row)===key).length]));
+  target.innerHTML='<nav class="kp-audit-filters" aria-label="Filter audit log categories">'+categories.map(([key,label])=>'<button type="button" class="kp-audit-filter'+(key==='all'?' active':'')+'" data-audit-filter="'+key+'">'+label+' <span>'+counts[key]+'</span></button>').join('')+'</nav><div class="kp-audit-results">'+(list.length?list.map(row=>'<div class="kp-audit-entry" data-audit-category="'+auditCategoryFor(row)+'">'+renderAuditRow(row)+'</div>').join(''): '<p class="muted kp-audit-empty">'+esc(emptyText)+'</p>')+'</div>';
+  target.querySelectorAll('[data-audit-filter]').forEach(button=>button.addEventListener('click',()=>{
+    target.querySelectorAll('[data-audit-filter]').forEach(item=>item.classList.toggle('active',item===button));
+    const category=button.dataset.auditFilter;
+    target.querySelectorAll('.kp-audit-entry').forEach(entry=>entry.hidden=category!=='all'&&entry.dataset.auditCategory!==category);
+  }));
+}
+
 function renderAuditRow(x) {
   const evidence = x.meta && typeof x.meta === "object" && Object.keys(x.meta).length ? x.meta : (x.reason == null || x.reason === "" ? null : x.reason);
   const actor = x.actorUsername || x.actor || "System", target = x.target || "Site", when = x.time ? fmt(x.time) : "Time unavailable";
@@ -5356,6 +5377,29 @@ async function loadStaff() {
       [staffRoot?.querySelector(".site-hard-refresh-card"),"staff-order-9"]
     ];
     orderedStaffSections.forEach(([node,cls])=>{if(node){node.classList.add(cls);staffRoot.appendChild(node);}});
+    // Group the staff dashboard by purpose so each rank sees a predictable, compact workspace.
+    if(staffRoot&&!staffRoot.querySelector('.kp-staff-groups')){
+      const groups=[
+        ['overview','✦ Overview','Quick status, command centre and staff messages',['.staff-space-stat-grid','.kp-command-center','.kp-staff-inbox']],
+        ['moderation','🛡️ Moderation & review','Reports, filters, room review and audit history',['#staffFilterManagementDropdown','.cleared-room-evidence-card','#adminActivityLogsDropdown']],
+        ['team','♜ Team management','Applications, staff communications and network inspection',['#staffApplicationsDropdown','#systemNotificationsDropdown','.ip-inspection-card']],
+        ['controls','⚙️ Account & system controls','Premium, multi-account and maintenance tools',['#staffPremiumGrantDropdown','#staffMultiAccountRuleDropdown','.under-construction-admin-card','.site-hard-refresh-card']]
+      ];
+      const shell=document.createElement('div');shell.className='kp-staff-groups';
+      for(const [key,title,desc,selectors] of groups){
+        const section=document.createElement('details');section.className='kp-staff-group';section.open=key==='overview';
+        const summary=document.createElement('summary');summary.innerHTML='<span>'+title+'</span><small>'+desc+'</small>';section.appendChild(summary);
+        const body=document.createElement('div');body.className='kp-staff-group-body';
+        for(const selector of selectors){
+          staffRoot.querySelectorAll(selector).forEach(node=>{
+            const move=node.matches('details')||node.matches('.grid2')||node.matches('.kp-command-center')||node.matches('.kp-staff-inbox')?node:node.closest('details')||node;
+            if(move&&staffRoot.contains(move)&&!body.contains(move))body.appendChild(move);
+          });
+        }
+        if(body.children.length){section.appendChild(body);shell.appendChild(section);}
+      }
+      if(shell.children.length)staffRoot.appendChild(shell);
+    }
     if(statsGrid&&!statsGrid.children.length)statsGrid.remove();
     $("hardRefreshSiteButton")?.addEventListener("click",hardRefreshSiteCache);
     if(['CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(String(state.user?.rank||'').toUpperCase())){
@@ -5508,13 +5552,13 @@ async function loadStaff() {
         auditTarget.innerHTML='<p class="muted">Loading admin activity logs…</p>';
         try{
           const d=await api('/api/staff/system-center/audit'+(query?'?q='+encodeURIComponent(query):''));
-          auditTarget.innerHTML=(d.audit||[]).map(renderAuditRow).join('')||'<p class="muted">No audit events are visible for your rank or search.</p>';
+          renderAuditCollection(auditTarget,d.audit||[]);
         }catch(error){auditTarget.innerHTML='<p class="error">'+esc(error.message||'Could not load admin activity logs.')+'</p>';}
       };
       loadAdminActivityLogs();
     }
     $('refreshSystemCenter')?.addEventListener('click',()=>loadStaff());
-    $('showAllAuditRows')?.addEventListener('click',async()=>{try{const d=await api('/api/staff/system-center/audit');const target=$('systemAuditRows');target.innerHTML=(d.audit||[]).map(renderAuditRow).join('')||'<p class="muted">No audit events recorded.</p>';if($('systemAuditSearch'))$('systemAuditSearch').value='';}catch(err){toast(err.message);}});
+    $('showAllAuditRows')?.addEventListener('click',async()=>{try{const d=await api('/api/staff/system-center/audit');const target=$('systemAuditRows');renderAuditCollection(target,d.audit||[],'No audit events recorded.');if($('systemAuditSearch'))$('systemAuditSearch').value='';}catch(err){toast(err.message);}});
     $('staffAdminSearchForm')?.addEventListener('submit',async e=>{
       e.preventDefault();const target=$('staffAdminUsers');target.innerHTML='<p class="muted">Searching…</p>';
       try{const d=await api('/api/staff/admin/users?q='+encodeURIComponent(($('staffAdminSearch').value||'').trim()));
@@ -5523,7 +5567,7 @@ async function loadStaff() {
       target.querySelectorAll('.system-admin-apply').forEach(btn=>btn.onclick=async()=>{const row=btn.closest('[data-admin-user]'),action=row.querySelector('.system-admin-action').value,needsDuration=['MUTE','KICK'].includes(action),minutes=Number(row.querySelector('.system-admin-duration').value),reason=row.querySelector('.system-admin-reason').value.trim();if(!reason){toast('Enter a reason.');return;}if(needsDuration&&(!Number.isFinite(minutes)||minutes<1||minutes>10080)){toast('Duration must be 1–10080 minutes for mute/kick.');return;}btn.disabled=true;try{await api('/api/moderation/'+action,{method:'POST',body:JSON.stringify({userId:row.dataset.adminUser,minutes:needsDuration?minutes:0,reason})});toast(action+' applied.');await loadStaff();}catch(err){toast(err.message);btn.disabled=false;}});
       }catch(err){target.innerHTML='<p class="muted">'+esc(err.message)+'</p>';}
     });
-    $('systemAuditSearchForm')?.addEventListener('submit',async e=>{e.preventDefault();const target=$('systemAuditRows');target.innerHTML='<p class="muted">Loading…</p>';try{const d=await api('/api/staff/system-center/audit?q='+encodeURIComponent(($('systemAuditSearch').value||'').trim()));target.innerHTML=(d.audit||[]).map(renderAuditRow).join('')||'<p class="muted">No matches.</p>';}catch(err){target.innerHTML='<p class="muted">'+esc(err.message)+'</p>';}});
+    $('systemAuditSearchForm')?.addEventListener('submit',async e=>{e.preventDefault();const target=$('systemAuditRows');target.innerHTML='<p class="muted">Loading…</p>';try{const d=await api('/api/staff/system-center/audit?q='+encodeURIComponent(($('systemAuditSearch').value||'').trim()));renderAuditCollection(target,d.audit||[],'No matches.');}catch(err){target.innerHTML='<p class="muted">'+esc(err.message)+'</p>';}});
     const renderActiveActions=()=>{
       const filter=$("staffActionFilter")?.value||"";
       const rows=(data.activeActions||[]).filter(x=>!filter||(filter==="BANNED"&&x.banned)||(filter==="MUTED"&&x.mutedUntil)||(filter==="KICKED"&&x.kickedUntil));
