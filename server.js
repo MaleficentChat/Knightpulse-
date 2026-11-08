@@ -233,6 +233,7 @@ const ranks=[
   "ADMIN",
   "SUPER_ADMIN",
   "COMMISSOR",
+  "CHIEF_COMMISSOR",
   "INSTRUCTOR",
   "COOWNER",
   "ELITE",
@@ -251,6 +252,7 @@ const rankIcons={
   ADMIN:"⭐",
   SUPER_ADMIN:"🌟",
   COMMISSOR:"👻",
+  CHIEF_COMMISSOR:"⚔️",
   INSTRUCTOR:"⚔️",
   COOWNER:"👻",
   OWNER:"👑",
@@ -363,7 +365,7 @@ const FEATURE_CONTROLS=[
   {key:"room_clear_own",name:"Clear messages in owned rooms",category:"Room Staff",defaultRank:"OWNER"}
 ];
 
-const GRANT_RANKS=["MEMBER","VIP","SVIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","ELITE","OWNER"];
+const GRANT_RANKS=["MEMBER","VIP","SVIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","INSTRUCTOR","COOWNER","ELITE","OWNER"];
 const FEATURE_GRANT_DEFAULTS={
   send_messages:GRANT_RANKS,
   doodle_studio:GRANT_RANKS,
@@ -406,7 +408,7 @@ const FEATURE_GRANT_DEFAULTS={
   report_message:GRANT_RANKS,moderate_user:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],clear_room:["COOWNER","OWNER"],
   edit_message:GRANT_RANKS,pin_message:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],save_message:GRANT_RANKS,react_message:GRANT_RANKS,
   schedule_message:GRANT_RANKS,expire_message:GRANT_RANKS,use_youtube:GRANT_RANKS,room_announcement:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_pinned:GRANT_RANKS,
-  manage_staff_accounts:["OWNER"],staff_rank_assignment:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],profile_like:GRANT_RANKS,enter_private_club:GRANT_RANKS,wall_post:GRANT_RANKS,room_rank_assign:["OWNER","COOWNER","COMMISSOR"],room_moderate:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_manage_staff:["OWNER","COOWNER","COMMISSOR"],room_edit_own:["OWNER","COOWNER","COMMISSOR"],room_delete_messages:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_clear_own:["OWNER","COOWNER","COMMISSOR"],
+  manage_staff_accounts:["OWNER"],staff_rank_assignment:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],profile_like:GRANT_RANKS,enter_private_club:GRANT_RANKS,wall_post:GRANT_RANKS,room_rank_assign:["OWNER","COOWNER","COMMISSOR"],room_moderate:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_manage_staff:["OWNER","COOWNER","COMMISSOR"],room_edit_own:["OWNER","COOWNER","COMMISSOR"],room_delete_messages:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_clear_own:["OWNER","COOWNER","COMMISSOR"],
   // Extended catalog: site, account, community, media, moderation and owner tools.
   account_register:GRANT_RANKS,account_login:GRANT_RANKS,account_settings:GRANT_RANKS,change_own_password:GRANT_RANKS,change_own_email:GRANT_RANKS,account_export:GRANT_RANKS,manage_sessions:["OWNER"],view_login_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_device_sessions:["OWNER"],manage_push_notifications:GRANT_RANKS,
   search_users:GRANT_RANKS,view_profiles:GRANT_RANKS,friend_requests:GRANT_RANKS,manage_friends:GRANT_RANKS,block_users:GRANT_RANKS,nickname_users:GRANT_RANKS,profile_status:GRANT_RANKS,profile_frames:GRANT_RANKS,profile_backgrounds:GRANT_RANKS,profile_colors:GRANT_RANKS,profile_pronouns:GRANT_RANKS,profile_showcase:GRANT_RANKS,presence_modes:GRANT_RANKS,ghost_mode:GRANT_RANKS,dead_mode:GRANT_RANKS,
@@ -6003,10 +6005,11 @@ app.patch('/api/staff/user/:id/rank',auth,async(req,res)=>{
   if(String(target.rank).toUpperCase()==='DEVELOPER' || target.username==='Maleficent') return res.status(403).json({error:'Developer account is protected.'});
   if(!ranks.includes(nr)) return res.status(400).json({error:'Invalid rank.'});
   const actorRank=String(actor.rank||'MEMBER').toUpperCase();
-  const coownerPower=actorRank==='COOWNER';
-  const ownerPower=actorRank==='OWNER'&&actor.username===DEFAULT_OWNER;
-  const grantCeiling=ownerPower?'COOWNER':(coownerPower?'INSTRUCTOR':'MOD');
-  if(!ownerPower&&rankOrder[String(nr).toUpperCase()]>rankOrder[grantCeiling]) return res.status(403).json({error:'Your rank can assign '+grantCeiling+' or below only.'});
+  const ownerPower=actorRank==='OWNER';
+  const grantCeiling=ownerPower?'OWNER':(actorRank==='ELITE'?'COOWNER':(actorRank==='COOWNER'?'CHIEF_COMMISSOR':'MOD'));
+  const grantableStaffRanks=['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','INSTRUCTOR','COOWNER','ELITE','OWNER'];
+  if(!grantableStaffRanks.includes(actorRank)) return res.status(403).json({error:'Staff rank assignment is not available to this account.'});
+  if((rankOrder[String(nr).toUpperCase()]??999)>(rankOrder[grantCeiling]??-1)) return res.status(403).json({error:'Your rank can assign '+grantCeiling.replace(/_/g,' ')+' or below only.'});
   if(rankOrder[String(target.rank||'MEMBER').toUpperCase()]>=rankOrder[actorRank]) return res.status(403).json({error:'You cannot change an equal or higher rank.'});
   const previousRank=String(target.rank||'MEMBER').toUpperCase();
   target.rank=nr; save(); log(actor,'RANK_CHANGE',target.username,{rank:nr,previousRank,via:'STAFF'});
