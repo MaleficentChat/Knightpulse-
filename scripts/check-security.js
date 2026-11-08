@@ -550,7 +550,7 @@ assert.ok(database.includes('owner.rank="OWNER"') && !database.includes("DEVELOP
   "database state loading must never reintroduce a Developer rank");
 assert.ok(database.includes('["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]'),
   "database defaults must include every current rank for filter settings");
-assert.match(server,/if\(String\(u\.rank\|\|\"MEMBER\"\)\.toUpperCase\(\)==="MOD"\)\{[\s\S]*?return res\.json\(\{stats\}\);/,
+assert.match(server,/if\(String\(u\.rank\|\|\"\"\)\.toUpperCase\(\)==="MOD"\)\{[\s\S]*?return res\.json\(\{stats\}\);/,
   "Moderator dashboard API must return statistics only, never reports or moderation records");
 assert.ok(activeClient.includes("const canManageFilters=['COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(staffRank);") &&
   activeClient.includes("const filterWords=canManageFilters?await api('/api/staff/filter-word'):{words:[]};"),
