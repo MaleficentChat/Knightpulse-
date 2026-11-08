@@ -85,6 +85,7 @@ const rankIcon = {
   ADMIN: "⭐",
   SUPER_ADMIN: "🌟",
   COMMISSOR: "👻",
+  CHIEF_COMMISSOR: "⚔️",
   INSTRUCTOR: "⚔️",
   COOWNER: "🦉",
   OWNER: "👑",
@@ -101,11 +102,12 @@ const rankOrder = {
   ADMIN: 6,
   SUPER_ADMIN: 7,
   COMMISSOR: 8,
-  INSTRUCTOR: 9,
-  COOWNER: 10,
-  ELITE: 11,
-  OWNER: 12,
-  DEVELOPER: 13
+  CHIEF_COMMISSOR: 9,
+  INSTRUCTOR: 10,
+  COOWNER: 11,
+  ELITE: 12,
+  OWNER: 13,
+  DEVELOPER: 14
 };
 
 const ranks = Object.keys(rankOrder);
@@ -1118,7 +1120,7 @@ function updateNav() {
   if(brandNewsPublishButton)brandNewsPublishButton.classList.toggle("hidden",!canFeature("publish_news"));
 
   // Room creation is Premium+ by default; staff ranks are explicitly eligible too.
-  const roomCreatorRanks=["PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+  const roomCreatorRanks=["PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
   const mayCreateRooms=roomCreatorRanks.includes(String(state.user?.rank||"").toUpperCase())||canFeature("create_room")||canFeature("create_rooms");
   document.querySelectorAll("#newRoom, .room-create-button").forEach(el=>el.classList.toggle("hidden",!mayCreateRooms));
   document.querySelectorAll(".coowner-only").forEach(el=>{
@@ -4513,14 +4515,14 @@ async function staffFeatureBlockModal(user){
 
 function rankFromProfile(user){
   const actorRank=String(state.user?.rank||"MEMBER").toUpperCase();
-  const isOwner=actorRank==="DEVELOPER" || (state.user?.username==="Maleficent" && actorRank==="OWNER");
-  const isCoowner=actorRank==="COOWNER";
+  const isOwner=actorRank==="OWNER";
   const isStaff=canFeature("staff_rank_assignment");
   if(!isOwner && !isStaff){toast("You do not have permission to change ranks.");return;}
   if(user.username==="Maleficent" && !isOwner){toast("The permanent owner is protected.");return;}
-  const ceiling=isOwner?rankOrder.DEVELOPER:(isCoowner?rankOrder.INSTRUCTOR:rankOrder.MOD);
-  const allowed=isOwner ? ranks : ranks.filter(r=>rankOrder[r]<=ceiling && rankOrder[r]<rankOrder[actorRank]);
-  modal(`<h2>🏅 Change rank for @${esc(user.username)}</h2><p class="muted">${isOwner?"Owner control: you may assign any rank, including OWNER.":(isCoowner?"Co-owner control: you may assign Instructor or below.":"Staff control: you may assign MOD or below.")}</p><select id="profileRankSelect">${allowed.map(r=>`<option value="${r}" ${r===user.rank?'selected':''}>${rankIcon[r]||''} ${r}</option>`).join('')}</select><div class="toolbar"><button class="primary" id="saveProfileRank">Save rank</button></div>`);
+  const ceiling=isOwner?rankOrder.OWNER:(actorRank==="ELITE"?rankOrder.COOWNER:(actorRank==="COOWNER"?rankOrder.CHIEF_COMMISSOR:rankOrder.MOD));
+  const allowed=ranks.filter(r=>rankOrder[r]<=ceiling && rankOrder[r]<rankOrder[actorRank]);
+  const ceilingLabel=isOwner?"Owner":actorRank==="ELITE"?"Co-owner":actorRank==="COOWNER"?"Chief Commissor":"Moderator";
+  modal(`<h2>🏅 Change rank for @${esc(user.username)}</h2><p class="muted">${isOwner?"Owner control: you may assign ranks up to Owner.":`You may assign ranks up to ${ceilingLabel}.`}</p><select id="profileRankSelect">${allowed.map(r=>`<option value="${r}" ${r===user.rank?'selected':''}>${rankIcon[r]||''} ${r.replace(/_/g," ")}</option>`).join('')}</select><div class="toolbar"><button class="primary" id="saveProfileRank">Save rank</button></div>`);
   $('saveProfileRank').onclick=async()=>{
     try{
       const endpoint=isOwner?`/api/owner/user/${encodeURIComponent(user.id)}/rank`:`/api/staff/user/${encodeURIComponent(user.id)}/rank`;
@@ -6317,7 +6319,7 @@ async function ownerFeatureGrants(){
        inspect_ip_details:'Security & privacy',inspect_similar_ips:'Security & privacy',view_user_history:'Security & privacy',view_username_history:'Security & privacy',manage_profile_notes:'Staff & moderation',manage_account_locks:'Security & privacy',manage_avatar:'Accounts & profiles',delete_accounts:'Owner tools',manage_bans:'Staff & moderation',manage_mutes:'Staff & moderation',manage_kicks:'Staff & moderation',manage_warnings:'Staff & moderation',manage_automated_filters:'Staff & moderation',manage_vpn_proxy_rules:'Security & privacy',manage_multi_account_rules:'Security & privacy',manage_spam_flood_rules:'Staff & moderation',manage_user_feature_exceptions:'Owner tools',manage_rank_feature_grants:'Owner tools',manage_individual_feature_grants:'Owner tools',manage_owner_space:'Owner tools',manage_site_refresh:'Owner tools',view_system_diagnostics:'Owner tools',manage_site_themes:'Owner tools',manage_economy_settings:'Owner tools',manage_premium_settings:'Owner tools',manage_notifications_settings:'Owner tools',manage_room_permissions:'Owner tools',manage_room_themes:'Owner tools',manage_room_staff:'Owner tools',manage_suggestions_settings:'Owner tools',manage_feature_granting:'Owner tools'
     };
     const ranks=d.ranks||['MEMBER','VIP','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','COOWNER','OWNER'];
-    const rankLabels={MEMBER:'Member',VIP:'VIP',PREMIUM:'Premium',ROYAL:'Royal',MOD:'Moderator',ADMIN:'Admin',SUPER_ADMIN:'Super Admin',COMMISSOR:'Commissor',INSTRUCTOR:'Instructor',COOWNER:'Co-owner',OWNER:'Owner'};
+    const rankLabels={MEMBER:'Member',VIP:'VIP',PREMIUM:'Premium',ROYAL:'Royal',MOD:'Moderator',ADMIN:'Admin',SUPER_ADMIN:'Super Admin',COMMISSOR:'Commissor',CHIEF_COMMISSOR:'Chief Commissor',INSTRUCTOR:'Instructor',COOWNER:'Co-owner',OWNER:'Owner'};
     const keys=Object.keys(d.features||{}).filter(key=>!['schedule_message','expire_message'].includes(key)), categories={};
     keys.forEach(key=>{const category=categoryFor[key]||'Other site features';if(!categories[category])categories[category]=[];categories[category].push(key);});
     function renderRow(key){
