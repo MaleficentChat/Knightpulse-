@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0a1020">
+  <meta name="description" content="Cloud Chat — your space, your people, your conversations.">
+  <title>Cloud Chat — Find your people</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="rail">
+      <a class="brand-mark" href="#" aria-label="Cloud Chat home"><span class="cloud-icon">☁</span></a>
+      <button class="rail-btn active" data-view="chat" title="Chats">◫</button>
+      <button class="rail-btn" data-view="discover" title="Discover">⌕</button>
+      <button class="rail-btn" data-view="friends" title="Friends">♧</button>
+      <button class="rail-btn" data-view="feed" title="Community">▤</button>
+      <div class="rail-spacer"></div>
+      <button class="rail-btn" id="theme-toggle" title="Toggle appearance">◐</button>
+      <button class="avatar avatar-self" title="Your profile">Y</button>
+    </aside>
+
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <div>
+          <div class="eyebrow">YOUR SPACE</div>
+          <h1 id="view-title">Messages<span class="live-dot"></span></h1>
+        </div>
+        <button class="icon-btn" id="new-chat" aria-label="New conversation">＋</button>
+      </div>
+      <label class="search-box"><span>⌕</span><input id="search" placeholder="Search people, rooms..." autocomplete="off"></label>
+      <div class="sidebar-tabs"><button class="tab active" data-filter="all">All <span>8</span></button><button class="tab" data-filter="unread">Unread</button><button class="tab" data-filter="groups">Rooms</button></div>
+      <div class="section-label"><span>PINNED</span><button class="tiny-btn" id="add-room">＋</button></div>
+      <div id="conversation-list" class="conversation-list"></div>
+      <div class="sidebar-bottom">
+        <div class="upgrade-card"><div class="upgrade-orb">✦</div><div><strong>Make it yours</strong><small>Personalise your Cloud space</small></div><button aria-label="Explore customisation">↗</button></div>
+        <div class="profile-row"><div class="avatar avatar-self">Y</div><div class="profile-copy"><strong>You</strong><small>Here for good vibes</small></div><button class="icon-btn" id="profile-menu">···</button></div>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <div class="crumb"><span class="crumb-cloud">☁</span><span>Cloud Chat</span><span class="slash">/</span><strong id="crumb-current">The Lounge</strong></div>
+        <div class="top-actions"><span class="secure-label"><i></i> Your space is private</span><button class="icon-btn" id="call-btn" title="Start a call">⌁</button><button class="icon-btn notification-trigger" id="notifications" title="Notifications">♧<b class="notification-count" id="notification-count">3</b></button><button class="avatar avatar-mini">Y</button></div>
+      </header>
+
+      <section class="view view-chat active" id="chat-view">
+        <div class="chat-heading">
+          <div class="room-symbol">☁</div><div class="room-heading-copy"><div class="eyebrow">COMMUNITY ROOM <span class="online-pill"><i></i> 24 online</span></div><h2 id="chat-title">The Lounge</h2><p id="chat-subtitle">A little corner of the internet to feel at home.</p></div>
+          <div class="heading-actions"><button class="soft-btn" id="members-btn">♧ <span>Members</span></button><button class="icon-btn" title="More room options">···</button></div>
+        </div>
+        <div class="chat-content" id="messages">
+          <div class="day-divider"><span>TODAY</span></div>
+          <div class="welcome-card"><div class="welcome-art">☁</div><div><strong>Welcome to your little corner of the clouds.</strong><p>Be kind, be curious, and make yourself at home.</p></div></div>
+          <div class="message-row"><div class="avatar avatar-lilac">M</div><div class="message-body"><div class="message-meta"><strong>Mira</strong><span>10:42 AM</span><span class="role-tag">MOD</span></div><div class="bubble">Good morning, cloud people ☀️ How's everyone doing today?</div><div class="message-reactions"><button>♡ 3</button><button>＋</button></div></div></div>
+          <div class="message-row"><div class="avatar avatar-peach">A</div><div class="message-body"><div class="message-meta"><strong>Aria</strong><span>10:44 AM</span></div><div class="bubble">Finally got my playlist sorted. The vibes are immaculate today ✨</div></div></div>
+          <div class="message-row own"><div class="message-body"><div class="message-meta"><strong>You</strong><span>10:46 AM</span></div><div class="bubble">That's the energy we're bringing into this week 😌</div></div><div class="avatar avatar-self">Y</div></div>
+          <div class="message-row"><div class="avatar avatar-blue">J</div><div class="message-body"><div class="message-meta"><strong>Jules</strong><span>10:48 AM</span></div><div class="bubble">Anyone up for a game night later?</div><div class="message-reactions"><button>♡ 2</button><button>＋</button></div></div></div>
+        </div>
+        <div class="typing-line" id="typing-line"><span class="typing-dots"><i></i><i></i><i></i></span> Mira is around</div>
+        <form class="composer" id="message-form"><button type="button" class="attach-btn" title="Add attachment">＋</button><input id="message-input" placeholder="Message The Lounge..." autocomplete="off"><button type="button" class="emoji-btn" title="Emoji">☺</button><button class="send-btn" type="submit" aria-label="Send message">↑</button></form>
+        <div class="composer-hint">Be kind to one another <span>↵ to send</span></div>
+      </section>
+
+      <section class="view empty-view" id="discover-view"><div class="empty-illustration">⌕</div><div class="eyebrow">FIND YOUR PEOPLE</div><h2>There's a cloud for everyone.</h2><p>Discover rooms, meet interesting people, and find your next favourite corner of the internet.</p><div class="discovery-grid"><article><span>🎨</span><strong>Creative minds</strong><small>Art, design & inspiration</small></article><article><span>🎮</span><strong>Game lounge</strong><small>Play, laugh, repeat</small></article><article><span>🌙</span><strong>Late night thoughts</strong><small>For the night owls</small></article></div></section>
+      <section class="view empty-view" id="friends-view"><div class="empty-illustration">♧</div><div class="eyebrow">YOUR CIRCLE</div><h2>Good conversations start with good people.</h2><p>Your friends and connection requests will find a home here.</p><button class="primary-btn" data-go="discover">Find people <span>→</span></button></section>
+      <section class="view empty-view" id="feed-view"><div class="eyebrow">THE COMMUNITY</div><h2>Little moments. Shared together.</h2><p>A fresh community feed for updates, photos and things worth sharing.</p><div class="feed-card"><div class="feed-top"><div class="avatar avatar-lilac">M</div><div><strong>Mira</strong><small>Community note · just now</small></div></div><h3>Welcome to Cloud Chat ☁️</h3><p>A fresh start, a softer space, and plenty of room for everyone to belong.</p><div class="feed-actions"><button>♡ Like</button><button>▢ Comment</button><button>↗ Share</button></div></div></section>
+    </main>
+
+    <aside class="details-panel" id="details-panel">
+      <div class="details-head"><span>ROOM DETAILS</span><button class="icon-btn" id="close-details">×</button></div>
+      <div class="room-cover"><div class="cover-cloud">☁</div><span>EST. 2026</span></div>
+      <h3 id="details-title">The Lounge</h3><p id="details-description">A little corner of the internet to feel at home. Come as you are.</p>
+      <div class="detail-stats"><div><strong>128</strong><small>Members</small></div><div><strong>24</strong><small>Online now</small></div><div><strong>08</strong><small>Moderators</small></div></div>
+      <div class="members-head"><strong>Online now</strong><span>24</span></div>
+      <div class="member-list"><div class="member"><div class="avatar avatar-lilac">M<i></i></div><span><strong>Mira</strong><small>Moderator</small></span><b>✦</b></div><div class="member"><div class="avatar avatar-peach">A<i></i></div><span><strong>Aria</strong><small>Member</small></span></div><div class="member"><div class="avatar avatar-blue">J<i></i></div><span><strong>Jules</strong><small>Member</small></span></div><div class="member"><div class="avatar avatar-green">K<i></i></div><span><strong>Kai</strong><small>Member</small></span></div></div>
+      <div class="detail-footer"><span>ROOM GUIDELINES</span><p>Respect · Kindness · Keep it welcoming</p></div>
+    </aside>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <div class="modal-backdrop" id="modal"><div class="modal"><button class="modal-close" id="modal-close">×</button><div class="modal-logo">☁</div><div class="eyebrow">A FRESH PLACE TO CONNECT</div><h2>Welcome to Cloud Chat</h2><p>Sign in to your space or create a new account.</p><div class="auth-tabs"><button class="active" data-auth="login">Sign in</button><button data-auth="signup">Create account</button></div><form id="auth-form"><label>Username or email<input required placeholder="you@example.com"></label><label>Password<input type="password" required minlength="6" placeholder="At least 6 characters"></label><button class="primary-btn" type="submit">Continue <span>→</span></button></form><small class="demo-note">Preview mode — account services will be connected during integration.</small></div></div>
+  <script src="./app.js"></script>
+</body>
+</html>
