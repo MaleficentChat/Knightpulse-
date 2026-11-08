@@ -5059,19 +5059,17 @@ app.post('/api/staff/applications/:id/grant',auth,featureAllowed('view_staff_das
       const application=appResult.rows[0],target=findUser(application.user_id);
       if(!target){await client.query('ROLLBACK');return res.status(404).json({error:'Applicant account not found.'});}
       if(target.username==='Maleficent'||String(target.rank).toUpperCase()==='DEVELOPER'){await client.query('ROLLBACK');return res.status(403).json({error:'Protected account cannot be changed.'});}
-      const ownerPower=String(actor.rank).toUpperCase()==='DEVELOPER'||(String(actor.rank).toUpperCase()==='OWNER'&&actor.username==='Maleficent');
       const actorRankNow=String(actor.rank||"").toUpperCase();
-      if(!ownerPower&&!["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER"].includes(actorRankNow)){await client.query('ROLLBACK');return res.status(403).json({error:'Your current rank does not have staff-rank granting authority.'});}
-
+      const ownerPower=actorRankNow==="OWNER";
+      const grantableStaffRanks=["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
+      const assignableRanks=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
+      if(!grantableStaffRanks.includes(actorRankNow)){await client.query('ROLLBACK');return res.status(403).json({error:'Your current rank does not have staff-rank granting authority.'});}
       if(!ownerPower&&!hasFeature(actor,'staff_rank_assignment')){await client.query('ROLLBACK');return res.status(403).json({error:'You do not have rank-assignment permission.'});}
-      const assignableRanks=Array.isArray(db.settings?.staff_application_grant_ranks)?db.settings.staff_application_grant_ranks:["MOD"];
-      const coownerPower=actorRankNow==="COOWNER";
-      if(!ownerPower&&!coownerPower&&!assignableRanks.includes(requested)){await client.query('ROLLBACK');return res.status(403).json({error:'Your current rank permissions do not allow granting '+requested+'.'});}
-      const hierarchy=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
-      const hierarchyIndex=rank=>{const normalized=String(rank||"MEMBER").toUpperCase();return hierarchy.indexOf(normalized)<0?0:hierarchy.indexOf(normalized);};
-      const grantCeiling=coownerPower?"INSTRUCTOR":"MOD";
-      if(!ownerPower&&hierarchyIndex(requested)>hierarchyIndex(grantCeiling)){await client.query('ROLLBACK');return res.status(403).json({error:'Your permissions allow granting '+(coownerPower?'Instructor':'Moderator')+' or below only.'});}
-      if(!ownerPower&&hierarchyIndex(target.rank)>=hierarchyIndex(actor.rank)){await client.query('ROLLBACK');return res.status(403).json({error:'You cannot change an equal or higher rank.'});}
+      if(!assignableRanks.includes(String(requested||"").toUpperCase())){await client.query('ROLLBACK');return res.status(400).json({error:'This rank is no longer assignable.'});}
+      const grantCeiling=ownerPower?"OWNER":actorRankNow==="ELITE"?"COOWNER":actorRankNow==="COOWNER"?"CHIEF_COMMISSOR":"MOD";
+      const hierarchyIndex=rank=>{const index=assignableRanks.indexOf(String(rank||"MEMBER").toUpperCase());return index<0?-1:index;};
+      if(hierarchyIndex(requested)>hierarchyIndex(grantCeiling)){await client.query('ROLLBACK');return res.status(403).json({error:'Your permissions allow granting '+grantCeiling.replaceAll('_',' ')+' or below only.'});}
+      if(hierarchyIndex(target.rank)>=hierarchyIndex(actorRankNow)){await client.query('ROLLBACK');return res.status(403).json({error:'You cannot change an equal or higher rank.'});}
       await client.query("UPDATE users SET rank=$1 WHERE id=$2",[requested.toLowerCase(),Number(target.id)]);
       await client.query("UPDATE staff_applications SET status='APPROVED',reviewed_by=$2,reviewed_at=NOW() WHERE id=$1",[req.params.id,Number(actor.id)]);
       await client.query('COMMIT');
