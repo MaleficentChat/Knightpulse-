@@ -345,7 +345,7 @@ const FEATURE_GRANT_DEFAULTS={
   change_password:["OWNER"],
   edit_email:["OWNER"],
   manage_xp_level:["OWNER"],
-  create_rooms:["PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER"],
+  create_rooms:["PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
   edit_rooms:["ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
   delete_rooms:["ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
   join_rooms:GRANT_RANKS,
@@ -2350,8 +2350,8 @@ function generateRoomCode(){return String(crypto.randomInt(0,10000000000)).padSt
 async function createRoomHandler(req,res){
   const u=current(req); if(!u)return res.status(401).json({error:"Login required"});
   // Keep server authorization aligned with the room-creation UI.
-  // Premium/Premium and designated staff ranks may create rooms; explicit feature grants
-  // remain available for other accounts configured by the Owner/Owner.
+  // Premium and designated staff ranks may create rooms; explicit feature grants
+  // remain available for other accounts configured by the Owner.
   const roomCreatorRanks=["PREMIUM","MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
   if(!roomCreatorRanks.includes(String(u.rank||"").toUpperCase()) && !(featureGrantAllowed(u,"create_rooms")||hasFeature(u,"create_room"))) {
     return res.status(403).json({error:`Create room requires ${featureRank("create_room")} or an explicit create-room permission.`});
@@ -2426,7 +2426,7 @@ function roomRoleCan(roomId,userId,permission){
   const configured=db.settings?.room_role_permissions?.[role];
   return typeof configured?.[permission]==="boolean"?configured[permission]:!!ROOM_ROLE_PERMISSION_DEFAULTS[role][permission];
 }
-function roomOwnerOrGlobal(u,room){return roomRole(room.id,u.id)==="ROOM_OWNER"||["OWNER","COOWNER","COMMISSOR","OWNER"].includes(String(u.rank||"").toUpperCase())||String(room.ownerId||room.owner_id||room.createdBy||room.created_by||"")===String(u.id);}
+function roomOwnerOrGlobal(u,room){return roomRole(room.id,u.id)==="ROOM_OWNER"||["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(u.rank||"").toUpperCase())||String(room.ownerId||room.owner_id||room.createdBy||room.created_by||"")===String(u.id);}
 function requirePrivateRoomAccess(req,res,room,actor=current(req)){
   if(!roomIsPrivate(room)||verifyRoomJoinToken(req.headers["x-room-join-token"],actor?.id,room))return true;
   res.status(403).json({error:"Join this private room before viewing its details."});
@@ -2599,7 +2599,7 @@ app.put("/api/rooms/:id",auth,async(req,res)=>{
 app.put("/api/rooms/:id/pin",auth,(req,res)=>{
   const actor=current(req),room=db.rooms.find(item=>String(item.id)===String(req.params.id));
   if(!room)return res.status(404).json({error:"Room not found"});
-  if(!["COOWNER","CO-OWNER","CO_OWNER","ELITE","OWNER"].includes(String(actor.rank||"").toUpperCase().replace(/\s+/g,"")))return res.status(403).json({error:"Only Co-owner, Owner, and Owner can pin rooms."});
+  if(!["COOWNER","CO-OWNER","CO_OWNER","ELITE","OWNER"].includes(String(actor.rank||"").toUpperCase().replace(/\s+/g,"")))return res.status(403).json({error:"Only Co-owner, Elite, or Owner can pin rooms."});
   const pinned=typeof req.body?.pinned==="boolean"?req.body.pinned:!db.settings?.room_pins?.[String(room.id)];
   db.settings ||= {};db.settings.room_pins ||= {};db.settings.room_pins[String(room.id)]=pinned;
   save();log(actor,pinned?"ROOM_PIN":"ROOM_UNPIN",room.name,{roomId:String(room.id)});
