@@ -6021,6 +6021,7 @@ app.patch(
   "/api/owner/user/:id/rank",
   ownerOnly,
   async(req,res)=>{
+    if(String(current(req)?.rank||"").toUpperCase()!=="OWNER") return res.status(403).json({error:"Only an Owner can grant ranks up to Owner."});
     const v=findUser(
       req.params.id
     );
