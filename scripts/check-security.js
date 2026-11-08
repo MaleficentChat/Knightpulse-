@@ -550,6 +550,13 @@ assert.ok(database.includes('owner.rank="OWNER"') && !database.includes("DEVELOP
   "database state loading must never reintroduce a Developer rank");
 assert.ok(database.includes('["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]'),
   "database defaults must include every current rank for filter settings");
+assert.match(server,/if\(String\(u\.rank\|\|\"MEMBER\"\)\.toUpperCase\(\)==="MOD"\)\{[\s\S]*?return res\.json\(\{stats\}\);/,
+  "Moderator dashboard API must return statistics only, never reports or moderation records");
+assert.ok(activeClient.includes("const canManageFilters=['COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(staffRank);") &&
+  activeClient.includes("const filterWords=canManageFilters?await api('/api/staff/filter-word'):{words:[]};"),
+  "Admin and Superadmin dashboards must not call the Commissor-only filter endpoint");
+assert.ok(activeClient.includes('canManageFilters ? `') && activeClient.includes('Filtered words</h3>'),
+  "filter-word controls must only render for Commissor and higher ranks");
 assert.ok(server.includes("const FEATURE_GRANT_POLICY_VERSION=8;"),
   "rank and feature-grant policy migration must be versioned");
 assert.ok(server.includes("blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER']"),
