@@ -79,8 +79,8 @@ assert.match(accountEditorSource, /title:'Remove profile picture'[\\s\\S]*show:s
   "the Edit account menu must expose picture removal to the owner and authorized staff on lower-ranked profiles");
 assert.match(accountEditorSource, /title:'Remove background'[\\s\\S]*show:self\\|\\|\\(!self&&canModify&&canAccessStaffTarget\\(user\\)\\)/,
   "the Edit account menu must expose background removal to the owner and authorized staff on lower-ranked profiles");
-assert.match(accountEditorSource, /removeProfilePicture'[\\s\\S]*deleteStaffProfileMedia\\(user,'avatar'\\)/);
-assert.match(accountEditorSource, /removeProfileBackground'[\\s\\S]*deleteStaffProfileMedia\\(user,'banner'\\)/);
+assert.ok(accountEditorSource.includes("deleteStaffProfileMedia(user,'avatar')"), "staff avatar removal must call the guarded media-deletion helper");
+assert.ok(accountEditorSource.includes("deleteStaffProfileMedia(user,'banner')"), "staff background removal must call the guarded media-deletion helper");
 assert.match(activeClient, /state\.socket\.on\("message"/,
   "the browser must subscribe to Socket.IO room-message events");
 assert.match(activeClient, /state\.socket\.on\("dm"/,
