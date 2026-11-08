@@ -236,20 +236,6 @@ async function initDB() {
       added_by INT,
       created_at TIMESTAMP DEFAULT NOW()
     );
-    CREATE TABLE IF NOT EXISTS brand_news(
-      id TEXT PRIMARY KEY,
-      category TEXT NOT NULL,
-      headline TEXT NOT NULL,
-      summary TEXT NOT NULL,
-      body TEXT NOT NULL,
-      link_label TEXT NOT NULL DEFAULT '',
-      link_url TEXT NOT NULL DEFAULT '',
-      created_at BIGINT NOT NULL,
-      author TEXT NOT NULL DEFAULT '',
-      avatar TEXT NOT NULL DEFAULT '',
-      image JSONB
-    );
-    CREATE INDEX IF NOT EXISTS brand_news_created_idx ON brand_news(created_at DESC);
     CREATE TABLE IF NOT EXISTS notifications(
       id SERIAL PRIMARY KEY,
       user_id INT REFERENCES users(id) ON DELETE CASCADE,

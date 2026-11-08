@@ -1,4 +1,4 @@
-const CACHE="maleficent-chat-v27-socket-only-live-chat";
+const CACHE="cloud-chat-v27-socket-only-live-chat";
 const ASSETS=["/","/style.css","/app.js","/manifest.json","/favicon.svg","/robots.txt","/sitemap.xml","/doodle-studio.js"];
 
 self.addEventListener("install",event=>{
@@ -55,24 +55,24 @@ self.addEventListener("fetch",event=>{
 self.addEventListener("activate",event=>{
   event.waitUntil(
     caches.keys()
-      .then(keys=>Promise.all(keys.filter(key=>key.startsWith("maleficent-chat-")&&key!==CACHE).map(key=>caches.delete(key))))
+      .then(keys=>Promise.all(keys.filter(key=>key.startsWith("cloud-chat-")&&key!==CACHE).map(key=>caches.delete(key))))
       .then(()=>self.clients.claim())
   );
 });
 
 self.addEventListener("push",event=>{
   event.waitUntil((async()=>{
-    let payload={title:"Maleficent Chat",body:"You have a new notification",url:"/"};
+    let payload={title:"Cloud Chat",body:"You have a new notification",url:"/"};
     try{if(event.data)payload={...payload,...event.data.json()};}catch{try{payload.body=event.data?.text()||payload.body;}catch{}}
     // Always display server push notifications, including when the site is open.
     // The in-page socket and push channels are independent; suppressing push here
     // made the explicit test appear successful while showing nothing in the tray.
     const isPrivateMessage=payload.kind==="private-message";
-    await self.registration.showNotification(String(payload.title||"Maleficent Chat").slice(0,100),{
+    await self.registration.showNotification(String(payload.title||"Cloud Chat").slice(0,100),{
       body:String(payload.body||"You have a new notification").slice(0,200),
       icon:"/favicon.svg",
       badge:"/favicon.svg",
-      tag:String(payload.tag||"maleficent-chat-notification").slice(0,100),
+      tag:String(payload.tag||"cloud-chat-notification").slice(0,100),
       renotify:false,
       data:{url:payload.url||"/",kind:payload.kind||"notification",roomId:payload.roomId||null},
       actions:isPrivateMessage?[{action:"reply",title:"Reply"},{action:"open",title:"Open chat"}]:[],
