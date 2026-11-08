@@ -507,7 +507,8 @@ function setAuthMode(login) {
 
   if ($("confirmPassword")) $("confirmPassword").classList.toggle("hidden", login);
   if ($("passwordStrength")) $("passwordStrength").classList.toggle("hidden", login);
-  [$("displayName"),$("registerEmail"),$("dateOfBirth"),$("gender"),$("confirmPassword")].forEach(el=>{if(el) el.required=!login;});
+  [$("displayName"),$("dateOfBirth"),$("gender"),$("confirmPassword")].forEach(el=>{if(el) el.required=!login;});
+  if($("registerEmail"))$("registerEmail").required=false;
   if($("dateOfBirth"))$("dateOfBirth").max=new Date().toISOString().slice(0,10);
 
   $("authSubmit").textContent = login ? "Login" : "Register";
