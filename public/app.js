@@ -5186,6 +5186,18 @@ async function loadStaff() {
   try {
     const data=await api('/api/staff/dashboard');
     const staffRank=String(state.user?.rank||'').toUpperCase();
+    const staffSpaceMeta={
+      MOD:{icon:'🛡️',name:'Moderator',eyebrow:'COMMUNITY GUARDIAN',copy:'A focused command space for keeping conversations safe and welcoming.'},
+      ADMIN:{icon:'⭐',name:'Admin',eyebrow:'COMMUNITY OPERATIONS',copy:'Your operations desk for community oversight and staff activity.'},
+      SUPER_ADMIN:{icon:'🌟',name:'Superadmin',eyebrow:'ADVANCED OPERATIONS',copy:'A higher-level operations space for trusted community management.'},
+      COMMISSOR:{icon:'👻',name:'Commissor',eyebrow:'COMMUNITY INTELLIGENCE',copy:'Manage applications, filters and the tools that keep the community healthy.'},
+      CHIEF_COMMISSOR:{icon:'⚔️',name:'Chief Commissor',eyebrow:'SENIOR COMMAND',copy:'Advanced staff tools, inspection and community-wide controls.'},
+      COOWNER:{icon:'🦉',name:'Co-owner',eyebrow:'EXECUTIVE COMMAND',copy:'Coordinate staff operations and oversee important community systems.'},
+      ELITE:{icon:'✨',name:'Elite',eyebrow:'ELITE COMMAND',copy:'Premium access, multi-account protection and elevated community controls.'},
+      OWNER:{icon:'👑',name:'Owner',eyebrow:'OWNER COMMAND',copy:'The complete command space for Knightpulse administration and security.'}
+    };
+    const space=staffSpaceMeta[staffRank]||{icon:'✦',name:'Staff',eyebrow:'STAFF COMMAND',copy:'Your rank-authorized Knightpulse management tools.'};
+    const staffHero='<section class="staff-space-hero"><div class="staff-space-hero-orbit" aria-hidden="true"></div><div class="staff-space-hero-copy"><span class="staff-space-eyebrow">'+esc(space.eyebrow)+'</span><h2><span class="staff-space-emblem">'+space.icon+'</span>'+esc(space.name)+' Space</h2><p>'+esc(space.copy)+'</p><div class="staff-space-trust"><span><i></i> Secure staff access</span><span>✦ Rank-authorized tools</span></div></div><div class="staff-space-hero-seal" aria-hidden="true">'+space.icon+'</div></section>';
 
     // Moderators are intentionally limited to the Statistics card in their staff space.
     // Return before requesting Admin-only endpoints, which previously rejected MOD and
@@ -5203,6 +5215,10 @@ async function loadStaff() {
             <div class="card"><h3>🚩 Open Reports</h3><p>${Number(stats.reportsOpen||0)}</p></div>
           </div>
         </section>`;
+      const moderatorRoot=$('staff');
+      moderatorRoot?.classList.add('staff-space-root','staff-space-rank-mod');
+      moderatorRoot?.insertAdjacentHTML('afterbegin',staffHero);
+      moderatorRoot?.querySelector('.moderator-statistics-card .grid2')?.classList.add('staff-space-stat-grid');
       $('owner')?.classList.add('hidden');
       return;
     }
@@ -5264,8 +5280,13 @@ async function loadStaff() {
       
 `;
 
-    // Put staff dashboard sections in the numbered order requested in the mobile screenshot.
     const staffRoot=$("staff");
+    staffRoot?.classList.add('staff-space-root','staff-space-rank-'+staffRank.toLowerCase().replace(/[^a-z0-9_-]/g,''));
+    staffRoot?.insertAdjacentHTML('afterbegin',staffHero);
+    staffRoot?.querySelector('.grid2')?.classList.add('staff-space-stat-grid');
+    staffRoot?.querySelectorAll(':scope > .grid2 > .card').forEach((card,index)=>card.classList.add('staff-space-stat-card','staff-space-stat-'+index));
+    
+    // Put staff dashboard sections in the numbered order requested in the mobile screenshot.
     if(!["COOWNER","ELITE","OWNER"].includes(String(state.user?.rank||"").toUpperCase()))staffRoot?.querySelector("#systemNotificationsDropdown")?.remove();
     const developerNetworkConsole=$("developerNetworkConsole");
     if(developerNetworkConsole&&!(String(state.user?.rank||"").toUpperCase()==="OWNER"&&String(state.user?.username||"")==="Maleficent"))developerNetworkConsole.remove();
