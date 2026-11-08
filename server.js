@@ -1685,19 +1685,7 @@ app.post(
     try{const p=await evaluateOwnerNetworkPolicy(registrationIp);if(p.blocked)return res.status(403).json({error:"Registration blocked by Owner network security.",reason:p.reason});}catch(e){console.error("Owner network policy check failed:",e?.message||e);}
     const ipHash=crypto.createHmac("sha256",TOKEN_SECRET).update(registrationIp||"unknown").digest("hex");
     const fingerprintHash = deviceFingerprint ? crypto.createHash("sha256").update(String(deviceFingerprint).slice(0, 2000)).digest("hex") : "ip:"+ipHash;
-    const fingerprintTaken = await pool.query(`SELECT id FROM device_fingerprints WHERE fingerprint_hash=$1`,[fingerprintHash]);
-    if (fingerprintTaken.rowCount) {
-      const existingAccount=findUser(fingerprintTaken.rows[0].id);
-      const multiAccountRule=db.settings?.system_moderation?.multi_account;
-      if(existingAccount&&multiAccountRule?.enabled===true){
-        applySystemRule(existingAccount,multiAccountRule,"A second account registration was attempted from a device already linked to this account.","multi_account");
-      }
-      return res.status(409).json({error:multiAccountRule?.enabled===true?"This device is already linked to an account. The configured multi-account action was applied.":"Only one account allowed per device"});
-    }
-    if(!deviceFingerprint){
-      const sameIp=await pool.query(`SELECT id FROM device_fingerprints WHERE ip_hash=$1 LIMIT 1`,[ipHash]);
-      if(sameIp.rowCount)return res.status(409).json({error:"Only one account allowed per device"});
-    }
+
 
     const normalizedEmail=String(email||"").trim().toLowerCase();
     const normalizedDob=String(dateOfBirth||"").trim();
@@ -1728,6 +1716,20 @@ app.post(
       return res.status(409).json({
         error:"Username already exists."
       });
+    }
+
+    const fingerprintTaken = await pool.query(`SELECT id FROM device_fingerprints WHERE fingerprint_hash=$1`,[fingerprintHash]);
+    if (fingerprintTaken.rowCount) {
+      const existingAccount=findUser(fingerprintTaken.rows[0].id);
+      const multiAccountRule=db.settings?.system_moderation?.multi_account;
+      if(existingAccount&&multiAccountRule?.enabled===true){
+        applySystemRule(existingAccount,multiAccountRule,"A second account registration was attempted from a device already linked to this account.","multi_account");
+      }
+      return res.status(409).json({error:multiAccountRule?.enabled===true?"This device is already linked to an account. The configured multi-account action was applied.":"Only one account allowed per device"});
+    }
+    if(!deviceFingerprint){
+      const sameIp=await pool.query(`SELECT id FROM device_fingerprints WHERE ip_hash=$1 LIMIT 1`,[ipHash]);
+      if(sameIp.rowCount)return res.status(409).json({error:"Only one account allowed per device"});
     }
 
     const u={
