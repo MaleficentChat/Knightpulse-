@@ -17,7 +17,7 @@ function safeUser(u){return{id:Number(u.id),username:u.username,rank:u.rank,avat
 function tokenFor(id){const p=Buffer.from(JSON.stringify({sub:String(id),exp:Date.now()+1209600000})).toString('base64url');return p+'.'+crypto.createHmac('sha256',SECRET).update(p).digest('base64url')}
 function tokenUser(token){try{const a=String(token||'').split('.');if(a.length!==2)return null;const sig=crypto.createHmac('sha256',SECRET).update(a[0]).digest();const got=Buffer.from(a[1],'base64url');if(got.length!==sig.length||!crypto.timingSafeEqual(got,sig))return null;const p=JSON.parse(Buffer.from(a[0],'base64url').toString());return p.exp>Date.now()?Number(p.sub):null}catch{return null}}
 function cookie(req){const p=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('cc_session='));return p?decodeURIComponent(p.slice(11)):''}
-function setCookie(res,id){res.cookie('cc_session',tokenFor(id),{httpOnly:true,secure:true,sameSite:'none',path:'/',maxAge:1209600000})}
+function setCookie(res,id){res.setHeader('Set-Cookie','cc_session='+encodeURIComponent(tokenFor(id))+'; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=1209600')}
 function requireOrigin(req,res,next){if(req.headers.origin&&originSet.size&&!originSet.has(req.headers.origin))return res.status(403).json({error:'Origin not allowed.'});next()}
 function auth(req,res,next){const id=tokenUser(cookie(req));if(!id)return res.status(401).json({error:'Please sign in to continue.'});req.userId=id;next()}
 function limitAuth(req,res,next){const k=req.ip||'unknown',now=Date.now(),recent=(attempts.get(k)||[]).filter(t=>now-t<60000);if(recent.length>=12)return res.status(429).json({error:'Too many attempts. Try again in a minute.'});recent.push(now);attempts.set(k,recent);next()}
@@ -52,7 +52,7 @@ app.post('/api/auth/login',limitAuth,route(async(req,res)=>{
  if(!u||!(await bcrypt.compare(password,u.password_hash)))return res.status(401).json({error:'Incorrect username/email or password.'});
  await pool.query('UPDATE cc_users SET online=TRUE,last_seen=NOW() WHERE id=$1',[u.id]);setCookie(res,u.id);res.json({user:safeUser({...u,online:true})});
 }));
-app.post('/api/auth/logout',auth,route(async(req,res)=>{await pool.query('UPDATE cc_users SET online=FALSE,last_seen=NOW() WHERE id=$1',[req.userId]);res.clearCookie('cc_session',{httpOnly:true,secure:true,sameSite:'none',path:'/'});res.json({ok:true})}));
+app.post('/api/auth/logout',auth,route(async(req,res)=>{await pool.query('UPDATE cc_users SET online=FALSE,last_seen=NOW() WHERE id=$1',[req.userId]);res.setHeader('Set-Cookie','cc_session=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0');res.json({ok:true})}));
 app.get('/api/me',auth,route(async(req,res)=>{const u=await userById(req.userId);if(!u)return res.status(401).json({error:'Account not found.'});res.json({user:safeUser(u),ranks:RANKS})}));
 app.get('/api/ranks',auth,(req,res)=>res.json({ranks:RANKS}));
 app.get('/api/rooms',auth,route(async(req,res)=>{const r=await pool.query('SELECT r.id,r.slug,r.name,r.description,(SELECT COUNT(*)::int FROM cc_room_messages m WHERE m.room_id=r.id) AS message_count FROM cc_rooms r ORDER BY r.id');res.json({rooms:r.rows})}));
