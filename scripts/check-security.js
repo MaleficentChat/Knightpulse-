@@ -587,4 +587,32 @@ assert.ok(server.includes("blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','
 assert.ok(indexHtml.includes("/app.js?v=staff-dashboard-20261108-3"),
   "the HTML must point at the current rank-schema app bundle");
 
+
+const ownerDmStart=server.indexOf('app.get("/api/owner/dms",ownerOnly');
+const ownerDmEnd=server.indexOf('app.get("/api/dm/unread-count"',ownerDmStart);
+assert.ok(ownerDmStart>=0&&ownerDmEnd>ownerDmStart,"Owner DM inspection route must exist and remain Owner-only");
+const ownerDmRoute=server.slice(ownerDmStart,ownerDmEnd);
+assert.match(ownerDmRoute,/if\(!u1\)return res\.status\(400\)/,
+  "Owner DM inspection must require an explicitly selected account instead of returning the entire message store");
+assert.match(ownerDmRoute,/const canInspectTarget=target=>String\(actor\.id\)===String\(target\.id\)/,
+  "Owner DM inspection must allow self-inspection and enforce strict target hierarchy");
+assert.match(ownerDmRoute,/if\(!canInspectTarget\(x\)\)[\s\S]*if\(y&&!canInspectTarget\(y\)\)/,
+  "Owner DM inspection must reject equal- or higher-ranked participants in either selected account");
+assert.match(ownerDmRoute,/Cache-Control","no-store"/,
+  "Owner DM inspection responses must not be cached");
+assert.match(server,/app\.get\('\/api\/owner\/premium-requests',ownerOnly[\s\S]*?IN \('MEMBER','VIP','SVIP','PREMIUM'\)/,
+  "Owner Premium request lists must exclude staff-ranked accounts");
+assert.match(server,/app\.post\('\/api\/owner\/premium-requests\/:id\/grant',ownerOnly[\s\S]*?grantPremiumToStaffTarget\(actor,target\)/,
+  "Owner Premium request grants must use the shared protected target validator");
+assert.match(server,/app\.post\('\/api\/premium\/grant',ownerOnly[\s\S]*?grantPremiumToStaffTarget\(actor,target\)/,
+  "Owner direct Premium grants must use the shared protected target validator");
+const premiumCancelStart=server.indexOf("app.post('/api/premium/cancel',ownerOnly");
+const premiumCancelEnd=server.indexOf("app.post('/api/shop/svip'",premiumCancelStart);
+assert.ok(premiumCancelStart>=0&&premiumCancelEnd>premiumCancelStart,"Owner Premium cancellation route must exist");
+const premiumCancelRoute=server.slice(premiumCancelStart,premiumCancelEnd);
+assert.match(premiumCancelRoute,/canAccessStaffTarget\(actor,target\)/,
+  "Premium cancellation must enforce strict staff hierarchy protection");
+assert.match(premiumCancelRoute,/String\(target\.rank\|\|'\)\.toUpperCase\(\)!=='PREMIUM'/,
+  "Premium cancellation must never demote staff ranks or non-Premium accounts");
+
 console.log("Room history, private-room access, invitations, private-message deletion, Shadow Feed, Friends Activity, bootstrap privacy, capacity, and slow-mode regression checks passed.");
