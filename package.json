@@ -1,12 +1,12 @@
 {
-  "name": "maleficent-chat",
-  "version": "4.0.0",
+  "name": "cloud-chat",
+  "version": "3.6.9",
   "private": true,
-  "description": "Maleficent Chat rebuild — selective core migration",
+  "description": "Cloud Chat 3.6.9 - request error handling and room repair",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node scripts/check-security.js && node scripts/check-rebuild.js && node --check server.js && node --check db.js && node --check brand-news-routes.js && node --check notification-routes.js && node --check entertainment.js && node --check diamond-store-routes.js && node --check social-features.js && node --check public/app.js && node --check public/social-features.js && node --check public/entertainment.js"
+    "check": "node scripts/check-security.js && node --check server.js && node --check db.js && node --check entertainment.js && node --check public/app.js && node --check public/doodle-studio.js && node --check public/entertainment.js && node --check social-features.js && node --check public/social-features.js"
   },
   "engines": {
     "node": ">=20"

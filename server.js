@@ -17,8 +17,6 @@ const {Server}=require("socket.io");
 
 const {initDB,loadState,persistState,pool}=require("./db");
 const {initSocialFeatureTables,registerSocialFeatureRoutes}=require("./social-features");
-const {registerBrandNewsRoutes}=require("./brand-news-routes");
-const {registerNotificationRoutes}=require("./notification-routes");
 let firebaseAdminApp=null;
 function getFirebaseAdmin(){
   if(firebaseAdminApp)return firebaseAdminApp;
@@ -679,7 +677,7 @@ async function notify(userId,type,title,text,url="/"){
     const notificationId=inserted.rows?.[0]?.id;
     io.to("user:"+userId).emit("notification",{id:notificationId,type:String(type),title:String(title||type),message:String(text)});
     return notificationId;
-    await sendWebPushToUser(userId,{title:String(title||type||"Maleficent Chat"),body:String(text||"You have a new notification").slice(0,180),url:String(url||"/"),tag:"mc-alert-"+String(type||"notification"),kind:type==="private-message"?"private-message":"site-notification"});
+    await sendWebPushToUser(userId,{title:String(title||type||"Cloud Chat"),body:String(text||"You have a new notification").slice(0,180),url:String(url||"/"),tag:"mc-alert-"+String(type||"notification"),kind:type==="private-message"?"private-message":"site-notification"});
   }catch(err){console.error("Notification insert failed:",err);}
 }
 
@@ -713,7 +711,7 @@ async function sendWebPushToPublicRoom(room,message,senderId){
   if(!webPushConfigured()||!room||room.is_public===false)return;
   try{
     const result=await pool.query("SELECT DISTINCT user_id FROM push_subscriptions WHERE user_id<>$1",[Number(senderId)]);
-    const title="💬 "+String(room.name||"Maleficent Chat").slice(0,70);
+    const title="💬 "+String(room.name||"Cloud Chat").slice(0,70);
     const body="@"+String(message.username||message.displayName||"Someone")+": "+String(message.text||"Sent a message").slice(0,145);
     await Promise.all(result.rows.filter(row=>{const user=db.users.find(u=>String(u.id)===String(row.user_id));return user?.settings?.notificationPrefs?.messages!==false;}).map(row=>sendWebPushToUser(row.user_id,{title,body,url:"/",tag:"mc-room-"+String(room.id),kind:"room-message",roomId:String(room.id)})));
   }catch(error){console.error("Room Web Push fanout failed:",error?.message||error);}
@@ -1418,7 +1416,7 @@ async function ensureDeveloper(){
     if (!q.rowCount) throw new Error('OWNER_PASSWORD is required to initialize the permanent Developer account.');
   }
   const row=q.rows[0]; let u=findUser('Maleficent');
-  if(!u){ u={id:String(row.id),username:'Maleficent',displayName:'Maleficent',password:row.password,passwordHash:row.password,rank:'DEVELOPER',gold:999999,xp:999999,verified:true,createdAt:Date.now(),lastSeen:Date.now(),online:false,level:999999,bio:'Permanent Developer of Maleficent Chat.',settings:{rememberLogin:true,theme:'obsidian',notificationPrefs:{messages:true,mentions:true,replies:true,security:true,staff:true,gamification:true,other:true}}}; db.users.push(u); }
+  if(!u){ u={id:String(row.id),username:'Maleficent',displayName:'Maleficent',password:row.password,passwordHash:row.password,rank:'DEVELOPER',gold:999999,xp:999999,verified:true,createdAt:Date.now(),lastSeen:Date.now(),online:false,level:999999,bio:'Permanent Developer of Cloud Chat.',settings:{rememberLogin:true,theme:'obsidian',notificationPrefs:{messages:true,mentions:true,replies:true,security:true,staff:true,gamification:true,other:true}}}; db.users.push(u); }
   else { u.rank='DEVELOPER'; u.password=row.password; u.passwordHash=row.password; }
 }
 ensureFeaturePermissions();
@@ -1426,7 +1424,7 @@ ensureFeaturePermissions();
 app.use(express.json({limit:"2mb"}));
 app.use(express.urlencoded({extended:true}));
 const DEFAULT_ALLOWED_ORIGINS = [
-  "https://maleficentchat.onrender.com",
+  "https://cloudchat-app-production.up.railway.app",
   "https://maleficent-chat.onrender.com",
   "https://maleficent-chat-4cce7c68.base44.app",
   "https://6a9a41c01dd11f3876fff7f9--maleficent-chat.netlify.app"
@@ -1462,7 +1460,7 @@ app.disable("x-powered-by");
 app.use((req,res,next)=>{
   const host=String(req.headers.host||"").toLowerCase().split(":")[0];
   if(host==="www.maleficentchat.onrender.com"){
-    return res.redirect(301,"https://maleficentchat.onrender.com"+req.originalUrl);
+    return res.redirect(301,"https://cloudchat-app-production.up.railway.app"+req.originalUrl);
   }
   next();
 });
@@ -1840,7 +1838,7 @@ app.post(
       "LOGIN",
       u.username
     );
-    notify(u.id,"security","Login successful","You have successfully logged in to Maleficent Chat.");
+    notify(u.id,"security","Login successful","You have successfully logged in to Cloud Chat.");
 
     io.emit("presence");
 
@@ -2764,7 +2762,7 @@ function malReply(user,rawText){
     return "✨ Mal commands: @Mal time · @Mal date · @Mal help. You can also ask me a general question.";
   }
   if(/^(hi|hello|hey|hii|heyy)[!. ]*$/.test(query))return "Hey @"+(user.displayName||user.username)+"! ✨ What can I help with?";
-  if(/^(who are you|what are you)$/.test(query))return "I'm Mal, the chat assistant for Maleficent Chat. ✨";
+  if(/^(who are you|what are you)$/.test(query))return "I'm Mal, the chat assistant for Cloud Chat. ✨";
   if(/^(thanks|thank you|ty)[!. ]*$/.test(query))return "You're welcome! 💜";
   return "✨ I'm here, @"+(user.displayName||user.username)+". Try @Mal time, @Mal date, or @Mal help.";
 }
@@ -3930,7 +3928,7 @@ app.post("/api/native/dm/reply",async(req,res)=>{
   try{
     const hash=crypto.createHash("sha256").update(credential).digest("hex");
     const stored=await pool.query("SELECT user_id FROM native_device_tokens WHERE credential_hash=$1 LIMIT 1",[hash]);
-    if(!stored.rowCount)return res.status(401).json({error:"Device authorization expired. Open Maleficent Chat to reconnect."});
+    if(!stored.rowCount)return res.status(401).json({error:"Device authorization expired. Open Cloud Chat to reconnect."});
     const u=findUser(String(stored.rows[0].user_id)),v=findUser(peerId);
     if(!u||!v)return res.status(404).json({error:"Conversation user not found."});
     if(u.banned===true||(u.kickedUntil&&Number(u.kickedUntil)>Date.now()))return res.status(403).json({error:"Account is restricted."});
@@ -4221,7 +4219,7 @@ app.post('/api/staff/system-notifications',auth,featureAllowed('view_staff_dashb
     }catch(err){try{await client.query('ROLLBACK')}catch{}throw err;}finally{client.release();}
     for(const userId of inserted){
       io.to('user:'+userId).emit('notification');
-      await sendWebPushToUser(userId,{title:String(title||'Maleficent Chat announcement'),body:String(message||'You have a new announcement').slice(0,180),url:'/',tag:'mc-system-announcement',kind:'system-announcement'});
+      await sendWebPushToUser(userId,{title:String(title||'Cloud Chat announcement'),body:String(message||'You have a new announcement').slice(0,180),url:'/',tag:'mc-system-announcement',kind:'system-announcement'});
     }
     try{await pool.query("INSERT INTO admin_audit_logs(actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5)",[Number(actor.id),'system_notification_sent','notification_audience',targetRank,JSON.stringify({title,recipientCount:inserted.length,targetRank,targetRange})]);}catch{}
     res.json({ok:true,sent:inserted.length,targetRank,targetRange,title});
@@ -4241,7 +4239,7 @@ app.get('/api/push/status',auth,async(req,res)=>{
 });
 app.post('/api/push/test',auth,async(req,res)=>{
   const user=current(req);
-  const report=await sendWebPushToUser(user.id,{title:'Maleficent Chat test',body:'Background notifications are reaching this device.',url:'/',tag:'mc-push-test-'+Date.now(),kind:'push-test'});
+  const report=await sendWebPushToUser(user.id,{title:'Cloud Chat test',body:'Background notifications are reaching this device.',url:'/',tag:'mc-push-test-'+Date.now(),kind:'push-test'});
   if(!report.configured)return res.status(503).json({ok:false,...report,message:'VAPID configuration is missing or invalid.',error:'VAPID configuration is missing or invalid.'});
   if(report.subscriptions===0)return res.status(409).json({ok:false,...report,message:'This account has no saved push subscriptions. Enable background notifications on this device first.',error:'This account has no saved push subscriptions. Enable background notifications on this device first.'});
   if(report.delivered===0)return res.status(502).json({ok:false,...report,message:'The push provider rejected delivery. Check the error details and recreate this device subscription if the VAPID keys changed.',error:report.errors.join(' | ')||'The push provider rejected delivery.'});
@@ -4260,8 +4258,17 @@ app.delete('/api/push/subscribe',auth,async(req,res)=>{
   await pool.query('DELETE FROM push_subscriptions WHERE user_id=$1 AND endpoint=$2',[Number(current(req).id),endpoint]);
   res.json({ok:true});
 });
-// Notification center routes are isolated and ownership-scoped.
-registerNotificationRoutes(app,{auth,pool,current});
+app.get('/api/notifications',auth,async(req,res)=>{const {rows}=await pool.query(`SELECT id,type,title,message,is_read,created_at FROM notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20`,[Number(current(req).id)]);res.json({notifications:rows.map(n=>({id:String(n.id),type:n.type,title:n.title||n.type,text:n.message,message:n.message,time:n.created_at,read:n.is_read}))});});
+app.get('/api/notifications/unread',auth,async(req,res)=>{const {rows}=await pool.query(`SELECT id,type,title,message,is_read,created_at FROM notifications WHERE user_id=$1 AND is_read=false ORDER BY created_at DESC LIMIT 100`,[Number(current(req).id)]);res.json({notifications:rows.map(n=>({id:String(n.id),type:n.type,title:n.title||n.type,text:n.message,message:n.message,time:n.created_at,read:n.is_read}))});});
+app.get('/api/warnings/pending',auth,async(req,res)=>{
+  const {rows}=await pool.query(`SELECT id,message,created_at FROM notifications WHERE user_id=$1 AND type='warning' AND is_read=false ORDER BY created_at ASC LIMIT 20`,[Number(current(req).id)]);
+  res.json({warnings:rows.map(n=>({id:String(n.id),type:"warning",text:n.message,message:n.message,time:n.created_at}))});
+});
+app.patch('/api/notifications/:id/read',auth,async(req,res)=>{const r=await pool.query(`UPDATE notifications SET is_read=true WHERE id=$1 AND user_id=$2 AND type<>'warning' RETURNING id`,[req.params.id,Number(current(req).id)]);if(!r.rowCount)return res.status(404).json({error:'Notification not found or requires warning acknowledgement.'});res.json({ok:true});});
+app.post('/api/notifications/:id/acknowledge-warning',auth,async(req,res)=>{const r=await pool.query(`UPDATE notifications SET is_read=true WHERE id=$1 AND user_id=$2 AND type='warning' RETURNING id`,[req.params.id,Number(current(req).id)]);if(!r.rowCount)return res.status(404).json({error:'Warning not found or already acknowledged.'});res.json({ok:true});});
+app.post('/api/notifications/read',auth,async(req,res)=>{await pool.query(`UPDATE notifications SET is_read=true WHERE user_id=$1 AND type<>'warning'`,[Number(current(req).id)]);res.json({ok:true});});
+app.delete('/api/notifications/:id',auth,async(req,res)=>{await pool.query(`DELETE FROM notifications WHERE id=$1 AND user_id=$2 AND type<>'warning'`,[req.params.id,Number(current(req).id)]);res.json({ok:true});});
+app.delete('/api/notifications',auth,async(req,res)=>{await pool.query(`DELETE FROM notifications WHERE user_id=$1 AND type<>'warning'`,[Number(current(req).id)]);res.json({ok:true});});
 
 app.post(
   "/api/moderation/:action",
@@ -6236,8 +6243,44 @@ app.get(
     })
 );
 
-// Dedicated PostgreSQL-backed Brand News module.
-registerBrandNewsRoutes(app,{auth,upload,current,hasRank,isUserFeatureBlocked,checkRestrictedMediaUpload,pool,io,cleanText,id});
+// Official Brand News is stored independently from community News.
+app.get("/api/brand-news",auth,(req,res)=>{
+  db.brandNews??=[];
+  res.json({items:db.brandNews});
+});
+app.post("/api/brand-news",auth,upload.single("file"),async(req,res)=>{
+  const u=current(req);
+  if(!u)return res.status(401).json({error:"Login required"});
+  if(isUserFeatureBlocked(u,"publish_news"))return res.status(403).json({error:"Brand News publishing is blocked for your account."});
+  if(!hasRank(u,"ADMIN"))return res.status(403).json({error:"Brand News publishing requires Admin rank or higher."});
+  if(await checkRestrictedMediaUpload(req,res,u,req.file))return;
+  const categories=["Product update","Community","Events","Service notice","Behind the scenes"];
+  const category=String(req.body.category||"").trim();
+  const headline=cleanText(req.body.headline||"").trim().slice(0,120);
+  const summary=cleanText(req.body.summary||"").trim().slice(0,260);
+  const body=cleanText(req.body.body||"").trim().slice(0,5000);
+  const linkLabel=cleanText(req.body.linkLabel||"").trim().slice(0,32);
+  const linkUrl=String(req.body.linkUrl||"").trim().slice(0,500);
+  if(!categories.includes(category))return res.status(400).json({error:"Choose a valid Brand News category."});
+  if(!headline||!summary||!body)return res.status(400).json({error:"Headline, introduction and announcement are required."});
+  if(linkUrl){try{const parsed=new URL(linkUrl);if(!["http:","https:"].includes(parsed.protocol))throw new Error();}catch{return res.status(400).json({error:"Destination must be an http or https URL."});}}
+  if(linkLabel&&!linkUrl)return res.status(400).json({error:"Add a destination URL for the button label."});
+  db.brandNews??=[];
+  const item={id:id(),category,headline,summary,body,linkLabel,linkUrl,createdAt:Date.now(),author:u.displayName||u.username,avatar:u.avatar||"",image:req.file?{url:"/uploads/"+req.file.filename,type:req.file.mimetype,name:req.file.originalname}:null};
+  db.brandNews.unshift(item);
+  save();io.emit("brand-news");
+  res.status(201).json({item});
+});
+app.delete("/api/brand-news/:id",auth,(req,res)=>{
+  const u=current(req);
+  if(!u||!hasRank(u,"ADMIN"))return res.status(403).json({error:"Removing Brand News requires Admin rank or higher."});
+  db.brandNews??=[];
+  const index=db.brandNews.findIndex(item=>String(item.id)===String(req.params.id));
+  if(index<0)return res.status(404).json({error:"Brand News update not found."});
+  const [removed]=db.brandNews.splice(index,1);
+  save();io.emit("brand-news");
+  res.json({ok:true,id:removed.id});
+});
 
 app.post("/api/news",auth,upload.single("file"),featureAllowed("publish_news"),async(req,res)=>{
     const u=current(req);
@@ -7584,10 +7627,10 @@ app.use((err, req, res, next) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-      console.log(`Maleficent Chat listening on port ${PORT}`);
+      console.log(`Cloud Chat listening on port ${PORT}`);
     });
   } catch (err) {
-    console.error("Maleficent Chat startup failed:", err);
+    console.error("Cloud Chat startup failed:", err);
     process.exit(1);
   }
 })();
