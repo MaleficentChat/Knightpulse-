@@ -7442,6 +7442,7 @@ app.get('/api/me/account',auth,async(req,res)=>{
 
     // Initialize system rooms before accepting traffic; preserve existing room data.
     await ensureSystemRooms();
+    await pool.query("UPDATE rooms SET rank_required=CASE UPPER(rank_required) WHEN 'USER' THEN 'MEMBER' WHEN 'MODERATOR' THEN 'MOD' WHEN 'SUPERADMIN' THEN 'SUPER_ADMIN' WHEN 'CO-OWNER' THEN 'COOWNER' WHEN 'CO_OWNER' THEN 'COOWNER' WHEN 'ROYAL' THEN 'PREMIUM' WHEN 'INSTRUCTOR' THEN 'CHIEF_COMMISSOR' WHEN 'DEVELOPER' THEN 'OWNER' ELSE UPPER(rank_required) END WHERE UPPER(rank_required) IN ('USER','MEMBER','VIP','SVIP','PREMIUM','ROYAL','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','INSTRUCTOR','CHIEF_COMMISSOR','COOWNER','CO-OWNER','CO_OWNER','ELITE','OWNER','DEVELOPER')").catch(error=>console.error("Room rank migration skipped:",error?.message||error));
 
     db = await loadState(load());
     // Apply the compatibility mapping after persisted state is loaded, so every
@@ -7451,6 +7452,14 @@ app.get('/api/me/account',auth,async(req,res)=>{
       account.rank=LEGACY_RANK_MIGRATION[previous]||(CANONICAL_RANKS.has(previous)?previous:account.rank||"MEMBER");
     }
     db.settings=migrateRankSettings(db.settings||{});
+    for(const room of (db.rooms||[])){
+      for(const key of ["rankRequired","rank_required"]){
+        if(typeof room[key]==="string"){
+          const value=room[key].toUpperCase();
+          room[key]=LEGACY_RANK_MIGRATION[value]||(CANONICAL_RANKS.has(value)?value:room[key]);
+        }
+      }
+    }
     await ensureOwner();
 
     // Ensure the structured/default settings exist without overwriting owner changes.
