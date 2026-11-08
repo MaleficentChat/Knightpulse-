@@ -314,14 +314,14 @@ async function initDB() {
   `);
 
   // Never seed a publicly known default password. A new installation must
-  // supply OWNER_PASSWORD; existing Developer credentials are preserved.
+  // supply OWNER_PASSWORD; existing Owner credentials are preserved.
   if (process.env.OWNER_PASSWORD) {
-    const developerHash = await bcryptHash(process.env.OWNER_PASSWORD);
+    const ownerHash = await bcryptHash(process.env.OWNER_PASSWORD);
     await pool.query(
       `INSERT INTO users(username,password,rank,gold,xp)
-       VALUES('Maleficent',$1,'Developer',999999,999999)
+       VALUES('Maleficent',$1,'OWNER',999999,999999)
        ON CONFLICT(username) DO NOTHING`,
-      [developerHash]
+      [ownerHash]
     );
   }
 
@@ -401,11 +401,11 @@ async function loadState(defaultState) {
   }
   for (const user of state.users) user.equippedCosmetics=cosmeticsByUser.get(String(user.id))||[];
 
-  // The permanent Developer can never be demoted, muted or otherwise changed by stale legacy state.
-  const dev = state.users.find(u=>u.username.toLowerCase()==='maleficent');
-  if (dev) {
-    dev.rank="DEVELOPER";
-    dev.passwordHash=dev.password && dev.password.startsWith("$2") ? dev.password : undefined;
+  // The permanent Owner can never be demoted, muted or otherwise changed by stale legacy state.
+  const owner = state.users.find(u=>u.username.toLowerCase()==='maleficent');
+  if (owner) {
+    owner.rank="OWNER";
+    owner.passwordHash=owner.password && owner.password.startsWith("$2") ? owner.password : undefined;
   }
 
   // PostgreSQL is the source of truth for rooms; do not re-import stale legacy room lists.
@@ -490,7 +490,7 @@ async function loadState(defaultState) {
   state.settings.xpPerMessage=Number(state.settings.xp_per_message??state.settings.xpPerMessage??5);
   state.settings.dailyXpLimit=Number(state.settings.daily_xp_limit??state.settings.dailyXpLimit??500);
   state.settings.filterMuteDurationMinutes=Number(state.settings.filter_mute_duration??state.settings.filterMuteDurationMinutes??5);
-  state.settings.filter_affected_ranks=state.settings.filter_affected_ranks||state.settings.filterAffectedRanks||["MEMBER","VIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"];
+  state.settings.filter_affected_ranks=state.settings.filter_affected_ranks||state.settings.filterAffectedRanks||["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
 
   const {rows: userGrantRows}=await pool.query(`SELECT user_id,feature_name,granted,granted_by FROM feature_grants`);
   state.userFeatureGrants={};
