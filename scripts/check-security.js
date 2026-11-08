@@ -620,10 +620,10 @@ console.log("Room history, private-room access, invitations, private-message del
 
 const staffUi = fs.readFileSync("public/app.js", "utf8");
 const staffCss = fs.readFileSync("public/knightpulse-complete.css", "utf8");
-assert.match(staffUi, /Owner Command Center[\s\S]*Elite Command Center/,
-  "Elite and Owner must receive distinct command-center interfaces");
-assert.match(staffUi, /bootstrapData\.settings\?\.feature_grants[\s\S]*Permission audit/,
-  "the command center must expose the currently configured feature-grant permission audit");
+assert.match(staffUi, /staffRank==='ELITE'[\s\S]*Elite Command Center/,
+  "Elite alone must receive the compact command center");
+assert.doesNotMatch(staffUi, /staffRank==='OWNER'[\s\S]{0,80}kp-command-center/,
+  "Owner Space must not duplicate its tools with a separate command center");
 assert.match(staffUi, /api\('\/api\/notifications\/unread'\)[\s\S]*system-announcement/,
   "staff spaces must load unread system and staff notifications");
 assert.match(staffUi, /api\('\/api\/notifications\/'\+encodeURIComponent\(button\.dataset\.kpRead\)\+'\/read'/,
@@ -647,10 +647,12 @@ assert.match(staffCss,/\.kp-staff-groups[\s\S]*\.kp-audit-filters[\s\S]*\.kp-pro
 assert.ok(indexHtml.includes("knightpulse-complete.css?v=profile-staff-layout-20261108-3"),
   "the HTML must request the refreshed profile, staff and audit styles");
 
-assert.doesNotMatch(staffUi,/kp-profile-quick-stats|<small>Experience<\/small>|<small>Likes<\/small>/,
-  "profile headers must not show the distracting Level, Experience and Likes stat labels");
-assert.match(staffCss,/\.admin-activity-logs>summary[\s\S]*?font-size:15px[\s\S]*?\.admin-activity-logs-card/,
-  "Admin Activity Logs must have a full-size summary and content panel");
+assert.match(staffUi,/kp-profile-quick-stats[\s\S]*?<small>Experience<\/small>[\s\S]*?<small>Likes<\/small>/,
+  "profile level, experience and likes indicators must remain present");
+assert.match(staffCss,/\.kp-profile-quick-stats \.profile-stat small\{display:none/,
+  "profile stat captions must be hidden while icons and values remain visible");
+assert.ok(staffCss.includes("#staff .admin-activity-logs{display:block!important;grid-column:1/-1!important"),
+  "Admin Activity Logs must span the full available width");
 assert.match(staffCss,/\.kp-staff-dropdown-section[\s\S]*?\.kp-staff-regular-section/,
   "staff dropdown options must be positioned above non-dropdown tools");
 
