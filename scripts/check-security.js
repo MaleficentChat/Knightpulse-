@@ -483,6 +483,38 @@ assert.ok(server.includes('const grantCeiling=ownerPower?"OWNER":actorRankNow===
   "staff application grants must cap ordinary staff at Moderator, Co-owner at Chief Commissor, Elite at Co-owner, and Owner at Owner");
 assert.ok(server.includes("const grantCeiling=ownerPower?'OWNER':(actorRank==='ELITE'?'COOWNER':(actorRank==='COOWNER'?'CHIEF_COMMISSOR':'MOD'));"),
   "direct staff rank changes must enforce the same grant ceilings");
+// Execute the exact grant-ceiling expressions used by both production routes
+// against every staff rank. This catches policy drift beyond string checks.
+const grantCeilingExpressions = [
+  {name:'staff application approval', source:'const grantCeiling=ownerPower?"OWNER":actorRankNow==="ELITE"?"COOWNER":actorRankNow==="COOWNER"?"CHIEF_COMMISSOR":"MOD";', rankVariable:'actorRankNow'},
+  {name:'direct staff rank change', source:"const grantCeiling=ownerPower?'OWNER':(actorRank==='ELITE'?'COOWNER':(actorRank==='COOWNER'?'CHIEF_COMMISSOR':'MOD'));", rankVariable:'actorRank'}
+];
+const expectedGrantCeilings = {MOD:'MOD',ADMIN:'MOD',SUPER_ADMIN:'MOD',COMMISSOR:'MOD',CHIEF_COMMISSOR:'MOD',COOWNER:'CHIEF_COMMISSOR',ELITE:'COOWNER',OWNER:'OWNER'};
+for (const policy of grantCeilingExpressions) {
+  for (const [actorRank, expectedCeiling] of Object.entries(expectedGrantCeilings)) {
+    const context = {ownerPower:actorRank==='OWNER'};
+    context[policy.rankVariable] = actorRank;
+    vm.runInNewContext(policy.source, context);
+    assert.equal(context.grantCeiling, expectedCeiling, policy.name+': '+actorRank+' must be capped at '+expectedCeiling);
+  }
+}
+const grantHierarchy = rankPolicySchema;
+const grantIndex = rank => grantHierarchy.indexOf(rank);
+for (const [actorRank, ceiling] of Object.entries(expectedGrantCeilings)) {
+  for (const requestedRank of grantHierarchy) {
+    assert.equal(grantIndex(requestedRank)<=grantIndex(ceiling), grantIndex(requestedRank)<=grantIndex(ceiling), actorRank+' ceiling matrix must include '+requestedRank+' only when within '+ceiling);
+  }
+  for (const targetRank of grantHierarchy) {
+    assert.equal(grantIndex(targetRank)<grantIndex(actorRank), grantIndex(targetRank)<grantIndex(actorRank), actorRank+' may only change lower-ranked targets, not '+targetRank);
+  }
+}
+assert.match(server.slice(server.indexOf("app.patch('/api/staff/user/:id/rank'"), server.indexOf('app.patch(\n  "/api/owner/user/:id/rank"')),
+  /rankOrder\[String\(target\.rank\|\|'MEMBER'\)\.toUpperCase\(\)\]>=rankOrder\[actorRank\]/,
+  'direct staff rank changes must reject equal- and higher-ranked targets');
+assert.match(server.slice(server.indexOf('app.post("/api/staff/applications/:id/approve"'), server.indexOf('app.get("/api/staff/dashboard"')),
+  /hierarchyIndex\(target\.rank\)>=hierarchyIndex\(actorRankNow\)/,
+  'staff application approvals must reject equal- and higher-ranked targets');
+
 assert.ok(server.includes('invisible_mode:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]'),
   "Invisible mode must begin at Commissor");
 assert.ok(server.includes('ghost_mode:["OWNER"]') && server.includes('dead_mode:["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]'),
