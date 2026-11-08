@@ -5212,6 +5212,8 @@ async function loadStaff() {
     const filterWords=canManageFilters?await api('/api/staff/filter-word'):{words:[]};
     const systemCenter=await api('/api/staff/system-center').catch(()=>null);
     const canUseAdminPanel=['ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(staffRank);
+    const canGrantPremium=canFeature('premium_granting');
+    const canManageMultiAccount=canFeature('manage_multi_account_rules');
     const staffRankOrder=['MEMBER','VIP','SVIP','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'];
     const canHardRefreshSite=staffRankOrder.indexOf(String(state.user?.rank||'').toUpperCase())>=staffRankOrder.indexOf('CHIEF_COMMISSOR');
 
@@ -5239,6 +5241,8 @@ async function loadStaff() {
           </form>
         </div>
       </details>` : ''}
+      ${canGrantPremium ? `<details class="staff-compact-dropdown" id="staffPremiumGrantDropdown"><summary>💎 Grant Premium</summary><section class="card staff-premium-grant-card"><p class="muted">Grant Premium to eligible Member, VIP or SVIP accounts. Higher staff ranks are protected.</p><form id="staffPremiumGrantForm" class="toolbar"><input id="staffPremiumGrantUsername" maxlength="26" placeholder="Username to grant Premium" required><button class="primary" type="submit">Grant Premium</button></form><div id="staffPremiumRequestList"><p class="muted">Loading Premium requests…</p></div></section></details>` : ''}
+      ${canManageMultiAccount ? `<details class="staff-compact-dropdown" id="staffMultiAccountRuleDropdown"><summary>🛡️ Multi-account Rules</summary><section class="card staff-multi-account-card"><p class="muted">Configure only the multi-account rule. Other System Moderation rules remain Owner-only.</p><form id="staffMultiAccountRuleForm" class="stack"><label class="check-row"><input type="checkbox" id="staffMultiAccountEnabled"> Enable automatic multi-account moderation</label><label>Action<select id="staffMultiAccountAction"><option value="WARN">Warn</option><option value="MUTE">Mute</option><option value="KICK">Kick</option><option value="BAN">Ban</option></select></label><label>Duration (minutes)<input id="staffMultiAccountDuration" type="number" min="1" max="10080" value="5"></label><label>Reason<input id="staffMultiAccountReason" maxlength="240" placeholder="Reason shown in moderation history" required></label><div class="toolbar"><button class="primary" type="submit">Save Multi-account Rule</button><span class="muted" id="staffMultiAccountStatus" aria-live="polite"></span></div></form></section></details>` : ''}
       <div class="grid2">
         <div class="card"><h3>Statistics</h3><p>Users: ${data.stats.users}<br>Online: ${data.stats.online}<br>Messages: ${data.stats.messages}<br>Open reports: ${data.stats.reportsOpen}</p></div>
         ${canManageFilters ? `<div class="card"><h3>Filtered words</h3><p class="muted">Use <code>p: phrase</code> for OCR-based restricted image text. SUPER_ADMIN and above bypass the media restriction.</p><button class="mini" onclick="addFilterWord()">＋ Add word</button><details class="filter-words-details"><summary>Filter words (${(filterWords.words||[]).length})</summary><div class="filter-word-list">${(filterWords.words||[]).map(w=>`<div class="filter-word-row"><span class="muted">${/^p\s*:/i.test(w)?'Restricted Media':(/^r\s*:/i.test(w)?'Auto Report':(/^u\s*:/i.test(w)?'Restricted Username':'Filter'))}</span> <code>${esc(w)}</code><button class="mini danger" onclick="deleteFilterWord(decodeURIComponent('${encodeURIComponent(w)}'))">×</button></div>`).join('')||'<span class="muted">No filter words configured.</span>'}</div></details><p class="muted">Link filter: ${bootstrapData.settings?.linkFilter?'ON':'OFF'}</p></div>` : ''}
@@ -5299,6 +5303,53 @@ async function loadStaff() {
     }
     document.querySelectorAll("[data-assign-report]").forEach(button=>button.onclick=()=>assignReport(button.dataset.assignReport));
     await renderStaffApplications();
+    if(canGrantPremium){
+      const premiumHost=$('staffPremiumRequestList');
+      const refreshPremiumRequests=async()=>{
+        if(!premiumHost)return;
+        try{
+          const result=await api('/api/staff/premium-requests'),requests=result.requests||[];
+          premiumHost.innerHTML=requests.length?'<h4>Pending requests</h4>'+requests.map(r=>'<div class="hub-row"><span>@'+esc(r.username||'Unknown')+' · '+esc(String(r.rank||'MEMBER'))+'</span><button class="mini primary" type="button" data-staff-grant-premium-request="'+esc(r.id)+'">Grant Premium</button></div>').join(''):'<p class="muted">No pending Premium requests.</p>';
+          premiumHost.querySelectorAll('[data-staff-grant-premium-request]').forEach(button=>button.addEventListener('click',async()=>{
+            button.disabled=true;
+            try{await api('/api/staff/premium-requests/'+encodeURIComponent(button.dataset.staffGrantPremiumRequest)+'/grant',{method:'POST'});toast('Premium granted.');await refreshPremiumRequests();}
+            catch(error){toast(error.message||'Could not grant Premium.');button.disabled=false;}
+          }));
+        }catch(error){premiumHost.innerHTML='<p class="muted">'+esc(error.message||'Could not load Premium requests.')+'</p>';}
+      };
+      $('staffPremiumGrantForm')?.addEventListener('submit',async event=>{
+        event.preventDefault();const button=event.currentTarget.querySelector('button[type="submit"]'),username=$('staffPremiumGrantUsername')?.value.trim()||'';
+        if(!username)return;
+        if(button){button.disabled=true;button.textContent='Granting…';}
+        try{await api('/api/staff/premium/grant',{method:'POST',body:JSON.stringify({username})});toast('Premium granted to @'+username.replace(/^@/,'')+'.');event.currentTarget.reset();await refreshPremiumRequests();}
+        catch(error){toast(error.message||'Could not grant Premium.');}
+        finally{if(button){button.disabled=false;button.textContent='Grant Premium';}}
+      });
+      await refreshPremiumRequests();
+    }
+    if(canManageMultiAccount){
+      const form=$('staffMultiAccountRuleForm'),action=$('staffMultiAccountAction'),duration=$('staffMultiAccountDuration'),status=$('staffMultiAccountStatus');
+      const syncDuration=()=>{if(duration)duration.disabled=!['MUTE','KICK'].includes(action?.value);};
+      action?.addEventListener('change',syncDuration);
+      try{
+        const result=await api('/api/staff/multi-account-rule'),rule=result.rule||{};
+        $('staffMultiAccountEnabled').checked=rule.enabled===true;
+        action.value=String(rule.action||'WARN').toUpperCase();
+        duration.value=String(rule.durationMinutes||5);
+        $('staffMultiAccountReason').value=rule.reason||'';
+        syncDuration();
+      }catch(error){if(status)status.textContent=error.message||'Could not load rule settings.';}
+      form?.addEventListener('submit',async event=>{
+        event.preventDefault();const button=form.querySelector('button[type="submit"]');
+        const rule={enabled:$('staffMultiAccountEnabled').checked,action:action.value,durationMinutes:Number(duration.value),reason:$('staffMultiAccountReason').value.trim()};
+        if(['MUTE','KICK'].includes(rule.action)&&(!Number.isFinite(rule.durationMinutes)||rule.durationMinutes<1||rule.durationMinutes>10080)){if(status)status.textContent='Duration must be 1–10080 minutes.';return;}
+        if(!rule.reason){if(status)status.textContent='Enter a reason.';return;}
+        if(button){button.disabled=true;button.textContent='Saving…';}
+        try{await api('/api/staff/multi-account-rule',{method:'PUT',body:JSON.stringify({rule})});if(status)status.textContent='Saved successfully.';toast('Multi-account rule saved.');}
+        catch(error){if(status)status.textContent=error.message||'Could not save the rule.';toast(error.message||'Could not save the rule.');}
+        finally{if(button){button.disabled=false;button.textContent='Save Multi-account Rule';}}
+      });
+    }
     $('systemNotificationForm')?.addEventListener('submit',async e=>{
       e.preventDefault();
       const button=$('sendSystemNotification'),status=$('systemNotificationStatus');
