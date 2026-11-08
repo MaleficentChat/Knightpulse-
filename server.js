@@ -120,6 +120,14 @@ async function migrateExistingUploads(){
 
 const DEFAULT_OWNER=process.env.OWNER_USERNAME||"Maleficent";
 const OWNER_DISPLAY=process.env.OWNER_DISPLAY_NAME||"Maleficent";
+const LEGACY_RANK_MIGRATION={USER:"MEMBER",MODERATOR:"MOD",SUPERADMIN:"SUPER_ADMIN","CO-OWNER":"COOWNER",CO_OWNER:"COOWNER",ROYAL:"PREMIUM",INSTRUCTOR:"CHIEF_COMMISSOR",DEVELOPER:"OWNER"};
+const CANONICAL_RANKS=new Set(["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]);
+function migrateRankSettings(value){
+  if(Array.isArray(value))return value.map(migrateRankSettings);
+  if(value&&typeof value==="object"){for(const key of Object.keys(value))value[key]=migrateRankSettings(value[key]);return value;}
+  return typeof value==="string"?(LEGACY_RANK_MIGRATION[value.toUpperCase()]||value):value;
+}
+
 
 function load(){
   return {
@@ -450,20 +458,7 @@ function ensureFeaturePermissions(){
 }
 
 function featureRank(key){
-  // One-time compatibility migration: translate retired rank names into the current Knightpulse schema.
-const LEGACY_RANK_MIGRATION={USER:"MEMBER",MODERATOR:"MOD",SUPERADMIN:"SUPER_ADMIN","CO-OWNER":"COOWNER",CO_OWNER:"COOWNER",ROYAL:"PREMIUM",INSTRUCTOR:"CHIEF_COMMISSOR",DEVELOPER:"OWNER"};
-const CANONICAL_RANKS=new Set(["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]);
-for(const account of (db.users||[])){
-  const previous=String(account.rank||"MEMBER").toUpperCase();
-  account.rank=LEGACY_RANK_MIGRATION[previous]||(CANONICAL_RANKS.has(previous)?previous:account.rank||"MEMBER");
-}
-function migrateRankSettings(value){
-  if(Array.isArray(value))return value.map(migrateRankSettings);
-  if(value&&typeof value==="object"){for(const key of Object.keys(value))value[key]=migrateRankSettings(value[key]);return value;}
-  return typeof value==="string"?(LEGACY_RANK_MIGRATION[value.toUpperCase()]||value):value;
-}
-db.settings=migrateRankSettings(db.settings||{});
-ensureFeaturePermissions();
+  ensureFeaturePermissions();
   const f=FEATURE_CONTROLS.find(x=>x.key===key);
   return f ? db.featurePermissions[key] : "OWNER";
 }
