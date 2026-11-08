@@ -577,11 +577,14 @@ assert.ok(server.includes('premium_granting:["ELITE","OWNER"]') && server.includ
 assert.ok(server.includes("if(!canAccessStaffTarget(actor,target))return {status:403,error:'You can only grant Premium to an account below your own rank.'};") &&
   server.includes("if((rankOrder[targetRank]??999)>rankOrder.PREMIUM)"),
   "Premium grants must never modify equal or higher staff ranks or demote ranks above Premium");
+const registrationSection=server.slice(server.indexOf('app.post(\n  "/api/register"'),server.indexOf('app.post(\n  "/api/login"'));
+assert.ok(registrationSection.indexOf('if(findUser(username))')<registrationSection.indexOf('const fingerprintTaken = await pool.query'),
+  "multi-account moderation must run only after the submitted registration details and username are validated");
 assert.ok(server.includes("const FEATURE_GRANT_POLICY_VERSION=8;"),
   "rank and feature-grant policy migration must be versioned");
 assert.ok(server.includes("blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER']"),
   "Elite and higher ranks must be blocked from purchasing Premium on the server");
-assert.ok(indexHtml.includes("/app.js?v=staff-dashboard-20261108-2"),
+assert.ok(indexHtml.includes("/app.js?v=staff-dashboard-20261108-3"),
   "the HTML must point at the current rank-schema app bundle");
 
 console.log("Room history, private-room access, invitations, private-message deletion, Shadow Feed, Friends Activity, bootstrap privacy, capacity, and slow-mode regression checks passed.");
