@@ -337,8 +337,8 @@ const FEATURE_GRANT_DEFAULTS={
   doodle_studio:GRANT_RANKS,
   private_messages:GRANT_RANKS,
   gif_sending:GRANT_RANKS,
-  profile_note:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  account_modifications:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  profile_note:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
+  account_modifications:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
   change_password:["OWNER"],
   edit_email:["OWNER"],
   manage_xp_level:["OWNER"],
@@ -359,34 +359,34 @@ const FEATURE_GRANT_DEFAULTS={
   clear_history_button:GRANT_RANKS,
   view_online_users:GRANT_RANKS,
   invisible_mode:["OWNER"],
-  manage_filter_words:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  manage_filter_words:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
   premium_granting:["OWNER"],
-  reports_management:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  moderate_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  bypass_filter_words:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  bypass_mute:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  reports_management:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
+  moderate_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
+  bypass_filter_words:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
+  bypass_mute:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
   share_gold:["VIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  delete_message:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  delete_message:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
   view_ips:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
   view_emails:["OWNER"],
   manage_ranks:["OWNER"],manage_settings:["OWNER"],manage_gold:["OWNER"],manage_diamonds:["OWNER"],manage_bots:["OWNER"],manage_mal_ai:["OWNER"],manage_aurora:["OWNER"],manage_feature_lab:["OWNER"],
   manage_news:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],delete_news:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  report_message:GRANT_RANKS,moderate_user:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],clear_room:["COOWNER","OWNER"],
-  edit_message:GRANT_RANKS,pin_message:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],save_message:GRANT_RANKS,react_message:GRANT_RANKS,
-  schedule_message:GRANT_RANKS,expire_message:GRANT_RANKS,use_youtube:GRANT_RANKS,room_announcement:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_pinned:GRANT_RANKS,
-  manage_staff_accounts:["OWNER"],staff_rank_assignment:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],profile_like:GRANT_RANKS,enter_private_club:GRANT_RANKS,wall_post:GRANT_RANKS,room_rank_assign:["OWNER","COOWNER","COMMISSOR"],room_moderate:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_manage_staff:["OWNER","COOWNER","COMMISSOR"],room_edit_own:["OWNER","COOWNER","COMMISSOR"],room_delete_messages:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_clear_own:["OWNER","COOWNER","COMMISSOR"],
+  report_message:GRANT_RANKS,moderate_user:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],clear_room:["COOWNER","OWNER"],
+  edit_message:GRANT_RANKS,pin_message:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],save_message:GRANT_RANKS,react_message:GRANT_RANKS,
+  schedule_message:GRANT_RANKS,expire_message:GRANT_RANKS,use_youtube:GRANT_RANKS,room_announcement:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],view_pinned:GRANT_RANKS,
+  manage_staff_accounts:["OWNER"],staff_rank_assignment:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],profile_like:GRANT_RANKS,enter_private_club:GRANT_RANKS,wall_post:GRANT_RANKS,room_rank_assign:["OWNER","COOWNER","COMMISSOR"],room_moderate:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],room_manage_staff:["OWNER","COOWNER","COMMISSOR"],room_edit_own:["OWNER","COOWNER","COMMISSOR"],room_delete_messages:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],room_clear_own:["OWNER","COOWNER","COMMISSOR"],
   // Extended catalog: site, account, community, media, moderation and owner tools.
-  account_register:GRANT_RANKS,account_login:GRANT_RANKS,account_settings:GRANT_RANKS,change_own_password:GRANT_RANKS,change_own_email:GRANT_RANKS,account_export:GRANT_RANKS,manage_sessions:["OWNER"],view_login_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_device_sessions:["OWNER"],manage_push_notifications:GRANT_RANKS,
+  account_register:GRANT_RANKS,account_login:GRANT_RANKS,account_settings:GRANT_RANKS,change_own_password:GRANT_RANKS,change_own_email:GRANT_RANKS,account_export:GRANT_RANKS,manage_sessions:["OWNER"],view_login_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],manage_device_sessions:["OWNER"],manage_push_notifications:GRANT_RANKS,
   search_users:GRANT_RANKS,view_profiles:GRANT_RANKS,friend_requests:GRANT_RANKS,manage_friends:GRANT_RANKS,block_users:GRANT_RANKS,nickname_users:GRANT_RANKS,profile_status:GRANT_RANKS,profile_frames:GRANT_RANKS,profile_backgrounds:GRANT_RANKS,profile_colors:GRANT_RANKS,profile_pronouns:GRANT_RANKS,profile_showcase:GRANT_RANKS,presence_modes:GRANT_RANKS,ghost_mode:GRANT_RANKS,dead_mode:GRANT_RANKS,
-  search_rooms:GRANT_RANKS,leave_rooms:GRANT_RANKS,room_passwords:GRANT_RANKS,room_member_limits:GRANT_RANKS,room_rank_restrictions:GRANT_RANKS,room_friends_only:GRANT_RANKS,room_topics:GRANT_RANKS,room_rules:GRANT_RANKS,room_staff_list:GRANT_RANKS,room_mute_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_kick_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_block_users:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_edit_rules:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_persistence:GRANT_RANKS,room_themes:GRANT_RANKS,room_message_search:GRANT_RANKS,
-  reply_messages:GRANT_RANKS,quote_messages:GRANT_RANKS,delete_own_messages:GRANT_RANKS,copy_messages:GRANT_RANKS,hide_messages:GRANT_RANKS,mention_users:GRANT_RANKS,chat_unread_counts:GRANT_RANKS,chat_attachments:GRANT_RANKS,chat_image_upload:GRANT_RANKS,chat_video_upload:GRANT_RANKS,chat_audio_upload:GRANT_RANKS,chat_youtube_music:GRANT_RANKS,chat_message_search:GRANT_RANKS,chat_message_expiry:GRANT_RANKS,chat_scheduled_messages:GRANT_RANKS,chat_doodle_share:GRANT_RANKS,chat_doodle_save:GRANT_RANKS,chat_aurora_announcements:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  dm_search:GRANT_RANKS,dm_unread_counts:GRANT_RANKS,dm_previews:GRANT_RANKS,dm_reply:GRANT_RANKS,dm_pin:GRANT_RANKS,dm_mute:GRANT_RANKS,dm_archive:GRANT_RANKS,dm_filters:GRANT_RANKS,dm_nicknames:GRANT_RANKS,dm_preferences:GRANT_RANKS,dm_report:GRANT_RANKS,inspect_private_messages:["OWNER"],manage_dm_reports:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  news_read:GRANT_RANKS,news_comment:GRANT_RANKS,news_react:GRANT_RANKS,news_report:GRANT_RANKS,news_pin:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],wall_read:GRANT_RANKS,wall_search:GRANT_RANKS,wall_comment:GRANT_RANKS,wall_react:GRANT_RANKS,wall_report:GRANT_RANKS,wall_pin:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],suggestions_submit:GRANT_RANKS,suggestions_review:["OWNER"],suggestions_set_status:["OWNER"],suggestions_notify_submitter:["OWNER"],
+  search_rooms:GRANT_RANKS,leave_rooms:GRANT_RANKS,room_passwords:GRANT_RANKS,room_member_limits:GRANT_RANKS,room_rank_restrictions:GRANT_RANKS,room_friends_only:GRANT_RANKS,room_topics:GRANT_RANKS,room_rules:GRANT_RANKS,room_staff_list:GRANT_RANKS,room_mute_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],room_kick_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],room_block_users:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_edit_rules:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],room_persistence:GRANT_RANKS,room_themes:GRANT_RANKS,room_message_search:GRANT_RANKS,
+  reply_messages:GRANT_RANKS,quote_messages:GRANT_RANKS,delete_own_messages:GRANT_RANKS,copy_messages:GRANT_RANKS,hide_messages:GRANT_RANKS,mention_users:GRANT_RANKS,chat_unread_counts:GRANT_RANKS,chat_attachments:GRANT_RANKS,chat_image_upload:GRANT_RANKS,chat_video_upload:GRANT_RANKS,chat_audio_upload:GRANT_RANKS,chat_youtube_music:GRANT_RANKS,chat_message_search:GRANT_RANKS,chat_message_expiry:GRANT_RANKS,chat_scheduled_messages:GRANT_RANKS,chat_doodle_share:GRANT_RANKS,chat_doodle_save:GRANT_RANKS,chat_aurora_announcements:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
+  dm_search:GRANT_RANKS,dm_unread_counts:GRANT_RANKS,dm_previews:GRANT_RANKS,dm_reply:GRANT_RANKS,dm_pin:GRANT_RANKS,dm_mute:GRANT_RANKS,dm_archive:GRANT_RANKS,dm_filters:GRANT_RANKS,dm_nicknames:GRANT_RANKS,dm_preferences:GRANT_RANKS,dm_report:GRANT_RANKS,inspect_private_messages:["OWNER"],manage_dm_reports:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
+  news_read:GRANT_RANKS,news_comment:GRANT_RANKS,news_react:GRANT_RANKS,news_report:GRANT_RANKS,news_pin:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],wall_read:GRANT_RANKS,wall_search:GRANT_RANKS,wall_comment:GRANT_RANKS,wall_react:GRANT_RANKS,wall_report:GRANT_RANKS,wall_pin:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],suggestions_submit:GRANT_RANKS,suggestions_review:["OWNER"],suggestions_set_status:["OWNER"],suggestions_notify_submitter:["OWNER"],
   games_access:GRANT_RANKS,gravity_run:GRANT_RANKS,doodle_studio_save:GRANT_RANKS,doodle_studio_share:GRANT_RANKS,gif_search:GRANT_RANKS,media_embeds:GRANT_RANKS,
   premium_access:GRANT_RANKS,vip_access:GRANT_RANKS,gold_wallet:GRANT_RANKS,gold_catalogue:GRANT_RANKS,gold_purchase:GRANT_RANKS,gold_equip:GRANT_RANKS,gold_transaction_history:GRANT_RANKS,daily_rewards:GRANT_RANKS,achievement_access:GRANT_RANKS,premium_requests:GRANT_RANKS,grant_premium:["ELITE","OWNER"],
-  view_rules:GRANT_RANKS,submit_reports:GRANT_RANKS,manage_reports:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_assign:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_resolve:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],edit_site_rules:["CHIEF_COMMISSOR","COMMISSOR","COOWNER","OWNER","OWNER"],edit_room_rules:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  leaderboard_access:GRANT_RANKS,saved_messages:GRANT_RANKS,advanced_search:GRANT_RANKS,staff_application_submit:GRANT_RANKS,staff_application_review:["OWNER","COOWNER","COMMISSOR"],staff_dashboard_access:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],staff_notifications:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],system_notifications:["COOWNER","OWNER","OWNER"],audit_log_access:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],audit_log_settings:["OWNER"],under_construction_control:["OWNER"],site_hard_refresh:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  inspect_ip_details:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],inspect_similar_ips:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_user_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_username_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_profile_notes:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_account_locks:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_avatar:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],delete_accounts:["COOWNER","OWNER"],manage_bans:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_mutes:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_kicks:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_warnings:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_automated_filters:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_vpn_proxy_rules:["OWNER"],manage_multi_account_rules:["ELITE","OWNER"],manage_spam_flood_rules:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_user_feature_exceptions:["OWNER"],manage_rank_feature_grants:["OWNER"],manage_individual_feature_grants:["OWNER"],manage_owner_space:["OWNER"],manage_site_refresh:["OWNER"],view_system_diagnostics:["OWNER"],manage_site_themes:["OWNER"],manage_economy_settings:["OWNER"],manage_premium_settings:["OWNER"],manage_notifications_settings:["OWNER"],manage_room_permissions:["OWNER"],manage_room_themes:["OWNER"],manage_room_staff:["OWNER","COOWNER","COMMISSOR"],manage_suggestions_settings:["OWNER"],manage_feature_granting:["OWNER"]
+  view_rules:GRANT_RANKS,submit_reports:GRANT_RANKS,manage_reports:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],report_assign:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],report_resolve:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],edit_site_rules:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],edit_room_rules:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
+  leaderboard_access:GRANT_RANKS,saved_messages:GRANT_RANKS,advanced_search:GRANT_RANKS,staff_application_submit:GRANT_RANKS,staff_application_review:["OWNER","COOWNER","COMMISSOR"],staff_dashboard_access:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],staff_notifications:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],system_notifications:["COOWNER","ELITE","OWNER"],audit_log_access:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],audit_log_settings:["OWNER"],under_construction_control:["OWNER"],site_hard_refresh:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
+  inspect_ip_details:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],inspect_similar_ips:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_user_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],view_username_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],manage_profile_notes:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],manage_account_locks:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_avatar:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],delete_accounts:["COOWNER","OWNER"],manage_bans:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],manage_mutes:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],manage_kicks:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],manage_warnings:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],manage_automated_filters:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_vpn_proxy_rules:["OWNER"],manage_multi_account_rules:["ELITE","OWNER"],manage_spam_flood_rules:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_user_feature_exceptions:["OWNER"],manage_rank_feature_grants:["OWNER"],manage_individual_feature_grants:["OWNER"],manage_owner_space:["OWNER"],manage_site_refresh:["OWNER"],view_system_diagnostics:["OWNER"],manage_site_themes:["OWNER"],manage_economy_settings:["OWNER"],manage_premium_settings:["OWNER"],manage_notifications_settings:["OWNER"],manage_room_permissions:["OWNER"],manage_room_themes:["OWNER"],manage_room_staff:["OWNER","COOWNER","COMMISSOR"],manage_suggestions_settings:["OWNER"],manage_feature_granting:["OWNER"]
 };
 
 const FEATURE_GRANT_POLICY_VERSION=7;
@@ -409,7 +409,7 @@ view_online_users:RANK_TIERS.all,manage_push_notifications:RANK_TIERS.all,modera
 };
 
 const REQUESTED_COMMAND_RANKS={clear:RANK_TIERS.admin,abrakadabra:RANK_TIERS.all,aura:RANK_TIERS.all,roast:RANK_TIERS.all,anonymous:RANK_TIERS.superAdmin,bank:RANK_TIERS.all,convert:RANK_TIERS.all,ship:RANK_TIERS.vip,welcome:RANK_TIERS.vip,steal:RANK_TIERS.premium,bread:RANK_TIERS.premium,rose:RANK_TIERS.premium,brain:RANK_TIERS.premium};
-const REQUESTED_MODE_RANKS={invisible:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"],dead:["CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"],ghost:["OWNER","OWNER"]};
+const REQUESTED_MODE_RANKS={invisible:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],dead:["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],ghost:["OWNER","OWNER"]};
 function modeRankAllowed(mode,rank){
   const normalized=String(rank||"").toUpperCase();
   if(normalized==="OWNER")return true;
@@ -1401,13 +1401,13 @@ async function ensureDeveloper(){
   let q;
   if (process.env.OWNER_PASSWORD) {
     const hash = await bcrypt.hash(process.env.OWNER_PASSWORD, 10);
-    q = await pool.query(`INSERT INTO users(username,password,rank,gold,xp) VALUES('Maleficent',$1,'Developer',999999,999999) ON CONFLICT(username) DO UPDATE SET rank='Developer',password=EXCLUDED.password RETURNING *`, [hash]);
+    q = await pool.query(`INSERT INTO users(username,password,rank,gold,xp) VALUES('Maleficent',$1,'Developer',999999,999999) ON CONFLICT(username) DO UPDATE SET rank='Owner',password=EXCLUDED.password RETURNING *`, [hash]);
   } else {
-    q = await pool.query(`UPDATE users SET rank='Developer' WHERE username='Maleficent' RETURNING *`);
+    q = await pool.query(`UPDATE users SET rank='Owner' WHERE username='Maleficent' RETURNING *`);
     if (!q.rowCount) throw new Error('OWNER_PASSWORD is required to initialize the permanent Developer account.');
   }
   const row=q.rows[0]; let u=findUser('Maleficent');
-  if(!u){ u={id:String(row.id),username:'Maleficent',displayName:'Maleficent',password:row.password,passwordHash:row.password,rank:'OWNER',gold:999999,xp:999999,verified:true,createdAt:Date.now(),lastSeen:Date.now(),online:false,level:999999,bio:'Permanent Developer of Cloud Chat.',settings:{rememberLogin:true,theme:'obsidian',notificationPrefs:{messages:true,mentions:true,replies:true,security:true,staff:true,gamification:true,other:true}}}; db.users.push(u); }
+  if(!u){ u={id:String(row.id),username:'Maleficent',displayName:'Maleficent',password:row.password,passwordHash:row.password,rank:'OWNER',gold:999999,xp:999999,verified:true,createdAt:Date.now(),lastSeen:Date.now(),online:false,level:999999,bio:'Permanent Owner of Knightpulse.',settings:{rememberLogin:true,theme:'obsidian',notificationPrefs:{messages:true,mentions:true,replies:true,security:true,staff:true,gamification:true,other:true}}}; db.users.push(u); }
   else { u.rank='OWNER'; u.password=row.password; u.passwordHash=row.password; }
 }
 ensureFeaturePermissions();
@@ -4585,7 +4585,7 @@ app.get("/api/staff/ip-inspection/diagnostics",auth,ownerOnly,(req,res)=>{
 });
 app.get("/api/staff/ip-inspection/users",auth,async(req,res)=>{
   const actor=current(req),viewerRank=String(actor?.rank||"").toUpperCase();
-  if(!["CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(viewerRank))return res.status(403).json({error:"Your rank does not have IP Inspection access."});
+  if(!["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(viewerRank))return res.status(403).json({error:"Your rank does not have IP Inspection access."});
   const canInspectTarget=target=>viewerRank==="OWNER"||viewerRank==="OWNER"||(String(target?.id)!==String(actor?.id)&&(rankOrder[String(target?.rank||"MEMBER").toUpperCase()]??999)<(rankOrder[viewerRank]??-1));
   const term=String(req.query.q||"").trim().replace(/^@/,"").slice(0,80);
   try{const result=await pool.query("SELECT id,username,email,created_at FROM users WHERE ($1='' OR username ILIKE '%'||$1||'%' OR COALESCE(email,'') ILIKE '%'||$1||'%') ORDER BY LOWER(username) LIMIT 30",[term]);if(result.rows.length||!Array.isArray(db.users))return res.json({users:result.rows.filter(u=>canInspectTarget({...u,rank:db.users.find(x=>String(x.id)===String(u.id))?.rank})).slice(0,30)});}
@@ -4825,7 +4825,7 @@ app.get("/api/developer/network-security/timeline",auth,async(req,res)=>{const a
 
 app.get("/api/staff/ip-inspection",auth,async(req,res)=>{
   const actor=current(req),viewerRank=String(actor?.rank||"").toUpperCase();
-  if(!["CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(viewerRank))return res.status(403).json({error:"Your rank does not have IP Inspection access."});
+  if(!["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(viewerRank))return res.status(403).json({error:"Your rank does not have IP Inspection access."});
   const fullAccess=viewerRank==="OWNER"||viewerRank==="OWNER";
   const canInspectTarget=target=>fullAccess||(String(target?.id)!==String(actor?.id)&&(rankOrder[String(target?.rank||"MEMBER").toUpperCase()]??999)<(rankOrder[viewerRank]??-1));
   let stage="prepare-query";
@@ -5021,12 +5021,12 @@ app.post('/api/staff-applications',auth,async(req,res)=>{
   }catch(e){console.error('Staff application submission failed:',e);res.status(500).json({error:'Could not submit your application. Please try again.'});}
 });
 app.get('/api/staff/applications',auth,featureAllowed('view_staff_dashboard'),async(req,res)=>{
-  const actor=current(req);if(!['COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
+  const actor=current(req);if(!['COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
   try{await ensureStaffApplicationsTable();const q=await pool.query("SELECT a.id,a.user_id AS \"userId\",a.username,a.display_name AS \"displayName\",a.requested_rank AS \"requestedRank\",a.activity,a.reason,a.experience,a.status,a.created_at AS \"createdAt\",a.reviewed_at AS \"reviewedAt\",reviewer.username AS \"reviewedBy\" FROM staff_applications a LEFT JOIN users reviewer ON reviewer.id=a.reviewed_by ORDER BY CASE WHEN a.status='PENDING' THEN 0 ELSE 1 END,a.created_at DESC LIMIT 300");res.json({applications:q.rows.map(x=>({...x,id:String(x.id),userId:String(x.userId),createdAt:new Date(x.createdAt).getTime(),reviewedAt:x.reviewedAt?new Date(x.reviewedAt).getTime():null}))});}
   catch(e){console.error('Staff application list failed:',e);res.status(500).json({error:'Could not load staff applications.'});}
 });
 app.post('/api/staff/applications/:id/reject',auth,featureAllowed('view_staff_dashboard'),async(req,res)=>{
-  const actor=current(req);if(!['COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
+  const actor=current(req);if(!['COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
   try{await ensureStaffApplicationsTable();const q=await pool.query("UPDATE staff_applications SET status='REJECTED',reviewed_by=$2,reviewed_at=NOW() WHERE id=$1 AND status='PENDING' RETURNING username",[req.params.id,Number(actor.id)]);if(!q.rowCount)return res.status(404).json({error:'Pending application not found.'});await log(actor,'STAFF_APPLICATION_REJECT',q.rows[0].username,{applicationId:req.params.id});res.json({ok:true});}
   catch(e){console.error('Staff application rejection failed:',e);res.status(500).json({error:'Could not reject this application.'});}
 });
@@ -5042,9 +5042,9 @@ app.delete('/api/staff/applications/:id',auth,async(req,res)=>{
   }catch(e){console.error('Staff application deletion failed:',e);res.status(500).json({error:'Could not delete this staff application.'});}
 });
 app.post('/api/staff/applications/:id/grant',auth,featureAllowed('view_staff_dashboard'),async(req,res)=>{
-  const actor=current(req);if(!['COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
+  const actor=current(req);if(!['COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
   const requested=String(req.body.rank||'').toUpperCase();
-  if(!['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER'].includes(requested))return res.status(400).json({error:'Choose a valid staff rank.'});
+  if(!['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(requested))return res.status(400).json({error:'Choose a valid staff rank.'});
   try{
     await ensureStaffApplicationsTable();
     const client=await pool.connect();
@@ -5552,7 +5552,7 @@ app.get('/api/community-rules',auth,(req,res)=>{
 });
 app.put('/api/owner/community-rules',auth,async(req,res)=>{
   const editor=current(req);
-  if(!editor || !["CHIEF_COMMISSOR","COMMISSOR","COOWNER","OWNER","OWNER"].includes(String(editor.rank||"").toUpperCase()))return res.status(403).json({error:'Community rules editing requires Commissor rank or higher.'});
+  if(!editor || !["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(editor.rank||"").toUpperCase()))return res.status(403).json({error:'Community rules editing requires Commissor rank or higher.'});
   const input=Array.isArray(req.body?.rules)?req.body.rules:[];
   if(input.length>100)return res.status(400).json({error:'You can publish up to 100 rules.'});
   const rules=[];
@@ -5680,7 +5680,7 @@ app.get("/api/owner/command-management",auth,ownerOnly,(req,res)=>{ensureFeature
 app.get("/api/owner/mode-management",auth,ownerOnly,(req,res)=>{ensureFeatureGrants();res.json({modes:{...REQUESTED_MODE_RANKS,...(db.settings?.mode_management||{})}});});
 app.patch("/api/owner/settings",ownerOnly,async(req,res)=>{
   if(req.body.commandManagement!==undefined){
-    const incoming=req.body.commandManagement, commands={...(db.settings.command_management||{})}, allowed=["rose","bread","brain","welcome","ship","bank","steal","roast","aura","anonymous","abrakadabra","clear"], valid=["MEMBER","VIP","PREMIUM","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER"];
+    const incoming=req.body.commandManagement, commands={...(db.settings.command_management||{})}, allowed=["rose","bread","brain","welcome","ship","bank","steal","roast","aura","anonymous","abrakadabra","clear"], valid=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
     if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Invalid command settings."});
     const seen=new Set();
     for(const key of allowed){const item=incoming[key]||commands[key]||{},name=String(item.name||key).toLowerCase().replaceAll("/","").trim(),allowedRanks=Array.isArray(item.ranks)?item.ranks.map(x=>String(x).toUpperCase()).filter(x=>valid.includes(x)):valid.slice();if(!/^[a-z0-9]{2,24}$/.test(name))return res.status(400).json({error:"Command names must be 2–24 letters or numbers."});if(seen.has(name))return res.status(400).json({error:"Command names must be unique."});seen.add(name);commands[key]={name,ranks:[...new Set(allowedRanks)]};}
