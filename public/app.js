@@ -2030,7 +2030,7 @@ async function renderOnline(tab=onlinePanelTab,searchQuery=""){
 
     const count=online.length;
     $("onlinePanelTitle").innerHTML=`${esc(title)} <span class="online-badge">${count}</span>`;
-    $("onlineUsers").innerHTML=`<div class="online-status-control"><label for="myCustomStatus">My status</label><select id="myCustomStatus"><option>Available</option><option>Busy</option><option>Away</option><option>Do Not Disturb</option></select></div><div class="online-user-grid">${list.map(user=>`
+    $("onlineUsers").innerHTML=`<div class="kp-people-intro"><div><span>KNIGHTPULSE / COMMUNITY</span><b>People in your orbit</b><small>Find someone to talk to.</small></div><i>✦</i></div><div class="online-status-control"><label for="myCustomStatus"><span class="kp-status-pulse"></span> Your presence</label><select id="myCustomStatus"><option>Available</option><option>Busy</option><option>Away</option><option>Do Not Disturb</option></select></div><div class="online-user-grid">${list.map(user=>`
       <div class="online-user ${user.online?'is-online':'is-offline'}" onclick="openQuickUserCard('${esc(user.id)}')">
         ${avatar(user)}
         <div class="online-user-copy">
