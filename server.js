@@ -7448,6 +7448,13 @@ app.get('/api/me/account',auth,async(req,res)=>{
     await ensureSystemRooms();
 
     db = await loadState(load());
+    // Apply the compatibility mapping after persisted state is loaded, so every
+    // existing account and saved rank-based setting uses the canonical schema.
+    for(const account of (db.users||[])){
+      const previous=String(account.rank||"MEMBER").toUpperCase();
+      account.rank=LEGACY_RANK_MIGRATION[previous]||(CANONICAL_RANKS.has(previous)?previous:account.rank||"MEMBER");
+    }
+    db.settings=migrateRankSettings(db.settings||{});
     await ensureOwner();
 
     // Ensure the structured/default settings exist without overwriting owner changes.
@@ -7466,10 +7473,10 @@ app.get('/api/me/account',auth,async(req,res)=>{
     ensureFeaturePermissions();
     ensureFeatureGrants();
     for (const u of db.users) ensureUserSchema(u);
-    const developer = db.users.find(u => String(u.username).toLowerCase() === "maleficent");
-    if (developer) {
-      developer.rank = "OWNER";
-      developer.passwordHash = developer.password && String(developer.password).startsWith("$2") ? developer.password : developer.passwordHash;
+    const owner = db.users.find(u => String(u.username).toLowerCase() === "maleficent");
+    if (owner) {
+      owner.rank = "OWNER";
+      owner.passwordHash = owner.password && String(owner.password).startsWith("$2") ? owner.password : owner.passwordHash;
     }
 
     await persistState(db);
