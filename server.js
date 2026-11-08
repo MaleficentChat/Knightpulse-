@@ -17,6 +17,8 @@ const {Server}=require("socket.io");
 
 const {initDB,loadState,persistState,pool}=require("./db");
 const {initSocialFeatureTables,registerSocialFeatureRoutes}=require("./social-features");
+const {registerBrandNewsRoutes}=require("./brand-news-routes");
+const {registerNotificationRoutes}=require("./notification-routes");
 let firebaseAdminApp=null;
 function getFirebaseAdmin(){
   if(firebaseAdminApp)return firebaseAdminApp;
@@ -4258,17 +4260,8 @@ app.delete('/api/push/subscribe',auth,async(req,res)=>{
   await pool.query('DELETE FROM push_subscriptions WHERE user_id=$1 AND endpoint=$2',[Number(current(req).id),endpoint]);
   res.json({ok:true});
 });
-app.get('/api/notifications',auth,async(req,res)=>{const {rows}=await pool.query(`SELECT id,type,title,message,is_read,created_at FROM notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20`,[Number(current(req).id)]);res.json({notifications:rows.map(n=>({id:String(n.id),type:n.type,title:n.title||n.type,text:n.message,message:n.message,time:n.created_at,read:n.is_read}))});});
-app.get('/api/notifications/unread',auth,async(req,res)=>{const {rows}=await pool.query(`SELECT id,type,title,message,is_read,created_at FROM notifications WHERE user_id=$1 AND is_read=false ORDER BY created_at DESC LIMIT 100`,[Number(current(req).id)]);res.json({notifications:rows.map(n=>({id:String(n.id),type:n.type,title:n.title||n.type,text:n.message,message:n.message,time:n.created_at,read:n.is_read}))});});
-app.get('/api/warnings/pending',auth,async(req,res)=>{
-  const {rows}=await pool.query(`SELECT id,message,created_at FROM notifications WHERE user_id=$1 AND type='warning' AND is_read=false ORDER BY created_at ASC LIMIT 20`,[Number(current(req).id)]);
-  res.json({warnings:rows.map(n=>({id:String(n.id),type:"warning",text:n.message,message:n.message,time:n.created_at}))});
-});
-app.patch('/api/notifications/:id/read',auth,async(req,res)=>{const r=await pool.query(`UPDATE notifications SET is_read=true WHERE id=$1 AND user_id=$2 AND type<>'warning' RETURNING id`,[req.params.id,Number(current(req).id)]);if(!r.rowCount)return res.status(404).json({error:'Notification not found or requires warning acknowledgement.'});res.json({ok:true});});
-app.post('/api/notifications/:id/acknowledge-warning',auth,async(req,res)=>{const r=await pool.query(`UPDATE notifications SET is_read=true WHERE id=$1 AND user_id=$2 AND type='warning' RETURNING id`,[req.params.id,Number(current(req).id)]);if(!r.rowCount)return res.status(404).json({error:'Warning not found or already acknowledged.'});res.json({ok:true});});
-app.post('/api/notifications/read',auth,async(req,res)=>{await pool.query(`UPDATE notifications SET is_read=true WHERE user_id=$1 AND type<>'warning'`,[Number(current(req).id)]);res.json({ok:true});});
-app.delete('/api/notifications/:id',auth,async(req,res)=>{await pool.query(`DELETE FROM notifications WHERE id=$1 AND user_id=$2 AND type<>'warning'`,[req.params.id,Number(current(req).id)]);res.json({ok:true});});
-app.delete('/api/notifications',auth,async(req,res)=>{await pool.query(`DELETE FROM notifications WHERE user_id=$1 AND type<>'warning'`,[Number(current(req).id)]);res.json({ok:true});});
+// Notification center routes are isolated and ownership-scoped.
+registerNotificationRoutes(app,{auth,pool,current});
 
 app.post(
   "/api/moderation/:action",
@@ -6243,44 +6236,8 @@ app.get(
     })
 );
 
-// Official Brand News is stored independently from community News.
-app.get("/api/brand-news",auth,(req,res)=>{
-  db.brandNews??=[];
-  res.json({items:db.brandNews});
-});
-app.post("/api/brand-news",auth,upload.single("file"),async(req,res)=>{
-  const u=current(req);
-  if(!u)return res.status(401).json({error:"Login required"});
-  if(isUserFeatureBlocked(u,"publish_news"))return res.status(403).json({error:"Brand News publishing is blocked for your account."});
-  if(!hasRank(u,"ADMIN"))return res.status(403).json({error:"Brand News publishing requires Admin rank or higher."});
-  if(await checkRestrictedMediaUpload(req,res,u,req.file))return;
-  const categories=["Product update","Community","Events","Service notice","Behind the scenes"];
-  const category=String(req.body.category||"").trim();
-  const headline=cleanText(req.body.headline||"").trim().slice(0,120);
-  const summary=cleanText(req.body.summary||"").trim().slice(0,260);
-  const body=cleanText(req.body.body||"").trim().slice(0,5000);
-  const linkLabel=cleanText(req.body.linkLabel||"").trim().slice(0,32);
-  const linkUrl=String(req.body.linkUrl||"").trim().slice(0,500);
-  if(!categories.includes(category))return res.status(400).json({error:"Choose a valid Brand News category."});
-  if(!headline||!summary||!body)return res.status(400).json({error:"Headline, introduction and announcement are required."});
-  if(linkUrl){try{const parsed=new URL(linkUrl);if(!["http:","https:"].includes(parsed.protocol))throw new Error();}catch{return res.status(400).json({error:"Destination must be an http or https URL."});}}
-  if(linkLabel&&!linkUrl)return res.status(400).json({error:"Add a destination URL for the button label."});
-  db.brandNews??=[];
-  const item={id:id(),category,headline,summary,body,linkLabel,linkUrl,createdAt:Date.now(),author:u.displayName||u.username,avatar:u.avatar||"",image:req.file?{url:"/uploads/"+req.file.filename,type:req.file.mimetype,name:req.file.originalname}:null};
-  db.brandNews.unshift(item);
-  save();io.emit("brand-news");
-  res.status(201).json({item});
-});
-app.delete("/api/brand-news/:id",auth,(req,res)=>{
-  const u=current(req);
-  if(!u||!hasRank(u,"ADMIN"))return res.status(403).json({error:"Removing Brand News requires Admin rank or higher."});
-  db.brandNews??=[];
-  const index=db.brandNews.findIndex(item=>String(item.id)===String(req.params.id));
-  if(index<0)return res.status(404).json({error:"Brand News update not found."});
-  const [removed]=db.brandNews.splice(index,1);
-  save();io.emit("brand-news");
-  res.json({ok:true,id:removed.id});
-});
+// Dedicated PostgreSQL-backed Brand News module.
+registerBrandNewsRoutes(app,{auth,upload,current,hasRank,isUserFeatureBlocked,checkRestrictedMediaUpload,pool,io,cleanText,id});
 
 app.post("/api/news",auth,upload.single("file"),featureAllowed("publish_news"),async(req,res)=>{
     const u=current(req);
