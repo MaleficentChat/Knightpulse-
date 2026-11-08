@@ -226,6 +226,7 @@ function id(){
 const ranks=[
   "MEMBER",
   "VIP",
+  "SVIP",
   "PREMIUM",
   "ROYAL",
   "MOD",
@@ -234,6 +235,7 @@ const ranks=[
   "COMMISSOR",
   "INSTRUCTOR",
   "COOWNER",
+  "ELITE",
   "OWNER",
   "DEVELOPER"
 ];
@@ -241,7 +243,9 @@ const ranks=[
 const rankIcons={
   MEMBER:"⚡",
   VIP:"💎",
+  SVIP:"💠",
   PREMIUM:"🏅",
+  ELITE:"✨",
   ROYAL:"⚜️",
   MOD:"🛡️",
   ADMIN:"⭐",
@@ -359,7 +363,7 @@ const FEATURE_CONTROLS=[
   {key:"room_clear_own",name:"Clear messages in owned rooms",category:"Room Staff",defaultRank:"OWNER"}
 ];
 
-const GRANT_RANKS=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER"];
+const GRANT_RANKS=["MEMBER","VIP","SVIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","ELITE","OWNER"];
 const FEATURE_GRANT_DEFAULTS={
   send_messages:GRANT_RANKS,
   doodle_studio:GRANT_RANKS,
@@ -411,21 +415,21 @@ const FEATURE_GRANT_DEFAULTS={
   dm_search:GRANT_RANKS,dm_unread_counts:GRANT_RANKS,dm_previews:GRANT_RANKS,dm_reply:GRANT_RANKS,dm_pin:GRANT_RANKS,dm_mute:GRANT_RANKS,dm_archive:GRANT_RANKS,dm_filters:GRANT_RANKS,dm_nicknames:GRANT_RANKS,dm_preferences:GRANT_RANKS,dm_report:GRANT_RANKS,inspect_private_messages:["OWNER"],manage_dm_reports:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
   news_read:GRANT_RANKS,news_comment:GRANT_RANKS,news_react:GRANT_RANKS,news_report:GRANT_RANKS,news_pin:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],wall_read:GRANT_RANKS,wall_search:GRANT_RANKS,wall_comment:GRANT_RANKS,wall_react:GRANT_RANKS,wall_report:GRANT_RANKS,wall_pin:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],suggestions_submit:GRANT_RANKS,suggestions_review:["DEVELOPER"],suggestions_set_status:["DEVELOPER"],suggestions_notify_submitter:["DEVELOPER"],
   games_access:GRANT_RANKS,gravity_run:GRANT_RANKS,doodle_studio_save:GRANT_RANKS,doodle_studio_share:GRANT_RANKS,gif_search:GRANT_RANKS,media_embeds:GRANT_RANKS,
-  premium_access:GRANT_RANKS,vip_access:GRANT_RANKS,gold_wallet:GRANT_RANKS,gold_catalogue:GRANT_RANKS,gold_purchase:GRANT_RANKS,gold_equip:GRANT_RANKS,gold_transaction_history:GRANT_RANKS,daily_rewards:GRANT_RANKS,achievement_access:GRANT_RANKS,premium_requests:GRANT_RANKS,grant_premium:["OWNER"],
+  premium_access:GRANT_RANKS,vip_access:GRANT_RANKS,gold_wallet:GRANT_RANKS,gold_catalogue:GRANT_RANKS,gold_purchase:GRANT_RANKS,gold_equip:GRANT_RANKS,gold_transaction_history:GRANT_RANKS,daily_rewards:GRANT_RANKS,achievement_access:GRANT_RANKS,premium_requests:GRANT_RANKS,grant_premium:["ELITE","OWNER"],
   view_rules:GRANT_RANKS,submit_reports:GRANT_RANKS,manage_reports:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_assign:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_resolve:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],edit_site_rules:["INSTRUCTOR","COMMISSOR","COOWNER","OWNER","DEVELOPER"],edit_room_rules:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
   leaderboard_access:GRANT_RANKS,saved_messages:GRANT_RANKS,advanced_search:GRANT_RANKS,staff_application_submit:GRANT_RANKS,staff_application_review:["OWNER","COOWNER","COMMISSOR"],staff_dashboard_access:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],staff_notifications:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],system_notifications:["COOWNER","OWNER","DEVELOPER"],audit_log_access:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],audit_log_settings:["OWNER"],under_construction_control:["OWNER"],site_hard_refresh:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  inspect_ip_details:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],inspect_similar_ips:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_user_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_username_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_profile_notes:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_account_locks:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_avatar:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],delete_accounts:["COOWNER","OWNER"],manage_bans:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_mutes:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_kicks:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_warnings:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_automated_filters:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_vpn_proxy_rules:["OWNER"],manage_multi_account_rules:["OWNER"],manage_spam_flood_rules:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_user_feature_exceptions:["OWNER"],manage_rank_feature_grants:["OWNER"],manage_individual_feature_grants:["OWNER"],manage_owner_space:["OWNER"],manage_site_refresh:["OWNER"],view_system_diagnostics:["OWNER"],manage_site_themes:["OWNER"],manage_economy_settings:["OWNER"],manage_premium_settings:["OWNER"],manage_notifications_settings:["OWNER"],manage_room_permissions:["OWNER"],manage_room_themes:["OWNER"],manage_room_staff:["OWNER","COOWNER","COMMISSOR"],manage_suggestions_settings:["OWNER"],manage_feature_granting:["OWNER"]
+  inspect_ip_details:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],inspect_similar_ips:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_user_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_username_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_profile_notes:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_account_locks:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_avatar:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],delete_accounts:["COOWNER","OWNER"],manage_bans:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_mutes:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_kicks:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_warnings:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_automated_filters:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_vpn_proxy_rules:["OWNER"],manage_multi_account_rules:["ELITE","OWNER"],manage_spam_flood_rules:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_user_feature_exceptions:["OWNER"],manage_rank_feature_grants:["OWNER"],manage_individual_feature_grants:["OWNER"],manage_owner_space:["OWNER"],manage_site_refresh:["OWNER"],view_system_diagnostics:["OWNER"],manage_site_themes:["OWNER"],manage_economy_settings:["OWNER"],manage_premium_settings:["OWNER"],manage_notifications_settings:["OWNER"],manage_room_permissions:["OWNER"],manage_room_themes:["OWNER"],manage_room_staff:["OWNER","COOWNER","COMMISSOR"],manage_suggestions_settings:["OWNER"],manage_feature_granting:["OWNER"]
 };
 
 const FEATURE_GRANT_POLICY_VERSION=6;
-const RANK_TIERS={all:[...GRANT_RANKS],vip:GRANT_RANKS.slice(1),premium:GRANT_RANKS.slice(2),royal:GRANT_RANKS.slice(3),mod:GRANT_RANKS.slice(4),admin:GRANT_RANKS.slice(5),superAdmin:GRANT_RANKS.slice(6),commissor:GRANT_RANKS.slice(7),instructor:GRANT_RANKS.slice(8),coowner:GRANT_RANKS.slice(9),owner:GRANT_RANKS.slice(10)};
+const RANK_TIERS={all:[...GRANT_RANKS],vip:GRANT_RANKS.slice(1),svip:GRANT_RANKS.slice(2),premium:GRANT_RANKS.slice(3),royal:GRANT_RANKS.slice(4),mod:GRANT_RANKS.slice(4),admin:GRANT_RANKS.slice(5),superAdmin:GRANT_RANKS.slice(6),commissor:GRANT_RANKS.slice(7),instructor:GRANT_RANKS.slice(8),coowner:GRANT_RANKS.slice(9),owner:GRANT_RANKS.slice(10)};
 const REQUESTED_FEATURE_GRANTS_EXPLICIT={
-send_messages:RANK_TIERS.all,private_messages:RANK_TIERS.vip,gif_sending:RANK_TIERS.vip,emojis_stickers:RANK_TIERS.all,chat_file_upload:RANK_TIERS.vip,chat_attachments:RANK_TIERS.vip,chat_image_upload:RANK_TIERS.vip,chat_video_upload:RANK_TIERS.vip,chat_audio_upload:RANK_TIERS.vip,use_youtube:RANK_TIERS.vip,chat_youtube_music:RANK_TIERS.vip,
+send_messages:RANK_TIERS.all,private_messages:RANK_TIERS.svip,gif_sending:RANK_TIERS.svip,emojis_stickers:RANK_TIERS.all,chat_file_upload:RANK_TIERS.vip,chat_attachments:RANK_TIERS.vip,chat_image_upload:RANK_TIERS.vip,chat_video_upload:RANK_TIERS.vip,chat_audio_upload:RANK_TIERS.vip,use_youtube:RANK_TIERS.vip,chat_youtube_music:RANK_TIERS.vip,
 edit_message:RANK_TIERS.royal,pin_message:RANK_TIERS.mod,save_message:RANK_TIERS.all,react_message:RANK_TIERS.all,reply_messages:RANK_TIERS.all,quote_messages:RANK_TIERS.all,copy_messages:RANK_TIERS.all,hide_messages:RANK_TIERS.all,delete_own_messages:RANK_TIERS.premium,mention_users:RANK_TIERS.all,chat_unread_counts:RANK_TIERS.all,chat_message_search:RANK_TIERS.all,report_message:RANK_TIERS.all,
 join_rooms:RANK_TIERS.all,view_pinned:RANK_TIERS.all,search_rooms:RANK_TIERS.all,leave_rooms:RANK_TIERS.all,room_passwords:RANK_TIERS.all,create_rooms:RANK_TIERS.premium,edit_rooms:RANK_TIERS.premium,room_rank_assign:RANK_TIERS.mod,room_moderate:RANK_TIERS.mod,room_delete_messages:RANK_TIERS.mod,room_manage_staff:RANK_TIERS.commissor,manage_room_staff:RANK_TIERS.commissor,room_edit_own:RANK_TIERS.superAdmin,delete_rooms:RANK_TIERS.superAdmin,room_announcement:RANK_TIERS.superAdmin,chat_aurora_announcements:RANK_TIERS.superAdmin,
-friend_wall_posting:RANK_TIERS.all,wall_post:RANK_TIERS.all,wall_commenting:RANK_TIERS.all,wall_comment:RANK_TIERS.all,wall_liking:RANK_TIERS.all,wall_react:RANK_TIERS.all,wall_read:RANK_TIERS.all,wall_search:RANK_TIERS.all,wall_report:RANK_TIERS.all,wall_pin:RANK_TIERS.premium,wall_upload:RANK_TIERS.vip,nickname_users:RANK_TIERS.vip,room_clear_own:RANK_TIERS.admin,clear_room:RANK_TIERS.admin,room_member_limits:RANK_TIERS.admin,room_rank_restrictions:RANK_TIERS.admin,room_topics:RANK_TIERS.admin,room_friends_only:RANK_TIERS.admin,
+friend_wall_posting:RANK_TIERS.all,wall_post:RANK_TIERS.all,wall_commenting:RANK_TIERS.all,wall_comment:RANK_TIERS.all,wall_liking:RANK_TIERS.all,wall_react:RANK_TIERS.all,wall_read:RANK_TIERS.all,wall_search:RANK_TIERS.all,wall_report:RANK_TIERS.all,wall_pin:RANK_TIERS.svip,wall_upload:RANK_TIERS.vip,nickname_users:RANK_TIERS.vip,room_clear_own:RANK_TIERS.admin,clear_room:RANK_TIERS.admin,room_member_limits:RANK_TIERS.admin,room_rank_restrictions:RANK_TIERS.admin,room_topics:RANK_TIERS.admin,room_friends_only:RANK_TIERS.admin,
 change_avatar:RANK_TIERS.all,change_bio:RANK_TIERS.all,account_register:RANK_TIERS.all,account_login:RANK_TIERS.all,account_settings:RANK_TIERS.all,change_own_password:RANK_TIERS.all,change_own_email:RANK_TIERS.all,account_modifications:RANK_TIERS.mod,profile_note:RANK_TIERS.mod,manage_profile_notes:RANK_TIERS.mod,change_password:RANK_TIERS.instructor,edit_email:RANK_TIERS.commissor,view_emails:RANK_TIERS.commissor,
-dm_search:RANK_TIERS.vip,dm_unread_counts:RANK_TIERS.vip,dm_previews:RANK_TIERS.vip,dm_reply:RANK_TIERS.vip,dm_pin:RANK_TIERS.vip,dm_mute:RANK_TIERS.vip,dm_archive:RANK_TIERS.vip,dm_filters:RANK_TIERS.vip,dm_nicknames:RANK_TIERS.vip,dm_preferences:RANK_TIERS.vip,dm_report:RANK_TIERS.vip,inspect_private_messages:RANK_TIERS.owner,manage_dm_reports:RANK_TIERS.mod,
+dm_search:RANK_TIERS.svip,dm_unread_counts:RANK_TIERS.svip,dm_previews:RANK_TIERS.svip,dm_reply:RANK_TIERS.svip,dm_pin:RANK_TIERS.svip,dm_mute:RANK_TIERS.svip,dm_archive:RANK_TIERS.svip,dm_filters:RANK_TIERS.svip,dm_nicknames:RANK_TIERS.svip,dm_preferences:RANK_TIERS.svip,dm_report:RANK_TIERS.svip,inspect_private_messages:RANK_TIERS.owner,manage_dm_reports:RANK_TIERS.mod,
 suggestions_submit:RANK_TIERS.all,view_rules:RANK_TIERS.all,submit_reports:RANK_TIERS.all,suggestions_review:["DEVELOPER"],suggestions_set_status:["DEVELOPER"],suggestions_notify_submitter:["DEVELOPER"],manage_reports:RANK_TIERS.mod,reports_management:RANK_TIERS.mod,report_resolve:RANK_TIERS.mod,edit_room_rules:RANK_TIERS.mod,room_edit_rules:RANK_TIERS.mod,report_assign:RANK_TIERS.superAdmin,edit_site_rules:RANK_TIERS.commissor,
 news_posting:RANK_TIERS.admin,manage_news:RANK_TIERS.admin,delete_news:RANK_TIERS.admin,news_pin:RANK_TIERS.admin,news_read:RANK_TIERS.all,news_comment:RANK_TIERS.all,news_react:RANK_TIERS.all,news_report:RANK_TIERS.all,
 view_online_users:RANK_TIERS.all,manage_push_notifications:RANK_TIERS.all,moderate_users:RANK_TIERS.mod,moderate_user:RANK_TIERS.mod,delete_message:RANK_TIERS.mod,bypass_filter_words:RANK_TIERS.mod,bypass_mute:RANK_TIERS.mod,staff_rank_assignment:RANK_TIERS.mod,staff_dashboard_access:RANK_TIERS.mod,staff_application_review:RANK_TIERS.commissor,view_user_history:RANK_TIERS.mod,view_username_history:RANK_TIERS.mod,manage_mutes:RANK_TIERS.mod,manage_kicks:RANK_TIERS.mod,manage_warnings:RANK_TIERS.mod,staff_notifications:RANK_TIERS.mod,manage_bans:RANK_TIERS.admin,manage_account_locks:RANK_TIERS.admin,audit_log_access:RANK_TIERS.admin,inspect_ip_details:RANK_TIERS.instructor,inspect_similar_ips:RANK_TIERS.instructor,view_ips:RANK_TIERS.instructor,site_hard_refresh:RANK_TIERS.instructor,manage_site_refresh:RANK_TIERS.instructor,invisible_mode:RANK_TIERS.commissor,presence_modes:RANK_TIERS.commissor,manage_filter_words:RANK_TIERS.commissor,manage_automated_filters:RANK_TIERS.commissor,manage_spam_flood_rules:RANK_TIERS.commissor,grant_premium:RANK_TIERS.owner,premium_granting:RANK_TIERS.owner,manage_multi_account_rules:RANK_TIERS.owner,system_notifications:RANK_TIERS.coowner,ghost_mode:RANK_TIERS.owner,dead_mode:RANK_TIERS.instructor
@@ -1815,7 +1819,7 @@ app.post(
       return res.status(401).json({error:"Invalid username or password."});
     }
 
-    if(String(u.rank).toUpperCase()==="VIP" && u.vipExpiresAt && Number(u.vipExpiresAt)<Date.now()){
+    if(["VIP","SVIP"].includes(String(u.rank).toUpperCase()) && u.vipExpiresAt && Number(u.vipExpiresAt)<Date.now()){
       u.rank="MEMBER"; u.vipExpiresAt=null; u.vip_expires_at=null;
       await pool.query(`UPDATE users SET rank='user',vip_expires_at=NULL WHERE id=$1`,[Number(u.id)]);
     }
@@ -5537,17 +5541,17 @@ app.post('/api/premium/cancel',ownerOnly,async(req,res)=>{
   const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='DEVELOPER')return res.status(403).json({error:'Cannot change Developer'});
   v.rank='MEMBER';v.isPremium=false;v.is_premium=false;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='member',is_premium=false,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`DELETE FROM premium_requests WHERE user_id=$1`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
 });
-app.post('/api/shop/vip',auth,async(req,res)=>{
+app.post('/api/shop/svip',auth,async(req,res)=>{
   const u=current(req), options={7:{price:200,interval:"7 days",days:7},30:{price:2000,interval:"1 month",days:30},90:{price:5000,interval:"3 months",days:90},365:{price:10000,interval:"1 year",days:365}};
   const key=String(req.body.plan||""); const plan=options[key] || Object.values(options).find(x=>x.interval===key);
-  if(!plan) return res.status(400).json({error:"Invalid VIP plan."});
-  if(String(u.rank||'').toUpperCase()!=='MEMBER') return res.status(403).json({error:'Higher ranks cannot buy VIP'});
+  if(!plan) return res.status(400).json({error:"Invalid SVIP plan."});
+  if(String(u.rank||'').toUpperCase()!=='MEMBER') return res.status(403).json({error:'Higher ranks cannot buy SVIP'});
   if((u.gold||0)<plan.price) return res.status(400).json({error:"Not enough gold."});
-  u.gold-=plan.price; u.rank="VIP";
-  await pool.query(`UPDATE users SET gold=gold-$2,rank='vip',vip_expires_at=CASE WHEN rank='vip' AND vip_expires_at>NOW() THEN vip_expires_at+($1::interval) ELSE NOW()+($1::interval) END WHERE id=$3`,[plan.interval,plan.price,Number(u.id)]);
+  u.gold-=plan.price; u.rank="SVIP";
+  await pool.query(`UPDATE users SET gold=gold-$2,rank='svip',vip_expires_at=CASE WHEN rank IN ('vip','svip') AND vip_expires_at>NOW() THEN vip_expires_at+($1::interval) ELSE NOW()+($1::interval) END WHERE id=$3`,[plan.interval,plan.price,Number(u.id)]);
   const row=await pool.query(`SELECT vip_expires_at FROM users WHERE id=$1`,[Number(u.id)]); u.vipExpiresAt=row.rows[0]?.vip_expires_at?new Date(row.rows[0].vip_expires_at).getTime():null;
-  notify(u.id,'vip','VIP purchase',`You bought VIP for ${plan.days} days.`);
-  const staffRows=await pool.query(`SELECT id FROM users WHERE LOWER(rank) IN ('owner','admin')`); for(const x of staffRows.rows)notify(x.id,'vip','VIP purchase',`User ${u.username} bought VIP ${plan.days} days package.`);
+  notify(u.id,'svip','SVIP purchase',`You bought SVIP for ${plan.days} days.`);
+  const staffRows=await pool.query(`SELECT id FROM users WHERE LOWER(rank) IN ('owner','admin')`); for(const x of staffRows.rows)notify(x.id,'svip','SVIP purchase',`User ${u.username} bought SVIP ${plan.days} days package.`);
   save(); res.json({ok:true,gold:u.gold,vipExpiresAt:u.vipExpiresAt});
 });
 
