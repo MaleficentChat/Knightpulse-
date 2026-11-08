@@ -313,7 +313,7 @@ const FEATURE_CONTROLS=[
   {key:"manage_staff_accounts",name:"Manage staff username/email",category:"Staff",defaultRank:"OWNER"},
   {key:"profile_note",name:"View and add staff profile notes",category:"Staff",defaultRank:"MOD"},
   {key:"view_user_history",name:"View and manage user action history",category:"Staff",defaultRank:"MOD"},
-  {key:"staff_rank_assignment",name:"Assign MOD or lower",category:"Staff",defaultRank:"MOD"},
+  {key:"staff_rank_assignment",name:"Assign ranks within staff grant limits",category:"Staff",defaultRank:"MOD"},
   {key:"manage_gold",name:"Manage user gold",category:"Owner",defaultRank:"OWNER"},
   {key:"manage_diamonds",name:"Manage user Diamonds",category:"Owner",defaultRank:"OWNER"},
   {key:"manage_ranks",name:"Manage ranks",category:"Owner",defaultRank:"OWNER"},
@@ -1398,13 +1398,15 @@ function awardXp(u,n=5){
 }
 
 async function ensureDeveloper(){
+  // Persistently translate retired global ranks before the permanent Owner is initialized.
+  await pool.query("UPDATE users SET rank=CASE UPPER(rank) WHEN 'ROYAL' THEN 'premium' WHEN 'INSTRUCTOR' THEN 'chief_commissor' WHEN 'DEVELOPER' THEN 'owner' ELSE rank END WHERE UPPER(rank) IN ('ROYAL','INSTRUCTOR','DEVELOPER')");
   let q;
   if (process.env.OWNER_PASSWORD) {
     const hash = await bcrypt.hash(process.env.OWNER_PASSWORD, 10);
-    q = await pool.query(`INSERT INTO users(username,password,rank,gold,xp) VALUES('Maleficent',$1,'Developer',999999,999999) ON CONFLICT(username) DO UPDATE SET rank='Owner',password=EXCLUDED.password RETURNING *`, [hash]);
+    q = await pool.query(`INSERT INTO users(username,password,rank,gold,xp) VALUES('Maleficent',$1,'Owner',999999,999999) ON CONFLICT(username) DO UPDATE SET rank='Owner',password=EXCLUDED.password RETURNING *`, [hash]);
   } else {
     q = await pool.query(`UPDATE users SET rank='Owner' WHERE username='Maleficent' RETURNING *`);
-    if (!q.rowCount) throw new Error('OWNER_PASSWORD is required to initialize the permanent Developer account.');
+    if (!q.rowCount) throw new Error('OWNER_PASSWORD is required to initialize the permanent Owner account.');
   }
   const row=q.rows[0]; let u=findUser('Maleficent');
   if(!u){ u={id:String(row.id),username:'Maleficent',displayName:'Maleficent',password:row.password,passwordHash:row.password,rank:'OWNER',gold:999999,xp:999999,verified:true,createdAt:Date.now(),lastSeen:Date.now(),online:false,level:999999,bio:'Permanent Owner of Knightpulse.',settings:{rememberLogin:true,theme:'obsidian',notificationPrefs:{messages:true,mentions:true,replies:true,security:true,staff:true,gamification:true,other:true}}}; db.users.push(u); }
@@ -3515,7 +3517,7 @@ app.post(
 // Cleared-room evidence is restricted server-side to Instructor and higher ranks.
 function requireClearedRoomEvidenceAccess(req,res,next){
   const viewer=current(req);
-  if(!viewer||!hasRank(viewer,"CHIEF_COMMISSOR"))return res.status(403).json({error:"Cleared room message inspection requires Instructor rank or higher."});
+  if(!viewer||!hasRank(viewer,"CHIEF_COMMISSOR"))return res.status(403).json({error:"Cleared room message inspection requires Chief Commissor rank or higher."});
   next();
 }
 app.get("/api/staff/cleared-room-evidence",auth,requireClearedRoomEvidenceAccess,async(req,res)=>{
@@ -4176,7 +4178,7 @@ app.post('/api/staff/system-notifications',auth,featureAllowed('view_staff_dashb
   const message=String(req.body?.message||'').trim().slice(0,2000);
   const targetRank=String(req.body?.targetRank||'ALL').trim().toUpperCase();
   const targetRange=String(req.body?.targetRange||'EXACT').trim().toUpperCase();
-  const allowedTargets=['ALL','MEMBER','VIP','PREMIUM','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'];
+  const allowedTargets=['ALL','MEMBER','VIP','SVIP','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'];
   const allowedRanges=['EXACT','AND_ABOVE','AND_BELOW'];
   if(!title||!message)return res.status(400).json({error:'Enter both a notification title and message.'});
   if(!allowedTargets.includes(targetRank))return res.status(400).json({error:'Choose a valid recipient rank.'});
@@ -4586,7 +4588,7 @@ app.get("/api/staff/ip-inspection/diagnostics",auth,ownerOnly,(req,res)=>{
 app.get("/api/staff/ip-inspection/users",auth,async(req,res)=>{
   const actor=current(req),viewerRank=String(actor?.rank||"").toUpperCase();
   if(!["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(viewerRank))return res.status(403).json({error:"Your rank does not have IP Inspection access."});
-  const canInspectTarget=target=>viewerRank==="OWNER"||viewerRank==="OWNER"||(String(target?.id)!==String(actor?.id)&&(rankOrder[String(target?.rank||"MEMBER").toUpperCase()]??999)<(rankOrder[viewerRank]??-1));
+  const canInspectTarget=target=>viewerRank==="OWNER"||(String(target?.id)!==String(actor?.id)&&(rankOrder[String(target?.rank||"MEMBER").toUpperCase()]??999)<(rankOrder[viewerRank]??-1));
   const term=String(req.query.q||"").trim().replace(/^@/,"").slice(0,80);
   try{const result=await pool.query("SELECT id,username,email,created_at FROM users WHERE ($1='' OR username ILIKE '%'||$1||'%' OR COALESCE(email,'') ILIKE '%'||$1||'%') ORDER BY LOWER(username) LIMIT 30",[term]);if(result.rows.length||!Array.isArray(db.users))return res.json({users:result.rows.filter(u=>canInspectTarget({...u,rank:db.users.find(x=>String(x.id)===String(u.id))?.rank})).slice(0,30)});}
   catch(error){console.error("[IP_INSPECTION] SQL account search unavailable; using persisted users:",error?.message||error);}
