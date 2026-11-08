@@ -557,6 +557,11 @@ assert.ok(activeClient.includes("const canManageFilters=['COMMISSOR','CHIEF_COMM
   "Admin and Superadmin dashboards must not call the Commissor-only filter endpoint");
 assert.ok(activeClient.includes('canManageFilters ? `') && activeClient.includes('Filtered words</h3>'),
   "filter-word controls must only render for Commissor and higher ranks");
+assert.ok(server.includes('const actor=current(req);if(!hasRank(actor,"ADMIN"))return res.status(403).json({error:"Admin rank or higher required to manage reports."});') &&
+  server.includes('if(!hasRank(u,"ADMIN"))return res.status(403).json({error:"Admin rank or higher required to manage reports."});'),
+  "Moderator accounts must not assign or resolve reports");
+assert.ok(server.includes('if(!hasRank(u,"ADMIN"))return res.status(403).json({error:"Admin rank or higher required to inspect reported private-message evidence."});'),
+  "Moderator accounts must not inspect reported private-message evidence");
 assert.ok(server.includes("const FEATURE_GRANT_POLICY_VERSION=8;"),
   "rank and feature-grant policy migration must be versioned");
 assert.ok(server.includes("blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER']"),
