@@ -1,0 +1,7636 @@
+const express=require("express");
+const http=require("http");
+const path=require("path");
+const fs=require("fs");
+const crypto=require("crypto");
+const webPush=require("web-push");
+const VAPID_PUBLIC_KEY=String(process.env.VAPID_PUBLIC_KEY||"").trim();
+const VAPID_PRIVATE_KEY=String(process.env.VAPID_PRIVATE_KEY||"").trim();
+const VAPID_SUBJECT=String(process.env.VAPID_SUBJECT||"mailto:admin@maleficentchat.onrender.com").trim();
+const webPushConfigured=()=>Boolean(VAPID_PUBLIC_KEY&&VAPID_PRIVATE_KEY&&VAPID_SUBJECT.startsWith("mailto:"));
+if(webPushConfigured())webPush.setVapidDetails(VAPID_SUBJECT,VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY);
+const bcrypt=require("bcryptjs");
+const session=require("express-session");
+const multer=require("multer");
+const {createWorker}=require("tesseract.js");
+const {Server}=require("socket.io");
+
+const {initDB,loadState,persistState,pool}=require("./db");
+const {initSocialFeatureTables,registerSocialFeatureRoutes}=require("./social-features");
+let firebaseAdminApp=null;
+function getFirebaseAdmin(){
+  if(firebaseAdminApp)return firebaseAdminApp;
+  const raw=String(process.env.FIREBASE_SERVICE_ACCOUNT||"").trim();
+  if(!raw)return null;
+  try{
+    const admin=require("firebase-admin");
+    const serviceAccount=JSON.parse(raw);
+    firebaseAdminApp=admin.apps.length?admin.app():admin.initializeApp({credential:admin.credential.cert(serviceAccount)});
+    return firebaseAdminApp;
+  }catch(error){console.error("Firebase Admin initialization failed:",error?.message||error);return null;}
+}
+async function sendNativePushToUser(userId,payload){
+  const app=getFirebaseAdmin();if(!app)return;
+  try{
+    const result=await pool.query("SELECT fcm_token FROM native_device_tokens WHERE user_id=$1",[Number(userId)]);
+    if(!result.rowCount)return;
+    const admin=require("firebase-admin");
+    const response=await admin.messaging(app).sendEachForMulticast({
+      tokens:result.rows.map(row=>row.fcm_token),
+      data:Object.fromEntries(Object.entries(payload).map(([k,v])=>[k,String(v??"")])),
+      android:{priority:"high"}
+    });
+    for(let i=0;i<response.responses.length;i++){
+      const item=response.responses[i];
+      if(!item.success && /registration-token-not-registered|invalid-registration-token/i.test(String(item.error?.code||""))){
+        await pool.query("DELETE FROM native_device_tokens WHERE fcm_token=$1",[result.rows[i].fcm_token]);
+      }
+    }
+  }catch(error){console.error("Native FCM delivery failed:",error?.message||error);}
+}
+
+
+const app=express(), server=http.createServer(app), io=new Server(server);
+// Express 4 does not automatically forward rejected async route handlers to
+// error middleware. Wrap route callbacks once so GET/API failures return a
+// useful JSON error instead of hanging or appearing as a generic GET error.
+for (const method of ["get","post","put","patch","delete","options","head","all"]) {
+  const original = app[method].bind(app);
+  app[method] = function(path, ...handlers) {
+    // Preserve Express application-setting getter calls such as app.get("env").
+    if (typeof path !== "string" || (!path.startsWith("/") && path !== "*")) {
+      return original(path, ...handlers);
+    }
+    const wrap = handler => Array.isArray(handler) ? handler.map(wrap) :
+      (typeof handler === "function" && handler.length < 4
+        ? function(req, res, next) { try { Promise.resolve(handler.call(this, req, res, next)).catch(next); } catch (err) { next(err); } }
+        : handler);
+    return original(path, ...handlers.map(wrap));
+  };
+}
+const PORT=process.env.PORT||3000;
+const UP=path.resolve(process.env.UPLOAD_DIR || path.join(process.env.PERSISTENT_DATA_DIR || path.join(__dirname,"uploads"),"uploads"));
+fs.mkdirSync(UP,{recursive:true});
+
+// Uploaded media is stored in PostgreSQL, not only on Render's replaceable
+// application filesystem. media_key remains the public /uploads/... URL path.
+async function storeMediaBuffer(mediaKey,buffer,mimeType,originalName){
+  const key=String(mediaKey||"").replace(/\\/g,"/").replace(/^\/+/, "");
+  if(!key||key.split("/").some(part=>!part||part==="."||part===".."))throw new Error("Invalid media storage key.");
+  const bytes=Buffer.isBuffer(buffer)?buffer:Buffer.from(buffer||[]);
+  if(!bytes.length)throw new Error("Uploaded media is empty.");
+  await pool.query(
+    "INSERT INTO stored_media(media_key,mime_type,original_name,byte_size,content) VALUES($1,$2,$3,$4,$5) ON CONFLICT(media_key) DO NOTHING",
+    [key,String(mimeType||"application/octet-stream").slice(0,160),String(originalName||path.basename(key)).slice(0,255),bytes.length,bytes]
+  );
+  return key;
+}
+async function persistUploadedMedia(file,mediaKey){
+  if(!file)return "";
+  const key=String(mediaKey||file.filename||"").replace(/\\/g,"/").replace(/^\/+/, "");
+  const bytes=await fs.promises.readFile(file.path);
+  await storeMediaBuffer(key,bytes,file.mimetype,file.originalname);
+  file.mediaKey=key;
+  return key;
+}
+async function migrateExistingUploads(){
+  let migrated=0,failed=0;
+  async function walk(dir){
+    let entries=[];
+    try{entries=await fs.promises.readdir(dir,{withFileTypes:true});}catch(error){if(error.code==="ENOENT")return;throw error;}
+    for(const entry of entries){
+      const full=path.join(dir,entry.name);
+      if(entry.isDirectory()){await walk(full);continue;}
+      if(!entry.isFile())continue;
+      const key=path.relative(UP,full).split(path.sep).join("/");
+      try{
+        const found=await pool.query("SELECT 1 FROM stored_media WHERE media_key=$1",[key]);
+        if(found.rowCount)continue;
+        const bytes=await fs.promises.readFile(full);
+        const ext=path.extname(key).toLowerCase();
+        const types={".png":"image/png",".jpg":"image/jpeg",".jpeg":"image/jpeg",".gif":"image/gif",".webp":"image/webp",".avif":"image/avif",".mp4":"video/mp4",".webm":"video/webm",".mp3":"audio/mpeg",".m4a":"audio/mp4",".aac":"audio/aac",".ogg":"audio/ogg",".oga":"audio/ogg",".wav":"audio/wav",".opus":"audio/opus",".flac":"audio/flac"};
+        await storeMediaBuffer(key,bytes,types[ext]||"application/octet-stream",path.basename(key));
+        migrated++;
+      }catch(error){failed++;console.warn("[MEDIA MIGRATION] Could not copy",key,error?.message||error);}
+    }
+  }
+  await walk(UP);
+  console.log("[MEDIA MIGRATION] Existing uploads copied to PostgreSQL:",{migrated,failed});
+}
+
+const DEFAULT_OWNER=process.env.OWNER_USERNAME||"Maleficent";
+const OWNER_DISPLAY=process.env.OWNER_DISPLAY_NAME||"Maleficent";
+
+function load(){
+  return {
+    users:[], rooms:[], messages:[], privateMessages:[], reports:[], 
+    notifications:[], friends:[], goldTransactions:[], moderationHistory:[],
+    bannedWords:[], settings:{
+      xpPerLevel:100, dailyXpLimit:500, goldPerMinute:1, linkFilter:false, daily_reward_gold:25, daily_reward_xp:15,
+      filterMuteMinRank:"MEMBER", filterMuteDurationMinutes:5,
+      wall_allowed_ranks:["OWNER","ADMIN"], clear_history_allowed_ranks:["OWNER","ADMIN"], feature_grants:{wall_post:["OWNER","ADMIN"]}
+    }
+  };
+}
+
+
+let db=load();
+// Short-window in-memory signals support flood protection; durable actions remain in db.
+const systemModerationWindows = new Map();
+const systemNetworkWindows = new Map();
+const roomMessageLastSent = new Map();
+function systemAudit(entry){
+  db.moderationHistory ||= [];
+  db.moderationHistory.push({id:id(),target:String(entry.target||""),actor:String(entry.actor||"SYSTEM"),actorUsername:String(entry.actorUsername||"System Moderation"),action:String(entry.action||"EVENT"),reason:String(entry.reason||""),time:Date.now(),source:String(entry.source||"system"),durationMinutes:Number(entry.durationMinutes)||0});
+  // Keep the complete audit trail; older evidence is not silently discarded.
+  save();
+}
+function applySystemRule(target, rule, reason, source){
+  if(!target||!rule||rule.enabled!==true) return false;
+  const action=String(rule.action||"WARN").toUpperCase();
+  const minutes=Math.max(1,Math.min(10080,Number(rule.durationMinutes)||5));
+  const until=Date.now()+minutes*60000;
+  const why=cleanText(reason||rule.reason||"Automated moderation").slice(0,240);
+  if(String(target.rank||"").toUpperCase()==="DEVELOPER") return false;
+  if(action==="WARN"){target.warnings=(target.warnings||0)+1;target.lastWarningReason=why;}
+  else if(action==="MUTE"){target.mutedUntil=until;target.muteReason=why;}
+  else if(action==="KICK"){target.kickedUntil=until;target.kickReason=why;target.online=false;}
+  else if(action==="BAN"){target.banned=true;target.banReason=why;target.online=false;}
+  else return false;
+  systemAudit({target:target.id,actor:"SYSTEM",action,reason:why,source,durationMinutes:action==="BAN"||action==="WARN"?0:minutes});
+  return true;
+}
+
+let saveTimer=null;
+let saveInFlight=Promise.resolve();
+let saveRunning=false;
+let saveDirty=false;
+
+// Full legacy-state persistence touches every user and filter word. Coalesce
+// bursts of presence/activity updates so they cannot build an unbounded queue
+// of whole-database rewrites behind the actual chat-message INSERTs.
+function scheduleSave(delay=150){
+  if(saveTimer) clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>{
+    saveTimer=null;
+    void runScheduledSave();
+  },delay);
+}
+function save(){
+  saveDirty=true;
+  if(saveRunning) return;
+  scheduleSave();
+}
+async function runScheduledSave(){
+  if(saveRunning||!saveDirty) return saveInFlight;
+  saveRunning=true;
+  saveDirty=false;
+  const task=saveInFlight.then(()=>persistState(db)).catch(err=>console.error("PostgreSQL persistence error:",err));
+  saveInFlight=task;
+  try{
+    await task;
+  }finally{
+    saveRunning=false;
+    // At most one follow-up snapshot is queued, even if many updates arrive
+    // while the current snapshot is running.
+    if(saveDirty) scheduleSave(500);
+  }
+  return saveInFlight;
+}
+async function flushSave(){
+  if(saveTimer){clearTimeout(saveTimer);saveTimer=null;}
+  saveDirty=true;
+  while(saveDirty||saveRunning){
+    if(saveRunning){
+      await saveInFlight;
+      continue;
+    }
+    saveRunning=true;
+    saveDirty=false;
+    const task=saveInFlight.then(()=>persistState(db)).catch(err=>console.error("PostgreSQL persistence error:",err));
+    saveInFlight=task;
+    try{
+      await task;
+    }finally{
+      saveRunning=false;
+    }
+  }
+  if(saveTimer){clearTimeout(saveTimer);saveTimer=null;}
+  return saveInFlight;
+}
+
+function id(){
+  return crypto.randomUUID();
+}
+
+const ranks=[
+  "MEMBER",
+  "VIP",
+  "PREMIUM",
+  "ROYAL",
+  "MOD",
+  "ADMIN",
+  "SUPER_ADMIN",
+  "COMMISSOR",
+  "INSTRUCTOR",
+  "COOWNER",
+  "OWNER",
+  "DEVELOPER"
+];
+
+const rankIcons={
+  MEMBER:"⚡",
+  VIP:"💎",
+  PREMIUM:"🏅",
+  ROYAL:"⚜️",
+  MOD:"🛡️",
+  ADMIN:"⭐",
+  SUPER_ADMIN:"🌟",
+  COMMISSOR:"👻",
+  INSTRUCTOR:"⚔️",
+  COOWNER:"👻",
+  OWNER:"👑",
+  DEVELOPER:"🛠️"
+};
+
+const rankOrder=Object.fromEntries(
+  ranks.map((r,i)=>[r,i])
+);
+
+function hasRank(u,r){
+  return !!u&&rankOrder[u.rank]>=rankOrder[r];
+}
+
+// Staff may inspect or manage staff-only records only for accounts strictly below their rank.
+function canAccessStaffTarget(actor,target){
+  if(!actor||!target||String(actor.id)===String(target.id))return false;
+  const actorRank=String(actor.rank||"").toUpperCase(), targetRank=String(target.rank||"").toUpperCase();
+  if(targetRank==="DEVELOPER"||target.username===DEFAULT_OWNER)return false;
+  return (rankOrder[targetRank]??999)<(rankOrder[actorRank]??-1);
+}
+
+function featurePermissionKey(key){
+  const aliases={create_room:"can_create_rooms",create_rooms:"can_create_rooms",edit_room:"can_edit_rooms",edit_rooms:"can_edit_rooms",delete_room:"can_delete_rooms",delete_rooms:"can_delete_rooms",profile_note:"can_add_notes",edit_email:"can_edit_emails",share_gold:"can_share_gold",moderate_users:"can_mute",delete_message:"can_delete_messages",manage_staff_accounts:"can_edit_usernames",reports_management:"can_manage_reports",manage_ranks:"can_manage_ranks",manage_clubs:"can_manage_clubs",manage_settings:"can_manage_settings",clear_history_button:"can_clear_history",account_modifications:"can_manage_profiles",manage_profiles:"can_manage_profiles"};
+  return aliases[key]|| (String(key).startsWith("can_")?key:null);
+}
+function userFeatureGrant(u,key){
+  const permission=featurePermissionKey(key);if(!permission||!u)return null;
+  const entry=db.userFeatureGrants?.[String(u.id)]?.[permission];
+  return entry?!!entry.granted:null;
+}
+
+// Per-account feature blocks configured from the staff profile panel.
+// Store the blocks in persisted settings so they survive restarts.
+const USER_BLOCKABLE_FEATURES = [
+  {key:"send_messages",name:"Send room messages",category:"Messaging"},
+  {key:"private_messages",name:"Private messages",category:"Messaging"},
+  {key:"chat_file_upload",name:"Send image/audio attachments",category:"Media"},
+  {key:"gif_sending",name:"Send GIFs",category:"Media"},
+  {key:"doodle_studio",name:"Use Doodle Studio",category:"Creative"},
+  {key:"use_youtube",name:"Share YouTube videos",category:"Media"},
+  {key:"profile_like",name:"Like profiles",category:"Social"},
+  {key:"friend_wall_posting",name:"Post on Friend Wall",category:"Social"},
+  {key:"news_posting",name:"Publish News posts",category:"Community"},
+  {key:"create_rooms",name:"Create rooms",category:"Rooms"},
+  {key:"report_message",name:"Report messages",category:"Safety"},
+  {key:"react_message",name:"React to messages",category:"Messaging"},
+  {key:"edit_message",name:"Edit messages",category:"Messaging"},
+  {key:"pin_message",name:"Pin messages",category:"Messaging"},
+  {key:"save_message",name:"Save messages",category:"Messaging"},
+  {key:"schedule_message",name:"Schedule messages",category:"Messaging"},
+  {key:"expire_message",name:"Use expiring messages",category:"Messaging"},
+  {key:"room_announcement",name:"Post room announcements",category:"Rooms"},
+  {key:"manage_clubs",name:"Use community clubs",category:"Community"},
+  {key:"manage_bots",name:"Use community bots",category:"AI"}
+];
+function featureBlockKey(key){
+  const aliases={wall_post:"friend_wall_posting",friend_wall_post:"friend_wall_posting",publish_news:"news_posting",create_room:"create_rooms",youtube:"use_youtube",chat_upload:"chat_file_upload"};
+  return aliases[String(key||"").toLowerCase()]||String(key||"").toLowerCase();
+}
+function isUserFeatureBlocked(u,key){
+  if(!u)return false;
+  const blocks=db.settings?.user_feature_blocks?.[String(u.id)];
+  return !!blocks?.[featureBlockKey(key)];
+}
+
+
+// Owner-configurable access controls. The owner can change the minimum rank
+// for these implemented features without editing code.
+const FEATURE_CONTROLS=[
+  {key:"moderate_user",name:"Moderate users",category:"Staff",defaultRank:"MOD"},
+  {key:"view_staff_dashboard",name:"View staff dashboard",category:"Staff",defaultRank:"MOD"},
+  {key:"report_message",name:"Report messages",category:"Safety",defaultRank:"MEMBER"},
+  {key:"edit_message",name:"Edit own messages",category:"Messaging",defaultRank:"MEMBER"},
+  {key:"pin_message",name:"Pin messages",category:"Messaging",defaultRank:"MOD"},
+  {key:"save_message",name:"Save messages",category:"Messaging",defaultRank:"MEMBER"},
+  {key:"react_message",name:"React to messages",category:"Messaging",defaultRank:"MEMBER"},
+  {key:"schedule_message",name:"Schedule messages",category:"Messaging",defaultRank:"MEMBER"},
+  {key:"expire_message",name:"Use expiring messages",category:"Messaging",defaultRank:"MEMBER"},
+  {key:"use_youtube",name:"Use YouTube sharing",category:"Media",defaultRank:"MEMBER"},
+  {key:"room_announcement",name:"Post room announcements",category:"Rooms",defaultRank:"MOD"},
+  {key:"view_pinned",name:"View pinned messages",category:"Rooms",defaultRank:"MEMBER"},
+  {key:"manage_filters",name:"Manage filtered words",category:"Safety",defaultRank:"ADMIN"},
+  {key:"manage_bots",name:"Manage community bots",category:"AI",defaultRank:"OWNER"},
+  {key:"delete_message",name:"Delete messages",category:"Staff",defaultRank:"MOD"},
+  {key:"clear_room",name:"Clear rooms",category:"Rooms",defaultRank:"COOWNER"},
+  {key:"create_room",name:"Create rooms",category:"Rooms",defaultRank:"PREMIUM"},
+  {key:"edit_room",name:"Edit rooms",category:"Rooms",defaultRank:"COOWNER"},
+  {key:"delete_room",name:"Delete rooms",category:"Rooms",defaultRank:"COOWNER"},
+  {key:"publish_news",name:"Publish news",category:"News",defaultRank:"ADMIN"},
+  {key:"delete_news",name:"Delete news",category:"News",defaultRank:"ADMIN"},
+  {key:"manage_staff_accounts",name:"Manage staff username/email",category:"Staff",defaultRank:"OWNER"},
+  {key:"profile_note",name:"View and add staff profile notes",category:"Staff",defaultRank:"MOD"},
+  {key:"view_user_history",name:"View and manage user action history",category:"Staff",defaultRank:"MOD"},
+  {key:"staff_rank_assignment",name:"Assign MOD or lower",category:"Staff",defaultRank:"MOD"},
+  {key:"manage_gold",name:"Manage user gold",category:"Owner",defaultRank:"OWNER"},
+  {key:"manage_diamonds",name:"Manage user Diamonds",category:"Owner",defaultRank:"OWNER"},
+  {key:"manage_ranks",name:"Manage ranks",category:"Owner",defaultRank:"OWNER"},
+  {key:"profile_like",name:"Like profiles",category:"Social",defaultRank:"MEMBER"},
+  {key:"manage_mal_ai",name:"Manage Mal AI commands",category:"AI",defaultRank:"OWNER"},
+  {key:"manage_feature_lab",name:"Manage Feature Lab",category:"Owner",defaultRank:"OWNER"},
+  {key:"manage_clubs",name:"Manage clubs",category:"Community",defaultRank:"ADMIN"},
+  {key:"enter_private_club",name:"Enter private clubs",category:"Community",defaultRank:"MEMBER"},
+  {key:"manage_aurora",name:"Manage Aurora bot",category:"AI",defaultRank:"OWNER"},
+  {key:"room_rank_assign",name:"Assign room-specific ranks",category:"Room Staff",defaultRank:"OWNER"},
+  {key:"room_moderate",name:"Mute or remove users in a room",category:"Room Staff",defaultRank:"MOD"},
+  {key:"room_manage_staff",name:"Manage room staff",category:"Room Staff",defaultRank:"OWNER"},
+  {key:"room_edit_own",name:"Edit or delete owned rooms",category:"Room Staff",defaultRank:"OWNER"},
+  {key:"room_delete_messages",name:"Delete messages in managed rooms",category:"Room Staff",defaultRank:"MOD"},
+  {key:"room_clear_own",name:"Clear messages in owned rooms",category:"Room Staff",defaultRank:"OWNER"}
+];
+
+const GRANT_RANKS=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER"];
+const FEATURE_GRANT_DEFAULTS={
+  send_messages:GRANT_RANKS,
+  doodle_studio:GRANT_RANKS,
+  private_messages:GRANT_RANKS,
+  gif_sending:GRANT_RANKS,
+  profile_note:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  account_modifications:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  change_password:["OWNER"],
+  edit_email:["OWNER"],
+  manage_xp_level:["OWNER"],
+  create_rooms:["PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"],
+  edit_rooms:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  delete_rooms:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  join_rooms:GRANT_RANKS,
+  delete_own_room:GRANT_RANKS,
+  friend_wall_posting:GRANT_RANKS,
+  wall_commenting:GRANT_RANKS,
+  wall_liking:GRANT_RANKS,
+  wall_upload:GRANT_RANKS,
+  news_posting:GRANT_RANKS,
+  change_avatar:GRANT_RANKS,
+  change_bio:GRANT_RANKS,
+  emojis_stickers:GRANT_RANKS,
+  chat_file_upload:GRANT_RANKS,
+  clear_history_button:GRANT_RANKS,
+  view_online_users:GRANT_RANKS,
+  invisible_mode:["OWNER"],
+  manage_filter_words:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  premium_granting:["OWNER"],
+  reports_management:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  moderate_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  bypass_filter_words:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  bypass_mute:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  share_gold:["VIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  delete_message:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  view_ips:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  view_emails:["OWNER"],
+  manage_ranks:["OWNER"],manage_settings:["OWNER"],manage_gold:["OWNER"],manage_diamonds:["OWNER"],manage_bots:["OWNER"],manage_mal_ai:["OWNER"],manage_aurora:["OWNER"],manage_feature_lab:["OWNER"],
+  manage_news:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],delete_news:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  report_message:GRANT_RANKS,moderate_user:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],clear_room:["COOWNER","OWNER"],
+  edit_message:GRANT_RANKS,pin_message:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],save_message:GRANT_RANKS,react_message:GRANT_RANKS,
+  schedule_message:GRANT_RANKS,expire_message:GRANT_RANKS,use_youtube:GRANT_RANKS,room_announcement:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_pinned:GRANT_RANKS,
+  manage_staff_accounts:["OWNER"],staff_rank_assignment:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],profile_like:GRANT_RANKS,enter_private_club:GRANT_RANKS,wall_post:GRANT_RANKS,room_rank_assign:["OWNER","COOWNER","COMMISSOR"],room_moderate:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_manage_staff:["OWNER","COOWNER","COMMISSOR"],room_edit_own:["OWNER","COOWNER","COMMISSOR"],room_delete_messages:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_clear_own:["OWNER","COOWNER","COMMISSOR"],
+  // Extended catalog: site, account, community, media, moderation and owner tools.
+  account_register:GRANT_RANKS,account_login:GRANT_RANKS,account_settings:GRANT_RANKS,change_own_password:GRANT_RANKS,change_own_email:GRANT_RANKS,account_export:GRANT_RANKS,manage_sessions:["OWNER"],view_login_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_device_sessions:["OWNER"],manage_push_notifications:GRANT_RANKS,
+  search_users:GRANT_RANKS,view_profiles:GRANT_RANKS,friend_requests:GRANT_RANKS,manage_friends:GRANT_RANKS,block_users:GRANT_RANKS,nickname_users:GRANT_RANKS,profile_status:GRANT_RANKS,profile_frames:GRANT_RANKS,profile_backgrounds:GRANT_RANKS,profile_colors:GRANT_RANKS,profile_pronouns:GRANT_RANKS,profile_showcase:GRANT_RANKS,presence_modes:GRANT_RANKS,ghost_mode:GRANT_RANKS,dead_mode:GRANT_RANKS,
+  search_rooms:GRANT_RANKS,leave_rooms:GRANT_RANKS,room_passwords:GRANT_RANKS,room_member_limits:GRANT_RANKS,room_rank_restrictions:GRANT_RANKS,room_friends_only:GRANT_RANKS,room_topics:GRANT_RANKS,room_rules:GRANT_RANKS,room_staff_list:GRANT_RANKS,room_mute_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_kick_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_block_users:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_edit_rules:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_persistence:GRANT_RANKS,room_themes:GRANT_RANKS,room_message_search:GRANT_RANKS,
+  reply_messages:GRANT_RANKS,quote_messages:GRANT_RANKS,delete_own_messages:GRANT_RANKS,copy_messages:GRANT_RANKS,hide_messages:GRANT_RANKS,mention_users:GRANT_RANKS,chat_unread_counts:GRANT_RANKS,chat_attachments:GRANT_RANKS,chat_image_upload:GRANT_RANKS,chat_video_upload:GRANT_RANKS,chat_audio_upload:GRANT_RANKS,chat_youtube_music:GRANT_RANKS,chat_message_search:GRANT_RANKS,chat_message_expiry:GRANT_RANKS,chat_scheduled_messages:GRANT_RANKS,chat_doodle_share:GRANT_RANKS,chat_doodle_save:GRANT_RANKS,chat_aurora_announcements:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  dm_search:GRANT_RANKS,dm_unread_counts:GRANT_RANKS,dm_previews:GRANT_RANKS,dm_reply:GRANT_RANKS,dm_pin:GRANT_RANKS,dm_mute:GRANT_RANKS,dm_archive:GRANT_RANKS,dm_filters:GRANT_RANKS,dm_nicknames:GRANT_RANKS,dm_preferences:GRANT_RANKS,dm_report:GRANT_RANKS,inspect_private_messages:["OWNER"],manage_dm_reports:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  news_read:GRANT_RANKS,news_comment:GRANT_RANKS,news_react:GRANT_RANKS,news_report:GRANT_RANKS,news_pin:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],wall_read:GRANT_RANKS,wall_search:GRANT_RANKS,wall_comment:GRANT_RANKS,wall_react:GRANT_RANKS,wall_report:GRANT_RANKS,wall_pin:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],suggestions_submit:GRANT_RANKS,suggestions_review:["DEVELOPER"],suggestions_set_status:["DEVELOPER"],suggestions_notify_submitter:["DEVELOPER"],
+  games_access:GRANT_RANKS,gravity_run:GRANT_RANKS,doodle_studio_save:GRANT_RANKS,doodle_studio_share:GRANT_RANKS,gif_search:GRANT_RANKS,media_embeds:GRANT_RANKS,
+  premium_access:GRANT_RANKS,vip_access:GRANT_RANKS,gold_wallet:GRANT_RANKS,gold_catalogue:GRANT_RANKS,gold_purchase:GRANT_RANKS,gold_equip:GRANT_RANKS,gold_transaction_history:GRANT_RANKS,daily_rewards:GRANT_RANKS,achievement_access:GRANT_RANKS,premium_requests:GRANT_RANKS,grant_premium:["OWNER"],
+  view_rules:GRANT_RANKS,submit_reports:GRANT_RANKS,manage_reports:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_assign:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_resolve:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],edit_site_rules:["INSTRUCTOR","COMMISSOR","COOWNER","OWNER","DEVELOPER"],edit_room_rules:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  leaderboard_access:GRANT_RANKS,saved_messages:GRANT_RANKS,advanced_search:GRANT_RANKS,staff_application_submit:GRANT_RANKS,staff_application_review:["OWNER","COOWNER","COMMISSOR"],staff_dashboard_access:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],staff_notifications:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],system_notifications:["COOWNER","OWNER","DEVELOPER"],audit_log_access:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],audit_log_settings:["OWNER"],under_construction_control:["OWNER"],site_hard_refresh:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  inspect_ip_details:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],inspect_similar_ips:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_user_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_username_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_profile_notes:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_account_locks:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_avatar:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],delete_accounts:["COOWNER","OWNER"],manage_bans:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_mutes:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_kicks:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_warnings:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_automated_filters:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_vpn_proxy_rules:["OWNER"],manage_multi_account_rules:["OWNER"],manage_spam_flood_rules:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_user_feature_exceptions:["OWNER"],manage_rank_feature_grants:["OWNER"],manage_individual_feature_grants:["OWNER"],manage_owner_space:["OWNER"],manage_site_refresh:["OWNER"],view_system_diagnostics:["OWNER"],manage_site_themes:["OWNER"],manage_economy_settings:["OWNER"],manage_premium_settings:["OWNER"],manage_notifications_settings:["OWNER"],manage_room_permissions:["OWNER"],manage_room_themes:["OWNER"],manage_room_staff:["OWNER","COOWNER","COMMISSOR"],manage_suggestions_settings:["OWNER"],manage_feature_granting:["OWNER"]
+};
+
+const FEATURE_GRANT_POLICY_VERSION=6;
+const RANK_TIERS={all:[...GRANT_RANKS],vip:GRANT_RANKS.slice(1),premium:GRANT_RANKS.slice(2),royal:GRANT_RANKS.slice(3),mod:GRANT_RANKS.slice(4),admin:GRANT_RANKS.slice(5),superAdmin:GRANT_RANKS.slice(6),commissor:GRANT_RANKS.slice(7),instructor:GRANT_RANKS.slice(8),coowner:GRANT_RANKS.slice(9),owner:GRANT_RANKS.slice(10)};
+const REQUESTED_FEATURE_GRANTS_EXPLICIT={
+send_messages:RANK_TIERS.all,private_messages:RANK_TIERS.vip,gif_sending:RANK_TIERS.vip,emojis_stickers:RANK_TIERS.all,chat_file_upload:RANK_TIERS.vip,chat_attachments:RANK_TIERS.vip,chat_image_upload:RANK_TIERS.vip,chat_video_upload:RANK_TIERS.vip,chat_audio_upload:RANK_TIERS.vip,use_youtube:RANK_TIERS.vip,chat_youtube_music:RANK_TIERS.vip,
+edit_message:RANK_TIERS.royal,pin_message:RANK_TIERS.mod,save_message:RANK_TIERS.all,react_message:RANK_TIERS.all,reply_messages:RANK_TIERS.all,quote_messages:RANK_TIERS.all,copy_messages:RANK_TIERS.all,hide_messages:RANK_TIERS.all,delete_own_messages:RANK_TIERS.premium,mention_users:RANK_TIERS.all,chat_unread_counts:RANK_TIERS.all,chat_message_search:RANK_TIERS.all,report_message:RANK_TIERS.all,
+join_rooms:RANK_TIERS.all,view_pinned:RANK_TIERS.all,search_rooms:RANK_TIERS.all,leave_rooms:RANK_TIERS.all,room_passwords:RANK_TIERS.all,create_rooms:RANK_TIERS.premium,edit_rooms:RANK_TIERS.premium,room_rank_assign:RANK_TIERS.mod,room_moderate:RANK_TIERS.mod,room_delete_messages:RANK_TIERS.mod,room_manage_staff:RANK_TIERS.commissor,manage_room_staff:RANK_TIERS.commissor,room_edit_own:RANK_TIERS.superAdmin,delete_rooms:RANK_TIERS.superAdmin,room_announcement:RANK_TIERS.superAdmin,chat_aurora_announcements:RANK_TIERS.superAdmin,
+friend_wall_posting:RANK_TIERS.all,wall_post:RANK_TIERS.all,wall_commenting:RANK_TIERS.all,wall_comment:RANK_TIERS.all,wall_liking:RANK_TIERS.all,wall_react:RANK_TIERS.all,wall_read:RANK_TIERS.all,wall_search:RANK_TIERS.all,wall_report:RANK_TIERS.all,wall_pin:RANK_TIERS.premium,wall_upload:RANK_TIERS.vip,nickname_users:RANK_TIERS.vip,room_clear_own:RANK_TIERS.admin,clear_room:RANK_TIERS.admin,room_member_limits:RANK_TIERS.admin,room_rank_restrictions:RANK_TIERS.admin,room_topics:RANK_TIERS.admin,room_friends_only:RANK_TIERS.admin,
+change_avatar:RANK_TIERS.all,change_bio:RANK_TIERS.all,account_register:RANK_TIERS.all,account_login:RANK_TIERS.all,account_settings:RANK_TIERS.all,change_own_password:RANK_TIERS.all,change_own_email:RANK_TIERS.all,account_modifications:RANK_TIERS.mod,profile_note:RANK_TIERS.mod,manage_profile_notes:RANK_TIERS.mod,change_password:RANK_TIERS.instructor,edit_email:RANK_TIERS.commissor,view_emails:RANK_TIERS.commissor,
+dm_search:RANK_TIERS.vip,dm_unread_counts:RANK_TIERS.vip,dm_previews:RANK_TIERS.vip,dm_reply:RANK_TIERS.vip,dm_pin:RANK_TIERS.vip,dm_mute:RANK_TIERS.vip,dm_archive:RANK_TIERS.vip,dm_filters:RANK_TIERS.vip,dm_nicknames:RANK_TIERS.vip,dm_preferences:RANK_TIERS.vip,dm_report:RANK_TIERS.vip,inspect_private_messages:RANK_TIERS.owner,manage_dm_reports:RANK_TIERS.mod,
+suggestions_submit:RANK_TIERS.all,view_rules:RANK_TIERS.all,submit_reports:RANK_TIERS.all,suggestions_review:["DEVELOPER"],suggestions_set_status:["DEVELOPER"],suggestions_notify_submitter:["DEVELOPER"],manage_reports:RANK_TIERS.mod,reports_management:RANK_TIERS.mod,report_resolve:RANK_TIERS.mod,edit_room_rules:RANK_TIERS.mod,room_edit_rules:RANK_TIERS.mod,report_assign:RANK_TIERS.superAdmin,edit_site_rules:RANK_TIERS.commissor,
+news_posting:RANK_TIERS.admin,manage_news:RANK_TIERS.admin,delete_news:RANK_TIERS.admin,news_pin:RANK_TIERS.admin,news_read:RANK_TIERS.all,news_comment:RANK_TIERS.all,news_react:RANK_TIERS.all,news_report:RANK_TIERS.all,
+view_online_users:RANK_TIERS.all,manage_push_notifications:RANK_TIERS.all,moderate_users:RANK_TIERS.mod,moderate_user:RANK_TIERS.mod,delete_message:RANK_TIERS.mod,bypass_filter_words:RANK_TIERS.mod,bypass_mute:RANK_TIERS.mod,staff_rank_assignment:RANK_TIERS.mod,staff_dashboard_access:RANK_TIERS.mod,staff_application_review:RANK_TIERS.commissor,view_user_history:RANK_TIERS.mod,view_username_history:RANK_TIERS.mod,manage_mutes:RANK_TIERS.mod,manage_kicks:RANK_TIERS.mod,manage_warnings:RANK_TIERS.mod,staff_notifications:RANK_TIERS.mod,manage_bans:RANK_TIERS.admin,manage_account_locks:RANK_TIERS.admin,audit_log_access:RANK_TIERS.admin,inspect_ip_details:RANK_TIERS.instructor,inspect_similar_ips:RANK_TIERS.instructor,view_ips:RANK_TIERS.instructor,site_hard_refresh:RANK_TIERS.instructor,manage_site_refresh:RANK_TIERS.instructor,invisible_mode:RANK_TIERS.commissor,presence_modes:RANK_TIERS.commissor,manage_filter_words:RANK_TIERS.commissor,manage_automated_filters:RANK_TIERS.commissor,manage_spam_flood_rules:RANK_TIERS.commissor,grant_premium:RANK_TIERS.owner,premium_granting:RANK_TIERS.owner,manage_multi_account_rules:RANK_TIERS.owner,system_notifications:RANK_TIERS.coowner,ghost_mode:RANK_TIERS.owner,dead_mode:RANK_TIERS.instructor
+};const REQUESTED_FEATURE_GRANTS={
+  ...REQUESTED_FEATURE_GRANTS_EXPLICIT,
+  ...Object.fromEntries(Object.entries(FEATURE_GRANT_DEFAULTS)
+    .filter(([key])=>!Object.prototype.hasOwnProperty.call(REQUESTED_FEATURE_GRANTS_EXPLICIT,key))
+    .map(([key,ranks])=>[key,[...ranks]]))
+};
+
+const REQUESTED_COMMAND_RANKS={clear:RANK_TIERS.admin,abrakadabra:RANK_TIERS.all,aura:RANK_TIERS.all,roast:RANK_TIERS.all,anonymous:RANK_TIERS.superAdmin,bank:RANK_TIERS.all,convert:RANK_TIERS.all,ship:RANK_TIERS.vip,welcome:RANK_TIERS.vip,steal:RANK_TIERS.premium,bread:RANK_TIERS.premium,rose:RANK_TIERS.premium,brain:RANK_TIERS.premium};
+const REQUESTED_MODE_RANKS={invisible:["COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"],dead:["INSTRUCTOR","COOWNER","OWNER","DEVELOPER"],ghost:["OWNER","DEVELOPER"]};
+function modeRankAllowed(mode,rank){
+  const normalized=String(rank||"").toUpperCase();
+  if(normalized==="DEVELOPER")return true;
+  const configured=db.settings?.mode_management?.[mode];
+  const allowed=Array.isArray(configured)?configured:REQUESTED_MODE_RANKS[mode]||[];
+  return allowed.map(x=>String(x||"").toUpperCase()).includes(normalized);
+}
+
+const OWNER_USER_PERMISSIONS=[
+  "can_mute","can_kick","can_ban","can_warn","can_delete_messages","can_view_ips","can_view_emails","can_edit_rooms","can_delete_rooms","can_create_rooms","can_grant_features","can_manage_users","can_clear_history","can_add_notes","can_send_global_announcement","can_share_gold","can_manage_ranks","can_edit_usernames","can_edit_emails","can_manage_reports","can_manage_announcements","can_manage_clubs","can_manage_news","can_manage_profiles","can_view_deleted_messages","can_manage_settings"
+];
+function ensureFeatureGrants(){
+  db.settings ||= {}; db.settings.feature_grants ||= {}; delete db.settings.feature_grants.gift_sending; delete db.settings.feature_grants.gift_receiving; delete db.settings.feature_grants.gift_share;
+  for(const [k,v] of Object.entries(FEATURE_GRANT_DEFAULTS)) if(!Array.isArray(db.settings.feature_grants[k])) db.settings.feature_grants[k]=[...v];
+  if(Number(db.settings.feature_grant_policy_version||0)<FEATURE_GRANT_POLICY_VERSION){
+    for(const [key,ranks] of Object.entries(REQUESTED_FEATURE_GRANTS)) if(Object.prototype.hasOwnProperty.call(FEATURE_GRANT_DEFAULTS,key)) db.settings.feature_grants[key]=[...ranks];
+    db.settings.feature_grant_policy_version=FEATURE_GRANT_POLICY_VERSION;
+    db.settings.command_management ||= {};
+    for(const [key,ranks] of Object.entries(REQUESTED_COMMAND_RANKS)){const item=db.settings.command_management[key]||{};db.settings.command_management[key]={...item,name:String(item.name||key),ranks:[...ranks]};}
+    db.settings.mode_management ||= {};
+    for(const [key,ranks] of Object.entries(REQUESTED_MODE_RANKS)) db.settings.mode_management[key]=[...ranks];
+    Promise.all([
+      pool.query(`INSERT INTO settings(key,value) VALUES('feature_grants',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,[JSON.stringify(db.settings.feature_grants)]),
+      pool.query(`INSERT INTO settings(key,value) VALUES('feature_grant_policy_version',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,[JSON.stringify(FEATURE_GRANT_POLICY_VERSION)]),
+      pool.query(`INSERT INTO settings(key,value) VALUES('command_management',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,[JSON.stringify(db.settings.command_management)]),
+      pool.query(`INSERT INTO settings(key,value) VALUES('mode_management',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,[JSON.stringify(db.settings.mode_management)])
+    ]).catch(e=>console.error("Feature grant policy migration failed:",e));
+  }
+}
+function ensureFeaturePermissions(){
+  db.featurePermissions ||= {};
+  for(const f of FEATURE_CONTROLS){
+    if(!ranks.includes(db.featurePermissions[f.key])) db.featurePermissions[f.key]=f.defaultRank;
+  }
+}
+
+function featureRank(key){
+  ensureFeaturePermissions();
+  const f=FEATURE_CONTROLS.find(x=>x.key===key);
+  return f ? db.featurePermissions[key] : "OWNER";
+}
+
+function hasFeature(u,key){
+  if(!u) return false;
+  // News publishing is a fixed staff-rank permission: Admin and every rank above.
+  if(["publish_news","news_posting"].includes(String(key||"").toLowerCase())) return hasRank(u,"ADMIN");
+  if(String(u.rank).toUpperCase()==="DEVELOPER") return true;
+  if(u.username===DEFAULT_OWNER && u.rank==="OWNER") return true;
+  const granted=userFeatureGrant(u,key);if(granted!==null)return granted;
+  // Apply Owner Space's Feature Granting thresholds to every feature check,
+  // not just endpoints that happen to use featureAllowed().
+  ensureFeatureGrants();
+  const aliases={moderate_user:"moderate_users",create_room:"create_rooms",manage_filters:"manage_filter_words",publish_news:"news_posting",wall_post:"friend_wall_posting"};
+  const grantKey=aliases[key]||key;
+  const rankGrants=db.settings?.feature_grants?.[grantKey];
+  if(Array.isArray(rankGrants)) return rankGrants.map(x=>String(x).toUpperCase()).includes(String(u.rank||"").toUpperCase());
+  return hasRank(u,featureRank(key));
+}
+
+function featureAllowed(key){
+  return (req,res,next)=>{
+    const u=current(req);
+    if(!u) return res.status(401).json({error:"Login required"});
+    ensureFeatureGrants();
+    if(isUserFeatureBlocked(u,key)) return res.status(403).json({error:"This feature has been disabled for your account by staff."});
+    // News publishing is fixed to Admin and above; rank-grant settings and per-user grants cannot change this threshold.
+    if(["publish_news","news_posting"].includes(String(key||"").toLowerCase())) {
+      return hasRank(u,"ADMIN") ? next() : res.status(403).json({error:"News publishing requires Admin rank or higher."});
+    }
+    // Keep the configured site Owner bypass consistent with hasFeature().
+    // Without this, an explicit rank-grant array can reject the Owner before
+    // the normal feature check gets a chance to apply the Owner override.
+    if(String(u.rank).toUpperCase()==="DEVELOPER" || (u.username===DEFAULT_OWNER && String(u.rank).toUpperCase()==="OWNER")) return next();
+    const individual=userFeatureGrant(u,key);
+    if(individual!==null)return individual?next():res.status(403).json({error:"This feature has not been granted to your account."});
+    const alias={create_room:"create_rooms",manage_filters:"manage_filter_words",moderate_user:"moderate_users",publish_news:"news_posting",wall_post:"friend_wall_posting"}[key]||key;
+    const grants=db.settings.feature_grants?.[alias];
+    if(Array.isArray(grants) && !grants.map(x=>String(x).toUpperCase()).includes(String(u.rank).toUpperCase())) return res.status(403).json({error:"Your rank does not have this feature."});
+    if(!grants && !hasFeature(u,key)) return res.status(403).json({error:`${FEATURE_CONTROLS.find(x=>x.key===key)?.name||"Feature"} requires ${featureRank(key)} or higher.`});
+    next();
+  };
+}
+
+// Enforce per-account feature blocks on feature-using API actions, not just by hiding UI controls.
+app.use('/api',(req,res,next)=>{
+  const u=current(req);
+  if(!u)return next();
+  const method=String(req.method||'GET').toUpperCase();
+  const route=String(req.path||'');
+  let feature=null;
+  if(method==='POST'&&/^\/rooms\/[^/]+\/messages$/.test(route))feature='send_messages';
+  else if(method==='POST'&&/^\/rooms\/[^/]+\/gif$/.test(route))feature='gif_sending';
+  else if(method==='POST'&&/^\/rooms\/[^/]+\/youtube$/.test(route))feature='use_youtube';
+  else if(method==='POST'&&/^\/rooms\/[^/]+\/announcements$/.test(route))feature='room_announcement';
+  else if(method==='POST'&&/^\/rooms(?:\/create)?$/.test(route))feature='create_rooms';
+  else if(method==='POST'&&/^\/wall(?:\/post)?$/.test(route))feature='friend_wall_posting';
+  else if(method==='POST'&&route==='/news')feature='news_posting';
+  else if(method==='POST'&&/^\/users\/[^/]+\/like$/.test(route))feature='profile_like';
+  else if(method==='POST'&&/^\/wall\/[^/]+\/(?:like|reaction|comments)$/.test(route))feature=route.endsWith('/comments')?'friend_wall_posting':'profile_like';
+  else if(method==='POST'&&/^\/rooms\/[^/]+\/messages\/[^/]+\/reaction$/.test(route))feature='react_message';
+  if(feature&&isUserFeatureBlocked(u,feature))return res.status(403).json({error:'This feature has been disabled for your account by staff.'});
+  next();
+});
+
+async function convertDiamonds(u,amount){
+  if(!u||!Number.isSafeInteger(amount)||amount<1||!Number.isSafeInteger(amount*100))return null;
+  const goldAmount=amount*100,client=await pool.connect();let balances;
+  try{
+    await client.query('BEGIN');
+    const updated=await client.query('UPDATE users SET diamonds=diamonds-$1,gold=COALESCE(gold,0)+$2 WHERE id=$3 AND diamonds >= $1 RETURNING diamonds,gold',[amount,goldAmount,Number(u.id)]);
+    if(!updated.rowCount){await client.query('ROLLBACK');return null;}
+    balances={diamonds:Number(updated.rows[0].diamonds||0),gold:Number(updated.rows[0].gold||0)};
+    await client.query(`INSERT INTO wallet_transactions(id,sender_id,currency,amount,type,note) VALUES($1,$2,'DIAMONDS',$3,'CONVERT',$4)`,[id(),Number(u.id),amount,'Converted to '+goldAmount+' Gold']);
+    await client.query('COMMIT');
+  }catch(error){await client.query('ROLLBACK').catch(()=>{});throw error;}finally{client.release();}
+  u.diamonds=balances.diamonds;u.gold=balances.gold;db.goldTransactions ||= [];db.goldTransactions.push({id:id(),time:Date.now(),actor:u.id,userId:u.id,type:'DIAMOND_CONVERSION',delta:goldAmount,diamonds:-amount});save();
+  io.to('user:'+u.id).emit('wallet:update',{userId:u.id,diamonds:u.diamonds,gold:u.gold});io.to('user:'+u.id).emit('gold:update',{gold:u.gold});
+  return balances;
+}
+
+function safeUser(u){
+  if(!u)return null;
+
+  return {
+    id:u.id,
+    username:u.username,
+    displayName:u.displayName,
+    rank:u.rank,
+    avatar:u.avatar||"",
+    bio:u.bio||"",
+    pronouns:u.pronouns||"",
+    relationship:u.relationship||"",
+    mood:u.mood||"",
+    birthday:u.birthday||"",
+    banner:u.banner||"",
+    profilePhotos:Array.isArray(u.profilePhotos)?u.profilePhotos.slice(0,10).map(p=>({id:String(p.id),url:String(p.url)})):[],
+    theme:u.settings?.theme||u.theme||"obsidian",
+    settings:{usernameColor:u.settings?.usernameColor||'',chatFont:u.settings?.chatFont||'',messageEffects:u.settings?.messageEffects||'',fontSize:u.settings?.fontSize||'medium',compactMode:!!u.settings?.compactMode},
+    profileColor:u.profileColor||"",
+    profileMusicTitle:u.profileMusicTitle||"",
+    profileMusicUrl:u.profileMusicUrl||"",
+    badge:u.badge||"",
+    equippedCosmetics:Array.isArray(u.equippedCosmetics)?u.equippedCosmetics.map(x=>({id:x.id,name:x.name,category:x.category,icon:x.icon,description:x.description})):[],
+    verified:!!u.verified,
+    banned:!!u.banned,
+    kickedUntil:u.kickedUntil||null,
+    mutedUntil:u.mutedUntil||null,
+    createdAt:u.createdAt,
+    lastSeen:u.lastSeen,
+    online:!!u.online && !u.invisible && !u.deadMode,
+    customStatus:u.customStatus||"Available",
+    lastActive:u.lastSeen||u.last_active||null,
+    level:u.level||1,
+    xp:u.xp||0,
+    gold:u.gold||0,
+    diamonds:Number(u.diamonds||0),
+    birth_date:u.birthDate||u.dateOfBirth||"",
+    birthDate:u.birthDate||u.dateOfBirth||"",
+    dateOfBirth:u.dateOfBirth||u.birthDate||"",
+    gender:u.gender||"",
+    is_premium:!!(u.isPremium||u.is_premium),
+    vip_expires_at:u.vipExpiresAt||u.vip_expires_at||null,
+    profileLikes:u.profileLikes||0,
+    profileColor:u.profileColor||u.settings?.profileColor||'',
+    profileAccentColor:u.profileAccentColor||u.settings?.profileAccentColor||'',
+    location:u.location||'',
+    country:u.country||'',
+    website:u.website||'',
+    badgesStats:u.badgesStats||{},
+    friendsCount:db.friends.filter(f=>f.status==="ACCEPTED"&&(f.a===u.id||f.b===u.id)).length,
+    interests:u.interests||[],
+    usernameHistory:u.usernameHistory||[],
+    privacy:{lastSeen:true,online:true,country:true,location:true,website:true,bio:true,pronouns:true,relationship:true,mood:true,interests:true,...(u.privacy||{})}
+  };
+}
+
+// Central audit adapter for existing feature endpoints.
+function log(actor, action, target, details = {}) {
+  const actorName = typeof actor === 'string' ? actor : (actor?.username || actor?.displayName || 'System');
+  const actorId = typeof actor === 'object' && actor ? actor.id : actorName;
+  const info = details && typeof details === 'object' ? details : { value: details };
+  const targetValue = String(target || info.targetUsername || info.target || '—');
+  const actionName = String(action || 'EVENT').toUpperCase();
+  const reason = String(info.reason || info.note || JSON.stringify(info) || actionName).slice(0, 1800);
+  systemAudit({target:targetValue,actor:String(actorId || actorName),actorUsername:String(actorName),action:actionName,reason,source:'application',durationMinutes:Number(info.minutes || info.durationMinutes || 0)});
+  // Keep the staff-facing audit stream in its own durable PostgreSQL table.
+  // The legacy in-memory history remains populated for existing UI components.
+  const actorUser = typeof actor === 'object' && actor ? actor : findUser(actorName);
+  const targetUser = findUser(targetValue) || db.users.find(u=>String(u.id)===targetValue);
+  return pool.query(
+    'INSERT INTO admin_logs(action_type,performed_by,target_user_id,details,created_at) VALUES($1,$2,$3,$4,NOW())',
+    [
+      actionName,
+      Number.isFinite(Number(actorUser?.id)) ? Number(actorUser.id) : null,
+      Number.isFinite(Number(targetUser?.id)) ? Number(targetUser.id) : null,
+      JSON.stringify({...info,actorUsername:actorName,target:targetValue,source:'application',reason})
+    ]
+  ).catch(error=>{
+    console.error('Durable staff audit write failed:',error);
+    return null;
+  });
+}
+
+function addActivity(type, message, userId, details = {}) {
+  db.activityTimeline ||= {};
+  const key = String(userId);
+  const entries = db.activityTimeline[key] ||= [];
+  entries.push({
+    id: id(),
+    type: String(type || "activity"),
+    message: String(message || ""),
+    details: details && typeof details === "object" ? details : {},
+    time: Date.now()
+  });
+  if (entries.length > 100) entries.splice(0, entries.length - 100);
+  save();
+}
+
+function notificationPreferenceKey(type){
+  if(type==="private-message" || type==="message") return "messages";
+  if(type==="mention") return "mentions";
+  if(type==="reply") return "replies";
+  if(["security","login","password"].includes(type)) return "security";
+  if(["report","moderation","staff"].includes(type)) return "staff";
+  if(["gold","achievement","level"].includes(type)) return "gamification";
+  return "other";
+}
+async function notify(userId,type,title,text,url="/"){
+  const target=findUser(userId), key=notificationPreferenceKey(type), prefs=target?.settings?.notificationPrefs||{};
+  // Moderation warnings are mandatory and cannot be hidden by notification preferences.
+  if(prefs[key]===false&&String(type)!=="warning")return;
+  try{
+    const inserted=await pool.query(
+      `INSERT INTO notifications(user_id,type,title,message,is_read) VALUES($1,$2,$3,$4,false) RETURNING id`,
+      [Number(userId),String(type),String(title||type),String(text)]
+    );
+    const notificationId=inserted.rows?.[0]?.id;
+    io.to("user:"+userId).emit("notification",{id:notificationId,type:String(type),title:String(title||type),message:String(text)});
+    return notificationId;
+    await sendWebPushToUser(userId,{title:String(title||type||"Maleficent Chat"),body:String(text||"You have a new notification").slice(0,180),url:String(url||"/"),tag:"mc-alert-"+String(type||"notification"),kind:type==="private-message"?"private-message":"site-notification"});
+  }catch(err){console.error("Notification insert failed:",err);}
+}
+
+
+async function sendWebPushToUser(userId,payload){
+  const report={configured:webPushConfigured(),subscriptions:0,delivered:0,failed:0,errors:[]};
+  if(!report.configured){report.errors.push("Server VAPID keys are missing or VAPID_SUBJECT is invalid.");return report;}
+  try{
+    const result=await pool.query("SELECT id,endpoint,p256dh,auth FROM push_subscriptions WHERE user_id=$1",[Number(userId)]);
+    report.subscriptions=result.rows.length;
+    await Promise.all(result.rows.map(async row=>{
+      try{
+        await webPush.sendNotification({endpoint:row.endpoint,keys:{p256dh:row.p256dh,auth:row.auth}},JSON.stringify(payload),{TTL:3600});
+        report.delivered++;
+        await pool.query("UPDATE push_subscriptions SET last_used_at=NOW() WHERE id=$1",[row.id]);
+      }catch(error){
+        report.failed++;
+        const reason="HTTP "+String(error?.statusCode||"unknown")+": "+String(error?.body||error?.message||"Push provider rejected the notification").slice(0,220);
+        report.errors.push(reason);
+        console.error("Web Push delivery failed:",reason);
+        if(error?.statusCode===404||error?.statusCode===410)await pool.query("DELETE FROM push_subscriptions WHERE id=$1",[row.id]).catch(()=>{});
+      }
+    }));
+  }catch(error){
+    report.errors.push(String(error?.message||error).slice(0,220));
+    console.error("Web Push lookup failed:",error?.message||error);
+  }
+  return report;
+}
+async function sendWebPushToPublicRoom(room,message,senderId){
+  if(!webPushConfigured()||!room||room.is_public===false)return;
+  try{
+    const result=await pool.query("SELECT DISTINCT user_id FROM push_subscriptions WHERE user_id<>$1",[Number(senderId)]);
+    const title="💬 "+String(room.name||"Maleficent Chat").slice(0,70);
+    const body="@"+String(message.username||message.displayName||"Someone")+": "+String(message.text||"Sent a message").slice(0,145);
+    await Promise.all(result.rows.filter(row=>{const user=db.users.find(u=>String(u.id)===String(row.user_id));return user?.settings?.notificationPrefs?.messages!==false;}).map(row=>sendWebPushToUser(row.user_id,{title,body,url:"/",tag:"mc-room-"+String(room.id),kind:"room-message",roomId:String(room.id)})));
+  }catch(error){console.error("Room Web Push fanout failed:",error?.message||error);}
+}
+
+function awardAchievement(u,key,title,description){
+  if(!u) return false;
+  ensureUserSchema(u);
+  if(u.achievements.some(a=>a.key===key)) return false;
+  const a={key,title,description,time:Date.now()};
+  u.achievements.push(a);
+  pool.query(`INSERT INTO achievements(user_id,name,icon) VALUES($1,$2,$3) ON CONFLICT(user_id,name) DO NOTHING`,[Number(u.id),title,'🏆']).catch(err=>console.error('Achievement persistence error:',err));
+  notify(u.id,"achievement","🏆 Achievement unlocked",`${title} — ${description}`);
+  return true;
+}
+function checkAchievements(u){
+  ensureUserSchema(u);
+  const messages=Number(u.stats?.messages||0);
+  if(messages>=1) awardAchievement(u,"first-message","First Message","You sent your first chat message.");
+  if(messages>=100) awardAchievement(u,"chatterbox-100","Chatterbox","You sent 100 messages.");
+  if(messages>=1000) awardAchievement(u,"chatterbox-1000","Chatterbox+","You sent 1,000 messages.");
+  const games=Number(u.gameStats?.played||0);
+  if(games>=1) awardAchievement(u,"first-game","Gamer","You played your first game.");
+  if(games>=25) awardAchievement(u,"game-25","Game Night","You played 25 games.");
+  if((u.profileLikes||0)>=10) awardAchievement(u,"liked-10","Popular","Your profile received 10 likes.");
+  return u.achievements;
+}
+
+function findUser(x){
+  const key=String(x??"").trim();
+  if(!key)return undefined;
+  return db.users.find(u=>
+    String(u.id)===key||
+    String(u.username||"").toLowerCase()===key.toLowerCase()
+  );
+}
+
+function getSessionSecret() {
+  const configured = process.env.SESSION_SECRET;
+  if (configured) {
+    if (configured.length < 32) {
+      throw new Error("SESSION_SECRET must contain at least 32 characters.");
+    }
+    return configured;
+  }
+
+  // Render instances may have ephemeral local filesystems and may run more
+  // than one instance. A secret generated into a local file can therefore differ
+  // between instances or change after a restart, invalidating freshly issued
+  // login tokens and sending users back to the login screen.
+  //
+  // Prefer a stable secret derived from the private DATABASE_URL whenever it
+  // is available, regardless of NODE_ENV. Hosting platforms do not always set
+  // NODE_ENV consistently; gating this on "production" can otherwise create a
+  // new token secret after a restart and send users back to the login screen.
+  // DATABASE_URL is shared by all app instances. Explicit SESSION_SECRET takes
+  // precedence and remains the recommended configuration.
+  if (process.env.DATABASE_URL) {
+    return crypto
+      .createHmac("sha256", process.env.DATABASE_URL)
+      .update("MaleficentChat/session-secret/v1")
+      .digest("hex");
+  }
+
+  // Last-resort production fallback for deployments without DATABASE_URL:
+  // persist a cryptographically random secret on a mounted data disk.
+  if (process.env.NODE_ENV === "production") {
+    const dataDir = process.env.PERSISTENT_DATA_DIR || path.join(__dirname, "data");
+    const secretFile = path.join(dataDir, ".session-secret");
+    fs.mkdirSync(dataDir, { recursive: true });
+
+    const readStoredSecret = () => {
+      const stored = fs.readFileSync(secretFile, "utf8").trim();
+      if (stored.length < 32) {
+        throw new Error("Stored session secret is invalid; configure SESSION_SECRET in the hosting environment.");
+      }
+      return stored;
+    };
+
+    try {
+      return readStoredSecret();
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+
+    const generated = crypto.randomBytes(48).toString("hex");
+    try {
+      fs.writeFileSync(secretFile, generated, { flag: "wx", mode: 0o600 });
+      return generated;
+    } catch (err) {
+      // If another startup created it first, use that stable secret.
+      if (err.code === "EEXIST") return readStoredSecret();
+      throw new Error("Could not persist SESSION_SECRET. Configure SESSION_SECRET in the hosting environment or attach a persistent disk. " + err.message);
+    }
+  }
+
+  return crypto.randomBytes(32).toString("hex");
+}
+const SESSION_SECRET = getSessionSecret();
+const TOKEN_SECRET = SESSION_SECRET;
+function makeToken(userId){const b64=o=>Buffer.from(JSON.stringify(o)).toString("base64url");const h=b64({alg:"HS256",typ:"JWT"}),p=b64({sub:String(userId),exp:Math.floor(Date.now()/1000)+7*86400});const sig=crypto.createHmac("sha256",TOKEN_SECRET).update(h+"."+p).digest("base64url");return h+"."+p+"."+sig;}
+function verifyToken(token){try{const [h,p,sig]=String(token||"").split(".");if(!h||!p||!sig)return null;const e=crypto.createHmac("sha256",TOKEN_SECRET).update(h+"."+p).digest("base64url");if(sig!==e)return null;const x=JSON.parse(Buffer.from(p,"base64url").toString("utf8"));return x.exp>=Math.floor(Date.now()/1000)?x:null;}catch{return null;}}
+function roomRankCanEnter(user,room){
+  if(!user||!room)return false;
+  const userRank=String(user.rank||"MEMBER").toUpperCase();
+  const requiredRank=String(room.rankRequired||"MEMBER").toUpperCase();
+  const userLevel=rankOrder[userRank],requiredLevel=rankOrder[requiredRank];
+  // Unknown or stale rank values must never accidentally grant access.
+  return Number.isInteger(userLevel)&&Number.isInteger(requiredLevel)&&userLevel>=requiredLevel;
+}
+function roomIsPrivate(room){return room?.public===false||room?.is_public===false;}
+function secureRoomTokenMatches(candidate,stored){
+  const a=Buffer.from(String(candidate||"")),b=Buffer.from(String(stored||""));
+  return a.length>0&&a.length===b.length&&crypto.timingSafeEqual(a,b);
+}
+function roomInviteSignature(payload,room){
+  const key=String(TOKEN_SECRET)+":"+String(room?.inviteToken||room?.invite_token||"");
+  return crypto.createHmac("sha256",key).update(payload).digest("base64url");
+}
+function makeRoomInviteToken(room){
+  const payload=Buffer.from(JSON.stringify({room:String(room.id),exp:Math.floor(Date.now()/1000)+7*86400})).toString("base64url");
+  return payload+"."+roomInviteSignature(payload,room);
+}
+function verifyRoomInviteToken(token,room){
+  try{
+    const [payload,signature]=String(token||"").split(".");
+    if(!payload||!signature)return false;
+    const expected=roomInviteSignature(payload,room);
+    if(!secureRoomTokenMatches(signature,expected))return false;
+    const data=JSON.parse(Buffer.from(payload,"base64url").toString("utf8"));
+    const now=Math.floor(Date.now()/1000);
+    return data.room===String(room.id)&&Number.isInteger(data.exp)&&data.exp>now&&data.exp<=now+7*86400+60;
+  }catch{return false;}
+}
+function roomJoinPolicyAllowed(user,room,{inviteToken="",existingJoinToken=false}={}){
+  if(!user||!room||user.banned===true||Number(user.kickedUntil)>Date.now())return false;
+  const isAgeRoom=/^(teen chat|adult chat)$/i.test(String(room.name||"").trim());
+  const state=roomStaffStore(),roomKey=String(room.id),userKey=String(user.id);
+  if(state.room_blocks[roomKey]?.[userKey])return false;
+  const roomKick=state.room_kicks[roomKey]?.[userKey];
+  if(roomKick&&Number(roomKick.until)>Date.now())return false;
+  if(!isAgeRoom&&!hasFeature(user,"join_rooms"))return false;
+  if(!roomRankCanEnter(user,room))return false;
+  if(!isAgeRoom&&roomFriendsOnly(room)&&!areAcceptedFriends(user,db.users.find(x=>String(x.id)===String(room.ownerId||room.created_by||room.createdBy))))return false;
+  if(!roomIsPrivate(room))return true;
+  if(roomOwnerOrGlobal(user,room)||roomRole(room.id,user.id)!=="USER")return true;
+  return existingJoinToken||verifyRoomInviteToken(inviteToken,room);
+}
+function roomAccessFingerprint(room){
+  return crypto.createHash("sha256").update(JSON.stringify([
+    String(room.passwordHash||room.password_hash||"public"),
+    roomIsPrivate(room),
+    String(room.inviteToken||room.invite_token||"")
+  ])).digest("hex");
+}
+function legacyRoomAccessFingerprint(room){
+  return crypto.createHash("sha256").update(String(room.passwordHash||room.password_hash||"public")).digest("hex");
+}
+function makeRoomJoinToken(userId,room){
+  const payload=Buffer.from(JSON.stringify({sub:String(userId),room:String(room.id),access:roomAccessFingerprint(room),exp:Math.floor(Date.now()/1000)+7*86400})).toString("base64url");
+  const signature=crypto.createHmac("sha256",TOKEN_SECRET).update(payload).digest("base64url");return payload+"."+signature;
+}
+function verifyRoomJoinToken(token,userId,room){
+  try{
+    const [payload,signature]=String(token||"").split(".");
+    if(!payload||!signature)return false;
+    const expected=crypto.createHmac("sha256",TOKEN_SECRET).update(payload).digest("base64url");
+    if(signature.length!==expected.length||!crypto.timingSafeEqual(Buffer.from(signature),Buffer.from(expected)))return false;
+    const data=JSON.parse(Buffer.from(payload,"base64url").toString("utf8"));
+    const currentAccess=roomAccessFingerprint(room),legacyAccess=legacyRoomAccessFingerprint(room);
+    const accessMatches=data.access===currentAccess||(!roomIsPrivate(room)&&data.access===legacyAccess);
+    if(data.sub!==String(userId)||data.room!==String(room.id)||data.exp<Math.floor(Date.now()/1000)||!accessMatches)return false;
+    const user=db.users.find(x=>String(x.id)===String(userId));
+    return roomJoinPolicyAllowed(user,room,{existingJoinToken:true});
+  }catch{return false;}
+}
+function current(req){
+  // Accept the signed token from the app header, a Bearer header, or the
+  // HttpOnly first-party cookie. The cookie is a durable fallback when mobile
+  // browsers or embedded webviews fail to retain localStorage.
+  const authorization=String(req.headers.authorization||"");
+  const cookieToken=String(req.headers.cookie||"").split(";").map(part=>part.trim()).find(part=>part.startsWith("mc_auth="));
+  let cookieValue="";
+  if(cookieToken){try{cookieValue=decodeURIComponent(cookieToken.slice("mc_auth=".length));}catch{}}
+  const candidates=[
+    req.headers["x-auth-token"],
+    authorization.startsWith("Bearer ")?authorization.slice(7):"",
+    cookieValue
+  ];
+  for(const raw of candidates){
+    const tokenPayload=verifyToken(raw);
+    if(!tokenPayload)continue;
+    const tokenUser=db.users.find(u=>String(u.id)===String(tokenPayload.sub));
+    if(tokenUser)return tokenUser;
+  }
+
+  // Keep cookie-session authentication as a final fallback for existing clients.
+  const sessionUid=req.session?.userId;
+  return sessionUid?db.users.find(u=>String(u.id)===String(sessionUid))||null:null;
+}
+
+function clientIp(req){
+  const normalize=value=>String(value||"").trim().replace(/^::ffff:/i,"").replace(/^\[|\]$/g,"");
+  const isPrivateOrLocal=value=>{
+    const ip=normalize(value).toLowerCase();
+    return !ip||ip==="unknown"||ip==="unavailable"||ip==="::1"||ip==="127.0.0.1"||
+      ip.startsWith("127.")||ip.startsWith("10.")||ip.startsWith("192.168.")||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip)||ip.startsWith("169.254.")||
+      ip.startsWith("100.64.")||ip.startsWith("100.65.")||ip.startsWith("100.66.")||ip.startsWith("100.67.")||
+      ip.startsWith("fc")||ip.startsWith("fd")||ip.startsWith("fe80:")||
+      ip==="0.0.0.0"||ip.startsWith("192.0.2.")||ip.startsWith("198.51.100.")||ip.startsWith("203.0.113.");
+  };
+  // Render forwards the original client address through proxy headers. Prefer
+  // a public address from the forwarded chain instead of recording the
+  // hosting container's private address (for example 10.x.x.x).
+  // With trust proxy enabled, Express resolves req.ip from the forwarded chain.
+  // Prefer this canonical client address before independently reading proxy headers.
+  const forwarded=[
+    req.ip,
+    ...(Array.isArray(req.ips)?req.ips:[]),
+    req.headers["cf-connecting-ip"],
+    req.headers["x-real-ip"],
+    req.headers["x-forwarded-for"],
+    req.socket?.remoteAddress
+  ].flatMap(value=>String(value||"").split(",").map(normalize)).filter(Boolean);
+  return forwarded.find(ip=>!isPrivateOrLocal(ip))||forwarded[0]||"unknown";
+}
+async function recordUserIp(req,user,eventType){
+  const ip=clientIp(req);
+  if(!ip || ip==="unknown") return;
+  try { await pool.query("INSERT INTO user_ip_history(user_id,ip_address,event_type,user_agent) VALUES($1,$2,$3,$4)",[Number(user.id),ip,String(eventType||"login"),String(req.headers["user-agent"]||"").slice(0,500)]); }
+  catch(err){ console.error("IP history recording failed:",err.message); }
+}
+
+
+const DEFAULT_NETWORK_SECURITY={
+  ipRules:[],blockVpn:false,allowedCountries:[],blockedCountries:[],blockedVpnCountries:[],blockedRegions:[],updatedAt:null,updatedBy:null
+};
+async function getDeveloperNetworkSecurity(){
+  if(db.settings?.developer_network_security && typeof db.settings.developer_network_security==="object")return {...DEFAULT_NETWORK_SECURITY,...db.settings.developer_network_security};
+  try{
+    const stored=await pool.query("SELECT value FROM settings WHERE key='developer_network_security' LIMIT 1");
+    const value=stored.rows[0]?.value;
+    db.settings ||= {};
+    db.settings.developer_network_security=value&&typeof value==="object"?value:{...DEFAULT_NETWORK_SECURITY};
+  }catch{db.settings ||= {};db.settings.developer_network_security={...DEFAULT_NETWORK_SECURITY};}
+  return {...DEFAULT_NETWORK_SECURITY,...db.settings.developer_network_security};
+}
+async function saveDeveloperNetworkSecurity(value,actor){
+  const clean={...DEFAULT_NETWORK_SECURITY,...value,updatedAt:Date.now(),updatedBy:String(actor?.username||"Maleficent")};
+  await pool.query("INSERT INTO settings(key,value) VALUES('developer_network_security',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(clean)]);
+  db.settings ||= {};db.settings.developer_network_security=clean;
+  await flushSave();
+  return clean;
+}
+function ipv4Integer(ip){
+  const parts=String(ip||"").split(".");
+  if(parts.length!==4||parts.some(part=>!/^\d{1,3}$/.test(part)||Number(part)>255))return null;
+  return parts.reduce((acc,part)=>((acc<<8)|Number(part))>>>0,0);
+}
+function networkRuleMatches(ip,pattern){
+  const address=String(ip||"").replace(/^::ffff:/i,"").trim(),rule=String(pattern||"").trim();
+  if(!address||!rule)return false;
+  if(rule===address)return true;
+  if(rule.includes("*"))return rule.endsWith(".*")&&address.startsWith(rule.slice(0,-1))&&ipv4Integer(address)!==null;
+  if(rule.includes("/")){
+    const [base,bitsText]=rule.split("/");
+    const ipNum=ipv4Integer(address),baseNum=ipv4Integer(base),bits=Number(bitsText);
+    if(ipNum===null||baseNum===null||!Number.isInteger(bits)||bits<0||bits>32)return false;
+    const mask=bits===0?0:(0xffffffff<<(32-bits))>>>0;
+    return (ipNum&mask)===(baseNum&mask);
+  }
+  return false;
+}
+function networkRuleIsValid(pattern){
+  const p=String(pattern||"").trim();
+  if(p.length>64||!p)return false;
+  if(ipv4Integer(p)!==null)return true;
+  if(/^\d{1,3}(?:\.\d{1,3}){2}\.\*$/.test(p))return p.split(".").slice(0,3).every(x=>Number(x)<=255);
+  if(p.includes("/")){const [ip,bits]=p.split("/");return ipv4Integer(ip)!==null&&/^\d+$/.test(bits)&&Number(bits)>=0&&Number(bits)<=32;}
+  return false;
+}
+function normalizedList(value,max=80){
+  const list=Array.isArray(value)?value:String(value||"").split(/[\n,;]/);
+  return [...new Set(list.map(x=>String(x||"").trim().toUpperCase()).filter(Boolean))].slice(0,max);
+}
+async function networkAccessDecision(req,userOverride=null){
+  const actor=userOverride||current(req);
+  if(String(actor?.rank||"").toUpperCase()==="DEVELOPER"&&String(actor?.username||"")==="Maleficent")return {allowed:true,ip:clientIp(req)};
+  const config=await getDeveloperNetworkSecurity();
+  const ip=clientIp(req);
+  const matchingRule=(config.ipRules||[]).find(rule=>rule.enabled!==false&&networkRuleMatches(ip,rule.pattern));
+  if(matchingRule)return {allowed:false,reason:matchingRule.reason||"Network address is blocked by the Developer.",rule:matchingRule,ip};
+  let network=null;
+  if(config.blockVpn||config.allowedCountries?.length||config.blockedCountries?.length||config.blockedVpnCountries?.length||config.blockedRegions?.length){
+    if(ip&&ip!=="unknown")network=await lookupIpNetworkDetails(ip);
+  }
+  const country=String(network?.countryCode||network?.country||"").trim().toUpperCase();
+  const region=String(network?.region||"").trim().toUpperCase();
+  if(config.allowedCountries?.length&&network?.lookupStatus==="Success"&&!config.allowedCountries.some(v=>country===v||String(network?.country||"").toUpperCase()===v)){
+    return {allowed:false,reason:"Access is restricted to the countries allowed by the Developer.",ip,network};
+  }
+  if(config.blockedCountries?.length&&config.blockedCountries.some(v=>country===v||String(network?.country||"").toUpperCase()===v)){
+    return {allowed:false,reason:"Access from this country is blocked by the Developer.",ip,network};
+  }
+  if(config.blockedRegions?.length&&config.blockedRegions.some(v=>region===v||String(network?.region||"").toUpperCase()===v)){
+    return {allowed:false,reason:"Access from this region is blocked by the Developer.",ip,network};
+  }
+  if(config.blockVpn&&!network?.vpnDetected&&network){
+    const networkName=[network.networkProvider,network.organization,network.asn,network.hostname,network.networkType].join(" ").toLowerCase();
+    if(/\b(vpn|proxy|tor exit|nordvpn|expressvpn|surfshark|proton vpn|mullvad|private internet access|cyberghost|torguard|windscribe|datacenter|data center|hosting|vps|dedicated server|cloud server)\b/i.test(networkName))network={...network,vpnDetected:true,vpnSignals:["Possible VPN / proxy / hosting network"]};
+  }
+  if(config.blockedVpnCountries?.length&&network?.vpnDetected&&config.blockedVpnCountries.some(v=>country===v||String(network?.country||"").toUpperCase()===v))return {allowed:false,reason:"VPN / proxy access from this country is blocked by the Developer.",ip,network};
+  if(config.blockVpn&&network?.vpnDetected)return {allowed:false,reason:"VPN, proxy, Tor, or hosting-network access is blocked by the Developer.",ip,network};
+  return {allowed:true,ip,network};
+}
+async function enforceNetworkAccess(req,res,userOverride=null){
+  const decision=await networkAccessDecision(req,userOverride);
+  if(decision.allowed)return true;
+  res.status(403).json({error:decision.reason,networkBlocked:true});
+  return false;
+}
+
+async function auth(req,res,next){
+  const u=current(req);
+
+  if(!u){
+    return res.status(401).json({
+      error:"Login required"
+    });
+  }
+  if(!(await enforceNetworkAccess(req,res,u)))return;
+  // Enforce account-wide moderation before any authenticated API route, including private messages.
+  if(u.banned===true)return res.status(403).json({error:"You have been banned",reason:u.banReason||"Community rules",moderationLock:"BAN"});
+  if(u.kickedUntil&&Number(u.kickedUntil)>Date.now())return res.status(403).json({error:"You have been kicked",reason:u.kickReason||"Community rules",kickedUntil:Number(u.kickedUntil),moderationLock:"KICK"});
+
+  const construction=db.settings?.under_construction||{};
+  if(String(u.rank||"").toUpperCase()!=="DEVELOPER" &&
+     String(u.rank||"").toUpperCase()!=="OWNER" &&
+     construction.enabled===true){
+    return res.status(503).json({error:"The site is under construction.",underConstruction:true});
+  }
+
+  u.online=true;
+  u.lastSeen=Date.now();
+
+  next();
+}
+
+
+require("./entertainment").registerEntertainmentRoutes({app,auth,current,pool,uploadRoot:UP,persistUploadedMedia});
+registerSocialFeatureRoutes({app,auth,current,pool,storeMediaBuffer,hasFeature,getState:()=>db});
+
+async function persistUnderConstructionSetting(setting){
+  // Persist independently of the legacy whole-state snapshot so Render restarts
+  // and concurrent requests cannot silently lose the maintenance switch.
+  await pool.query(
+    "INSERT INTO settings(key,value) VALUES('under_construction',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",
+    [JSON.stringify(setting)]
+  );
+  db.settings ||= {};
+  db.settings.under_construction=setting;
+  await flushSave();
+}
+app.get("/api/under-construction/status",async(req,res)=>{
+  try{
+    const stored=await pool.query("SELECT value FROM settings WHERE key='under_construction' LIMIT 1");
+    if(stored.rows[0]?.value&&typeof stored.rows[0].value==="object"){
+      db.settings ||= {};
+      db.settings.under_construction=stored.rows[0].value;
+    }
+    const setting=db.settings?.under_construction||{};
+    // Maintenance stays enabled until the owner/developer explicitly switches it off.
+    const enabled=setting.enabled===true;
+    const u=current(req),rankName=String(u?.rank||"").toUpperCase();
+    const exempt=rankName==="DEVELOPER"||rankName==="OWNER";
+    const canManage=!!u&&(rankName==="DEVELOPER"||rankName==="OWNER");
+    res.json({enabled:enabled&&!exempt,configuredEnabled:enabled,until:0,exempt,canManage,message:String(setting.message||"")});
+  }catch(error){
+    console.error("Under-construction status read failed:",error);
+    res.status(500).json({error:"Could not read under-construction status from the database."});
+  }
+});
+app.post("/api/under-construction/disable",express.json(),async(req,res)=>{
+  try{
+    const suppliedCode=String(req.body?.code||"");
+    if(suppliedCode.length<1||suppliedCode.length>128){
+      return res.status(400).json({error:"Enter the shutdown code to reopen the site."});
+    }
+    const stored=await pool.query("SELECT value FROM settings WHERE key='under_construction' LIMIT 1");
+    const existing=stored.rows[0]?.value||db.settings?.under_construction||{};
+    if(existing.enabled!==true)return res.json({enabled:false,alreadyDisabled:true});
+    if(!existing.codeSalt||!existing.codeHash){
+      return res.status(409).json({error:"This maintenance session has no saved shutdown code. An Owner or Developer must sign in to secure it first."});
+    }
+    const expected=Buffer.from(String(existing.codeHash),"hex");
+    const actual=crypto.scryptSync(suppliedCode,String(existing.codeSalt),64);
+    if(expected.length!==actual.length||!crypto.timingSafeEqual(expected,actual)){
+      return res.status(403).json({error:"Incorrect shutdown code. The site is still under construction."});
+    }
+    const setting={enabled:false,until:0,updatedBy:"Shutdown code",updatedAt:Date.now()};
+    await persistUnderConstructionSetting(setting);
+    io.emit("under-construction:status",{enabled:false,until:0});
+    return res.json({enabled:false});
+  }catch(error){
+    console.error("Public maintenance shutdown failed:",error);
+    return res.status(500).json({error:"Could not disable maintenance mode. Check the server logs."});
+  }
+});
+
+app.post("/api/staff/under-construction",express.json(),auth,ownerOnly,async(req,res)=>{
+  try{
+    const enabled=req.body?.enabled===true;
+    const suppliedCode=String(req.body?.code||"");
+    const suppliedMessage=String(req.body?.message||"").trim().slice(0,1000);
+    const existing=db.settings?.under_construction||{};
+    const now=Date.now();
+    let setting;
+    if(enabled){
+      if(suppliedCode.length<4||suppliedCode.length>128){
+        return res.status(400).json({error:"Create a shutdown code of 4–128 characters before enabling maintenance mode."});
+      }
+      const codeSalt=crypto.randomBytes(16).toString("hex");
+      const codeHash=crypto.scryptSync(suppliedCode,codeSalt,64).toString("hex");
+      setting={enabled:true,until:0,codeSalt,codeHash,message:suppliedMessage,updatedBy:current(req)?.username||"Owner",updatedAt:now};
+    }else{
+      if(existing.enabled===true&&(!existing.codeSalt||!existing.codeHash)){
+        if(suppliedCode.length<4||suppliedCode.length>128){
+          return res.status(400).json({error:"This maintenance session predates shutdown codes. Enter a new code of 4–128 characters to secure it, then switch OFF again using that code."});
+        }
+        const codeSalt=crypto.randomBytes(16).toString("hex");
+        const codeHash=crypto.scryptSync(suppliedCode,codeSalt,64).toString("hex");
+        setting={...existing,enabled:true,until:0,codeSalt,codeHash,updatedBy:current(req)?.username||"Owner",updatedAt:now};
+        await persistUnderConstructionSetting(setting);
+        return res.json({enabled:true,codeConfigured:true,until:0});
+      }
+      if(!existing.codeSalt||!existing.codeHash){
+        return res.status(400).json({error:"No shutdown code is saved for this maintenance session. Enter a new code to secure it first."});
+      }
+      if(suppliedCode.length<1||suppliedCode.length>128){
+        return res.status(400).json({error:"Enter the shutdown code you created when enabling maintenance mode."});
+      }
+      const expected=Buffer.from(String(existing.codeHash),"hex");
+      const actual=crypto.scryptSync(suppliedCode,String(existing.codeSalt),64);
+      if(expected.length!==actual.length||!crypto.timingSafeEqual(expected,actual)){
+        return res.status(403).json({error:"Incorrect shutdown code. The site is still under construction."});
+      }
+      setting={enabled:false,until:0,updatedBy:current(req)?.username||"Owner",updatedAt:now};
+    }
+    await persistUnderConstructionSetting(setting);
+    const payload={enabled:setting.enabled,until:0};
+    io.emit("under-construction:status",payload);
+    log(current(req),enabled?"UNDER_CONSTRUCTION_ENABLED":"UNDER_CONSTRUCTION_DISABLED","site",{persistent:true,codeProtected:true});
+    return res.json(payload);
+  }catch(error){
+    console.error("Under-construction update failed:",error);
+    return res.status(500).json({error:"Could not save under-construction setting. Check the Render logs and database connection."});
+  }
+});
+
+function staff(r){
+  return [
+    "MOD",
+    "ADMIN",
+    "SUPER_ADMIN",
+    "COMMISSOR",
+    "INSTRUCTOR",
+    "COOWNER",
+    "OWNER",
+    "DEVELOPER"
+  ].includes(String(r).toUpperCase());
+}
+
+function ownerOnly(req,res,next){
+  const u=current(req);
+  if(!u || !(String(u.rank).toUpperCase()==="DEVELOPER" || String(u.rank).toUpperCase()==="OWNER")){
+    return res.status(403).json({error:"Owner/Developer only"});
+  }
+  next();
+}
+
+function developerOnly(req,res,next){
+  const u=current(req);
+  if(!u || String(u.rank).toUpperCase()!=="DEVELOPER" || u.username!=="Maleficent"){
+    return res.status(403).json({error:"Permanent Developer account only"});
+  }
+  next();
+}
+
+function cleanText(s){
+  return String(s??"").slice(0,4000);
+}
+
+function restrictedNameMatch(value){
+  const candidate=String(value??"").trim().toLowerCase();
+  if(!candidate)return null;
+  for(const raw of db.bannedWords||[]){
+    const entry=String(raw||"").trim();
+    if(!/^u\s*:\s*/i.test(entry))continue;
+    const word=entry.replace(/^u\s*:\s*/i,"").trim().toLowerCase();
+    if(word&&candidate.includes(word))return word;
+  }
+  return null;
+}
+function reportOnlyFilteredWord(text){
+  const low=cleanText(text).toLowerCase();
+  for(const raw of db.bannedWords||[]){
+    const entry=String(raw||"").trim();
+    if(/^r\s*:\s*/i.test(entry)){
+      const word=entry.replace(/^r\s*:\s*/i,"").trim();
+      if(word&&low.includes(word.toLowerCase())) return word;
+    }
+  }
+  return null;
+}
+function filteredWord(text){
+  const t=cleanText(text);
+  const low=t.toLowerCase();
+  for(const raw of db.bannedWords||[]){
+    const entry=String(raw||"").trim();
+    if(!entry||/^(?:r|u|p)\s*:\s*/i.test(entry)) continue;
+    if(low.includes(entry.toLowerCase())) return entry;
+  }
+  if(db.settings.linkFilter && /https?:\/\/|www\./i.test(t)) return "link";
+  return null;
+}
+
+function filtered(text){
+  return !!filteredWord(text);
+}
+
+let restrictedMediaOcrWorkerPromise=null;
+function normalizeRestrictedOcrText(value){
+  return String(value||"").normalize("NFKC").toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu," ")
+    .replace(/\s+/g," ").trim();
+}
+async function recognizeRestrictedMediaText(imageInput){
+  if(!restrictedMediaOcrWorkerPromise){
+    restrictedMediaOcrWorkerPromise=createWorker("eng").catch(err=>{restrictedMediaOcrWorkerPromise=null;throw err;});
+  }
+  const worker=await restrictedMediaOcrWorkerPromise;
+  const result=await worker.recognize(imageInput);
+  return normalizeRestrictedOcrText(result?.data?.text||"");
+}
+async function restrictedMediaPhrases(){
+  // The current Filter Management screen stores words in PostgreSQL's
+  // filter_words table. Read that source directly so a restart or stale
+  // in-memory db.bannedWords array cannot silently disable p: image checks.
+  let storedWords=[];
+  try{
+    const {rows}=await pool.query("SELECT word FROM filter_words");
+    storedWords=rows.map(row=>row.word);
+  }catch(err){
+    console.error("Could not load PostgreSQL media filter words:",err?.message||err);
+  }
+  const allWords=[...(db.bannedWords||[]),...storedWords];
+  return [...new Set(allWords
+    .map(raw=>String(raw||"").trim())
+    .filter(raw=>/^p\s*:\s*/i.test(raw))
+    .map(raw=>normalizeRestrictedOcrText(raw.replace(/^p\s*:\s*/i,"")))
+    .filter(Boolean))];
+}
+function restrictedMediaMatches(ocrText,phrases){
+  const normalized=normalizeRestrictedOcrText(ocrText);
+  if(!normalized)return false;
+  const ocrWords=normalized.split(" ").filter(Boolean);
+  const distance=(a,b)=>{
+    if(Math.abs(a.length-b.length)>1)return 2;
+    let prev=Array.from({length:b.length+1},(_,i)=>i);
+    for(let i=1;i<=a.length;i++){
+      const next=[i];let rowMin=i;
+      for(let j=1;j<=b.length;j++){
+        const value=Math.min(next[j-1]+1,prev[j]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+        next[j]=value;rowMin=Math.min(rowMin,value);
+      }
+      if(rowMin>1)return 2;
+      prev=next;
+    }
+    return prev[b.length];
+  };
+  return phrases.some(raw=>{
+    const phrase=normalizeRestrictedOcrText(raw);
+    if(!phrase)return false;
+    if(normalized.includes(phrase))return true;
+    // OCR commonly confuses one character (e.g. 0/O, 1/I). Match the
+    // complete phrase word-by-word with at most one edit per word.
+    const wanted=phrase.split(" ").filter(Boolean);
+    if(!wanted.length||wanted.some(word=>word.length<5))return false;
+    for(let start=0;start<=ocrWords.length-wanted.length;start++){
+      if(wanted.every((word,index)=>distance(word,ocrWords[start+index])<=1))return true;
+    }
+    return false;
+  });
+}
+async function sendRestrictedMediaBotMessage(user){
+  const text="The File Contains Restricted Content. Try Different One";
+  const message={id:id(),from:"system-bot",to:user.id,text,time:Date.now(),read:false,delivered:true,systemBot:true,restrictedMediaNotice:true};
+  await pool.query("INSERT INTO private_messages(id,sender_id,receiver_id,message,data,created_at) VALUES($1,NULL,$2,$3,$4::jsonb,NOW())",[message.id,Number(user.id),text,JSON.stringify(message)]);
+  db.privateMessages.push(message);
+  notify(user.id,"private-message","System Bot",text);
+  io.to("user:"+user.id).emit("dm",message);
+}
+async function checkRestrictedMediaUpload(req,res,user,file){
+  if(!file)return false;
+  const mime=String(file.mimetype||"").toLowerCase();
+  const ext=path.extname(String(file.originalname||file.filename||"")).toLowerCase();
+  const imageExtensions=new Set([".png",".jpg",".jpeg",".gif",".webp",".avif",".bmp",".tif",".tiff",".heic",".heif"]);
+  // Some Android/browser upload paths label real photos as
+  // application/octet-stream. Detect them by extension as well as MIME.
+  if(!mime.startsWith("image/")&&!imageExtensions.has(ext))return false;
+  if(!user||hasRank(user,"SUPER_ADMIN"))return false;
+  const phrases=await restrictedMediaPhrases();
+  if(!phrases.length)return false;
+  try{
+    const text=await recognizeRestrictedMediaText(file.path);
+    const matched=restrictedMediaMatches(text,phrases);
+    console.info("Restricted media OCR scan:",{userId:String(user.id),phraseCount:phrases.length,recognizedCharacters:text.length,matched});
+    if(!matched)return false;
+    await fs.promises.unlink(file.path).catch(()=>{});
+    await sendRestrictedMediaBotMessage(user);
+    res.status(400).json({error:"The File Contains Restricted Content. Try Different One",restrictedMedia:true});
+    return true;
+  }catch(err){
+    console.error("Restricted media OCR failed:",err?.message||err);
+    await fs.promises.unlink(file.path).catch(()=>{});
+    res.status(503).json({error:"Image content could not be checked safely. Please try again later."});
+    return true;
+  }
+}
+async function checkRestrictedMediaBuffer(res,user,buffer){
+  if(!user||hasRank(user,"SUPER_ADMIN"))return false;
+  const phrases=await restrictedMediaPhrases();
+  if(!phrases.length)return false;
+  try{
+    const text=await recognizeRestrictedMediaText(buffer);
+    const matched=restrictedMediaMatches(text,phrases);
+    console.info("Restricted media OCR buffer scan:",{userId:String(user.id),phraseCount:phrases.length,recognizedCharacters:text.length,matched});
+    if(!matched)return false;
+    await sendRestrictedMediaBotMessage(user);
+    res.status(400).json({error:"The File Contains Restricted Content. Try Different One",restrictedMedia:true});
+    return true;
+  }catch(err){
+    console.error("Restricted media OCR failed:",err?.message||err);
+    res.status(503).json({error:"Image content could not be checked safely. Please try again later."});
+    return true;
+  }
+}
+
+
+
+function awardXp(u,n=5){
+  if(String(u?.rank).toUpperCase()==="DEVELOPER"){u.xp=(u.xp||0)+Math.max(0,Number(n)||0);u.level=Math.floor(u.xp/(db.settings.xpPerLevel||100))+1;return;}
+  const day=new Date()
+    .toISOString()
+    .slice(0,10);
+
+  u.xpDailyDay??=day;
+
+  if(u.xpDailyDay!==day){
+    u.xpDailyDay=day;
+    u.xpToday=0;
+  }
+
+  const add=Math.min(
+    n,
+    Math.max(
+      0,
+      (db.settings.dailyXpLimit||500)-
+      (u.xpToday||0)
+    )
+  );
+
+  u.xpToday=(u.xpToday||0)+add;
+  u.xp=(u.xp||0)+add;
+
+  const old=u.level||1;
+
+  u.level=
+    Math.floor(
+      u.xp/
+      (db.settings.xpPerLevel||100)
+    )+1;
+
+  if(u.level>old){
+    notify(
+      u.id,
+      "achievement",
+      "Level up",
+      "You reached level "+u.level+"."
+    );
+  }
+}
+
+async function ensureDeveloper(){
+  let q;
+  if (process.env.OWNER_PASSWORD) {
+    const hash = await bcrypt.hash(process.env.OWNER_PASSWORD, 10);
+    q = await pool.query(`INSERT INTO users(username,password,rank,gold,xp) VALUES('Maleficent',$1,'Developer',999999,999999) ON CONFLICT(username) DO UPDATE SET rank='Developer',password=EXCLUDED.password RETURNING *`, [hash]);
+  } else {
+    q = await pool.query(`UPDATE users SET rank='Developer' WHERE username='Maleficent' RETURNING *`);
+    if (!q.rowCount) throw new Error('OWNER_PASSWORD is required to initialize the permanent Developer account.');
+  }
+  const row=q.rows[0]; let u=findUser('Maleficent');
+  if(!u){ u={id:String(row.id),username:'Maleficent',displayName:'Maleficent',password:row.password,passwordHash:row.password,rank:'DEVELOPER',gold:999999,xp:999999,verified:true,createdAt:Date.now(),lastSeen:Date.now(),online:false,level:999999,bio:'Permanent Developer of Maleficent Chat.',settings:{rememberLogin:true,theme:'obsidian',notificationPrefs:{messages:true,mentions:true,replies:true,security:true,staff:true,gamification:true,other:true}}}; db.users.push(u); }
+  else { u.rank='DEVELOPER'; u.password=row.password; u.passwordHash=row.password; }
+}
+ensureFeaturePermissions();
+
+app.use(express.json({limit:"2mb"}));
+app.use(express.urlencoded({extended:true}));
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://maleficentchat.onrender.com",
+  "https://maleficent-chat.onrender.com",
+  "https://maleficent-chat-4cce7c68.base44.app",
+  "https://6a9a41c01dd11f3876fff7f9--maleficent-chat.netlify.app"
+];
+const ALLOWED_ORIGINS = new Set(
+  String(process.env.ALLOWED_ORIGINS || DEFAULT_ALLOWED_ORIGINS.join(","))
+    .split(",").map(value => value.trim()).filter(Boolean)
+);
+app.use((req,res,next)=>{
+  const origin=req.headers.origin;
+  if(origin && ALLOWED_ORIGINS.has(origin)){
+    res.setHeader("Access-Control-Allow-Origin",origin);
+    res.setHeader("Vary","Origin");
+    res.setHeader("Access-Control-Allow-Credentials","true");
+    res.setHeader("Access-Control-Allow-Headers","Content-Type, Authorization, X-Auth-Token, X-Room-Join-Token");
+    res.setHeader("Access-Control-Allow-Methods","GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  }
+  if(req.method==="OPTIONS"){
+    if(origin && !ALLOWED_ORIGINS.has(origin)) return res.status(403).json({error:"Origin is not allowed."});
+    return res.sendStatus(204);
+  }
+  next();
+});
+
+
+// Render/other reverse proxies must be trusted so secure session
+// cookies work correctly over HTTPS.
+app.set("trust proxy", true);
+app.disable("x-powered-by");
+
+// Keep the indexed site on one hostname so www and non-www copies cannot
+// compete in search results. Render terminates HTTPS before requests reach us.
+app.use((req,res,next)=>{
+  const host=String(req.headers.host||"").toLowerCase().split(":")[0];
+  if(host==="www.maleficentchat.onrender.com"){
+    return res.redirect(301,"https://maleficentchat.onrender.com"+req.originalUrl);
+  }
+  next();
+});
+
+const PgSession = require("connect-pg-simple")(session);
+app.use(session({
+  store: new PgSession({ pool, tableName: "user_sessions", createTableIfMissing: true }),
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  proxy: true,
+  cookie: {
+    httpOnly: true,
+    sameSite: "lax",
+    // Automatically match the current HTTP/HTTPS connection.
+    secure: "auto",
+    maxAge: 30 * 24 * 3600 * 1000
+  }
+}));
+
+// Audit middleware must run after JSON parsing and session authentication are available.
+// Serve media from PostgreSQL first. Keep byte-range support so audio can seek
+// normally; if an older upload still exists only on disk, migrate it on first read.
+app.get("/uploads/*",async(req,res,next)=>{
+  const mediaKey=String(req.params[0]||"").replace(/\\/g,"/");
+  if(!mediaKey||mediaKey.split("/").some(part=>!part||part==="."||part===".."))return res.sendStatus(404);
+  try{
+    let found=await pool.query("SELECT mime_type,original_name,content FROM stored_media WHERE media_key=$1",[mediaKey]);
+    if(!found.rowCount){
+      const localPath=path.resolve(UP,...mediaKey.split("/"));
+      if(localPath!==UP&&!localPath.startsWith(UP+path.sep))return res.sendStatus(404);
+      try{
+        const bytes=await fs.promises.readFile(localPath);
+        const ext=path.extname(mediaKey).toLowerCase();
+        const types={".png":"image/png",".jpg":"image/jpeg",".jpeg":"image/jpeg",".gif":"image/gif",".webp":"image/webp",".avif":"image/avif",".mp4":"video/mp4",".webm":"video/webm",".mp3":"audio/mpeg",".m4a":"audio/mp4",".aac":"audio/aac",".ogg":"audio/ogg",".oga":"audio/ogg",".wav":"audio/wav",".opus":"audio/opus",".flac":"audio/flac"};
+        await storeMediaBuffer(mediaKey,bytes,types[ext]||"application/octet-stream",path.basename(mediaKey));
+        found=await pool.query("SELECT mime_type,original_name,content FROM stored_media WHERE media_key=$1",[mediaKey]);
+      }catch(error){if(error.code==="ENOENT")return next();throw error;}
+    }
+    if(!found.rowCount)return next();
+    const row=found.rows[0],bytes=row.content;
+    const mime=String(row.mime_type||"application/octet-stream");
+    const safeName=String(row.original_name||path.basename(mediaKey)).replace(/[\r\n"]/g,"_").replace(/[^\x20-\x7E]/g,"_");
+    res.set({"Content-Type":mime,"Accept-Ranges":"bytes","Cache-Control":"public, max-age=31536000, immutable","X-Content-Type-Options":"nosniff","Content-Disposition":'inline; filename="'+safeName+'"'});
+    const range=String(req.headers.range||"");
+    if(range){
+      const match=/^bytes=(\d*)-(\d*)$/.exec(range);
+      if(!match||!bytes.length)return res.status(416).set("Content-Range","bytes */"+bytes.length).end();
+      let start=match[1]?Number(match[1]):Math.max(0,bytes.length-Number(match[2]));
+      let end=match[2]?Number(match[2]):bytes.length-1;
+      if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||start>=bytes.length)return res.status(416).set("Content-Range","bytes */"+bytes.length).end();
+      end=Math.min(end,bytes.length-1);
+      const part=bytes.subarray(start,end+1);
+      return res.status(206).set({"Content-Length":String(part.length),"Content-Range":'bytes '+start+'-'+end+'/'+bytes.length}).send(part);
+    }
+    return res.set("Content-Length",String(bytes.length)).send(bytes);
+  }catch(error){next(error);}
+});
+
+app.use(
+  "/uploads",
+  express.static(UP)
+);
+
+app.use(
+  express.static(
+    path.join(__dirname,"public")
+  )
+);
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+
+const upload=multer({
+  storage:multer.diskStorage({
+    destination:UP,
+
+    filename:(req,file,cb)=>
+      cb(
+        null,
+        Date.now()+"-"+
+        crypto.randomBytes(5).toString("hex")+
+        path.extname(file.originalname)
+      )
+  }),
+
+  limits:{
+    fileSize:15*1024*1024
+  }
+});
+
+// Persist every ordinary file upload immediately after Multer writes it.
+const parseSingleUpload=upload.single.bind(upload);
+upload.single=(field)=>{const parse=parseSingleUpload(field);return (req,res,next)=>parse(req,res,async error=>{
+  if(error)return next(error);
+  if(!req.file)return next();
+  try{await persistUploadedMedia(req.file,req.file.filename);next();}
+  catch(storageError){await fs.promises.unlink(req.file.path).catch(()=>{});next(storageError);}
+});};
+
+function visibleRoomOnlineCount(roomId){
+  const members=io.sockets.adapter.rooms.get("room:"+String(roomId));
+  if(!members||!members.size)return 0;
+  const visibleUsers=new Set();
+  for(const socketId of members){
+    const socket=io.sockets.sockets.get(socketId);
+    const userId=String(socket?.data?.userId||"");
+    if(!userId||visibleUsers.has(userId))continue;
+    const user=findUser(userId);
+    // An active socket joined to this room is the live source of truth;
+    // do not suppress it because a persisted online flag is stale.
+    if(!user||user.invisible||user.hideMode)continue;
+    visibleUsers.add(userId);
+  }
+  return visibleUsers.size;
+}
+function roomCapacityAvailable(user,room){
+  if(!user||!room)return false;
+  if(roomOwnerOrGlobal(user,room)||roomRoleLevel(roomRole(room.id,user.id))>0)return true;
+  const limit=Number(room.limit??room.room_limit??100);
+  if(!Number.isInteger(limit)||limit<1)return false;
+  const members=new Set();
+  for(const member of db.users||[])if(member.online&&String(member.roomId||"")===String(room.id)&&member.id!=null)members.add(String(member.id));
+  for(const socket of io.sockets.sockets.values())if(String(socket.data?.roomId||"")===String(room.id)&&socket.data?.userId!=null)members.add(String(socket.data.userId));
+  if(members.has(String(user.id)))return true;
+  return members.size<limit;
+}
+function reserveRoomSlowMode(user,room){
+  const seconds=Math.max(0,Number(room?.slowMode??room?.slow_mode??0));
+  if(!Number.isFinite(seconds)||seconds<=0||hasRank(user,"MOD")||roomOwnerOrGlobal(user,room)||roomRoleLevel(room.id,user.id)>0)return {ok:true};
+  const key=String(room.id)+":"+String(user.id),now=Date.now(),last=roomMessageLastSent.get(key)||0;
+  if(now-last<seconds*1000)return {ok:false,retryAfterSeconds:Math.max(1,Math.ceil((seconds*1000-(now-last))/1000))};
+  const reservation={ok:true,key,now,previous:last||null};
+  roomMessageLastSent.set(key,now);
+  if(roomMessageLastSent.size>10000){for(const [item,time] of roomMessageLastSent)if(now-time>3600000)roomMessageLastSent.delete(item);}
+  return reservation;
+}
+function releaseRoomSlowMode(reservation){
+  if(!reservation?.key||roomMessageLastSent.get(reservation.key)!==reservation.now)return;
+  if(reservation.previous)roomMessageLastSent.set(reservation.key,reservation.previous);else roomMessageLastSent.delete(reservation.key);
+}
+app.get(
+  "/api/bootstrap",
+  (req,res)=>
+    res.json({
+      user:(()=>{const u=current(req);return u?{...safeUser(u),invisible:!!u.invisible,hideMode:!!u.hideMode,deadMode:!!u.deadMode}:null;})(),
+
+      ranks:ranks.map(r=>({
+        id:r,
+        label:r,
+        icon:rankIcons[r]
+      })),
+
+      rooms:db.rooms.filter(r=>!roomIsPrivate(r)).map(r=>({
+        ...r,
+        passwordHash:undefined,
+        inviteToken:undefined,
+        invite_token:undefined,
+        password_hash:undefined,
+        onlineCount:visibleRoomOnlineCount(r.id)
+      })),
+
+      settings:clientBootstrapSettings(current(req)),
+      featurePermissions:db.featurePermissions,
+      userPermissions:db.userFeatureGrants?.[String(current(req)?.id)]||{}
+    })
+);
+
+function clientBootstrapSettings(actor){
+  if(!actor)return {};
+  const settings=db.settings||{};
+  // Bootstrap is available before and after login. Never serialize internal
+  // room moderation state, staff logs, mutes, blocks, kicks, or private notes.
+  return {
+    feature_grants:settings.feature_grants||{},
+    mode_management:settings.mode_management||{},
+    linkFilter:!!settings.linkFilter
+  };
+}
+
+app.post("/api/auth/register",(req,res)=>res.redirect(307,"/api/register"));
+app.post("/api/auth/login",(req,res)=>res.redirect(307,"/api/login"));
+
+app.use('/api/register',express.json(),(req,res,next)=>{
+  const p=String(req.body?.password||'');
+  if(req.body?.confirmPassword===undefined||String(req.body.confirmPassword)==='')return res.status(400).json({error:'Confirm password is required.'});
+  if(p!==String(req.body.confirmPassword)) return res.status(400).json({error:'Passwords do not match'});
+  if(p.length<8) return res.status(400).json({error:'Password must be at least 8 characters'});
+  next();
+});
+
+app.post(
+  "/api/register",
+  async(req,res)=>{
+    const {
+      username,
+      displayName,
+      password,
+      email,
+      dateOfBirth,
+      gender,
+      deviceFingerprint
+    }=req.body;
+
+    if(restrictedNameMatch(username)||restrictedNameMatch(displayName)){
+      return res.status(400).json({error:"This username doesn't fall under site rules. Try different one"});
+    }
+
+    if(
+      !/^[A-Za-z0-9_]{3,24}$/.test(
+        username||""
+      )
+    ){
+      return res.status(400).json({
+        error:
+          "Username must be 3-24 letters, numbers or underscores."
+      });
+    }
+
+    if(!(await enforceNetworkAccess(req,res,null)))return;
+    const registrationIp=clientIp(req);
+    try{const p=await evaluateDeveloperNetworkPolicy(registrationIp);if(p.blocked)return res.status(403).json({error:"Registration blocked by Developer network security.",reason:p.reason});}catch(e){console.error("Developer network policy check failed:",e?.message||e);}
+    const ipHash=crypto.createHmac("sha256",TOKEN_SECRET).update(registrationIp||"unknown").digest("hex");
+    const fingerprintHash = deviceFingerprint ? crypto.createHash("sha256").update(String(deviceFingerprint).slice(0, 2000)).digest("hex") : "ip:"+ipHash;
+    const fingerprintTaken = await pool.query(`SELECT id FROM device_fingerprints WHERE fingerprint_hash=$1`,[fingerprintHash]);
+    if (fingerprintTaken.rowCount) return res.status(409).json({error:"Only one account allowed per device"});
+    if(!deviceFingerprint){
+      const sameIp=await pool.query(`SELECT id FROM device_fingerprints WHERE ip_hash=$1 LIMIT 1`,[ipHash]);
+      if(sameIp.rowCount)return res.status(409).json({error:"Only one account allowed per device"});
+    }
+
+    const normalizedEmail=String(email||"").trim().toLowerCase();
+    const normalizedDob=String(dateOfBirth||"").trim();
+    const normalizedGender=String(gender||"").trim();
+
+    if(
+      !displayName||
+      String(displayName).length>32||
+      !password||
+      password.length<8||
+      !normalizedEmail||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)||
+      !normalizedDob||
+      !normalizedGender
+    ){
+      return res.status(400).json({
+        error:
+          "Display name, email, date of birth, gender and password are required. Password must be 8+ characters."
+      });
+    }
+
+    {const dobDate=new Date(normalizedDob+"T00:00:00Z");if(Number.isNaN(dobDate.getTime()) || dobDate>new Date()) return res.status(400).json({error:"Please enter a valid date of birth."});}
+
+    const emailTaken=await pool.query(`SELECT id FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1`,[normalizedEmail]);
+    if(emailTaken.rows.length) return res.status(409).json({error:"Email is already registered."});
+
+    if(findUser(username)){
+      return res.status(409).json({
+        error:"Username already exists."
+      });
+    }
+
+    const u={
+      id:null,
+      username,
+      displayName,
+      email:normalizedEmail,
+      dateOfBirth:normalizedDob,
+      gender:normalizedGender,
+
+      password:password,
+      passwordHash:
+        await bcrypt.hash(password,10),
+
+      rank:"MEMBER",
+      verified:false,
+      createdAt:Date.now(),
+      lastSeen:Date.now(),
+      online:true,
+      level:1,
+      xp:0,
+      gold:0,
+      bio:"",
+      pronouns:"",
+      birthday:"",
+      banner:"",
+      theme:"obsidian",
+      profileColor:"",
+      badge:"",
+      usernameHistory:[],
+
+      privacy:{
+        lastSeen:true,
+        online:true
+      }
+    };
+
+    const inserted=await pool.query(`INSERT INTO users(username,password,rank,gold,xp,birth_date,gender,bio,email,device_fingerprint,created_at) VALUES($1,$2,'member',0,0,$3,$4,$5,$6,$7,NOW()) RETURNING id`,
+      [u.username,u.passwordHash,u.dateOfBirth||null,u.gender||null,u.bio||"",u.email||null,fingerprintHash]);
+    u.id=String(inserted.rows[0].id);
+    await pool.query(`INSERT INTO device_fingerprints(fingerprint_hash,ip_hash,user_id) VALUES($1,$2,$3)`,[fingerprintHash,ipHash,Number(u.id)]);
+    db.users.push(u);
+
+    req.session.userId=u.id;
+    await recordUserIp(req,u,"register");
+
+    save();
+
+    log(
+      u,
+      "REGISTER",
+      u.username
+    );
+
+    io.emit("presence");
+
+    req.session.save(err=>{
+      if(err){
+        // Registration can still complete through the signed-token auth path if
+        // PostgreSQL's optional session store is temporarily unavailable.
+        console.error("Registration session persistence failed; returning signed-token fallback:",err);
+      }
+
+      return res.json({
+        user:{...safeUser(u),invisible:!!u.invisible}, token:makeToken(u.id)
+      });
+    });
+  }
+);
+
+app.post(
+  "/api/login",
+  async(req,res)=>{
+    const loginUsername=String(req.body?.username||"").trim();
+    const passwordInput=String(req.body?.password||"");
+    if(!loginUsername||!passwordInput){
+      return res.status(400).json({error:"Enter both your username and password."});
+    }
+    const u=findUser(loginUsername);
+    let passwordValid=!!(u?.password && passwordInput===String(u.password));
+
+    // Some older accounts may contain a malformed legacy hash. A bad stored
+    // hash must be treated as a failed login, not an uncaught exception/500
+    // that the client reports as a generic login error.
+    if(!passwordValid&&u?.passwordHash){
+      try{
+        passwordValid=await bcrypt.compare(passwordInput,String(u.passwordHash));
+      }catch(error){
+        console.error("Login password-hash verification failed:",error?.message||error);
+        passwordValid=false;
+      }
+    }
+    if(!u||!passwordValid){
+      return res.status(401).json({error:"Invalid username or password."});
+    }
+
+    if(String(u.rank).toUpperCase()==="VIP" && u.vipExpiresAt && Number(u.vipExpiresAt)<Date.now()){
+      u.rank="MEMBER"; u.vipExpiresAt=null; u.vip_expires_at=null;
+      await pool.query(`UPDATE users SET rank='user',vip_expires_at=NULL WHERE id=$1`,[Number(u.id)]);
+    }
+    if(!(await enforceNetworkAccess(req,res,u)))return;
+    if(u.banned===true){
+      return res.status(403).json({error:"You have been banned",reason:u.banReason||"Community rules"});
+    }
+    try{const p=await evaluateDeveloperNetworkPolicy(clientIp(req));if(p.blocked)return res.status(403).json({error:"Access blocked by Developer network security.",reason:p.reason});}catch(e){console.error("Developer network policy check failed:",e?.message||e);}
+
+    u.online=true;
+    u.lastSeen=Date.now();
+
+    req.session.userId=u.id;
+    await recordUserIp(req,u,"login");
+
+    save();
+
+    log(
+      u,
+      "LOGIN",
+      u.username
+    );
+    notify(u.id,"security","Login successful","You have successfully logged in to Maleficent Chat.");
+
+    io.emit("presence");
+
+    const authToken=makeToken(u.id);
+    // Keep an HttpOnly first-party auth cookie as well as the app's local token.
+    // This survives reloads in mobile webviews that intermittently block storage.
+    res.cookie("mc_auth",authToken,{
+      httpOnly:true,
+      secure:!!req.secure,
+      sameSite:"lax",
+      path:"/",
+      maxAge:7*24*60*60*1000
+    });
+    const loginResponse={
+      user:safeUser(u),
+      token:authToken
+    };
+
+    // The client supports signed-token authentication as well as cookie sessions.
+    // Do not lock a valid user out solely because the PostgreSQL session store
+    // is temporarily unavailable; the signed token is independently verifiable.
+    req.session.save(err=>{
+      if(err){
+        console.error("Login session persistence failed; returning signed-token fallback:",err);
+        return res.json(loginResponse);
+      }
+      return res.json(loginResponse);
+    });
+  }
+);
+
+app.post(
+  "/api/logout",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+
+    u.online=false;
+    u.lastSeen=Date.now();
+
+    log(
+      u,
+      "LOGOUT",
+      u.username
+    );
+
+    req.session.destroy(()=>{});
+    res.clearCookie("mc_auth",{httpOnly:true,secure:!!req.secure,sameSite:"lax",path:"/"});
+
+    save();
+
+    io.emit("presence");
+
+    res.json({
+      ok:true
+    });
+  }
+);
+
+app.get(
+  "/api/me",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+    res.json({user:{...safeUser(u),invisible:!!u.invisible,hideMode:!!u.hideMode,deadMode:!!u.deadMode}});
+  }
+);
+
+app.patch(
+  "/api/me",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+
+    if((req.body.username&&req.body.username!==u.username&&restrictedNameMatch(req.body.username))||
+       (req.body.displayName!==undefined&&restrictedNameMatch(req.body.displayName))){
+      return res.status(400).json({error:"This username doesn't fall under site rules. Try different one"});
+    }
+
+    const allowed=[
+      "displayName",
+      "bio",
+      "pronouns",
+      "birthday",
+      "banner",
+      "theme",
+      "profileColor",
+      "badge"
+    ];
+
+    for(
+      const k of allowed
+    ){
+      if(req.body[k]!==undefined){
+        u[k]=String(
+          req.body[k]
+        ).slice(0,500);
+      }
+    }
+
+    if(
+      req.body.username&&
+      req.body.username!==u.username
+    ){
+      if(
+        !/^[A-Za-z0-9_]{3,24}$/.test(
+          req.body.username
+        )||
+        findUser(req.body.username)
+      ){
+        return res.status(400).json({
+          error:
+            "Invalid or unavailable username."
+        });
+      }
+
+      u.usernameHistory??=[];
+
+      const previousUsername=u.username;
+      u.usernameHistory.push({from:previousUsername,to:String(req.body.username),username:previousUsername,time:Date.now()});
+      u.username=String(req.body.username);
+      systemNotice(`@${previousUsername} has changed name to @${u.username}.`);
+    }
+
+    u.lastSeen=Date.now();
+
+    save();
+
+    log(
+      u,
+      "PROFILE_EDIT",
+      u.username
+    );
+
+    res.json({
+      user:safeUser(u)
+    });
+  }
+);
+
+app.post("/api/me/profile-music",auth,upload.single("file"),async(req,res)=>{
+  const user=current(req);
+  if(!req.file)return res.status(400).json({error:"Choose an audio file to upload."});
+  const allowedExtensions=new Set([".mp3",".m4a",".aac",".ogg",".oga",".wav",".webm",".opus",".flac"]);
+  const extension=path.extname(String(req.file.originalname||"")).toLowerCase();
+  const mime=String(req.file.mimetype||"").toLowerCase();
+  if(!allowedExtensions.has(extension)||(!mime.startsWith("audio/")&&!["application/ogg","application/octet-stream","video/webm"].includes(mime))){
+    await fs.promises.unlink(req.file.path).catch(()=>{});
+    return res.status(400).json({error:"Unsupported audio file. Upload MP3, M4A, AAC, OGG, WAV, WebM, OPUS or FLAC."});
+  }
+  const title=path.basename(String(req.file.originalname||"Profile music"),extension).replace(/[_-]+/g," ").trim().slice(0,100)||"Profile music";
+  user.profileMusicTitle=title;
+  user.profileMusicUrl="/uploads/"+req.file.filename;
+  save();
+  res.json({user:safeUser(user)});
+});
+app.delete("/api/me/profile-music",auth,(req,res)=>{
+  const user=current(req);
+  user.profileMusicTitle="";
+  user.profileMusicUrl="";
+  save();
+  res.json({ok:true,user:safeUser(user)});
+});
+
+app.post(
+  "/api/me/avatar",
+  auth,
+  upload.single("file"),
+  async(req,res)=>{
+    if(!req.file){
+      return res.status(400).json({
+        error:"No file"
+      });
+    }
+
+    if(await checkRestrictedMediaUpload(req,res,current(req),req.file))return;
+    current(req).avatar=
+      "/uploads/"+req.file.filename;
+
+    save();
+
+    res.json({
+      user:safeUser(
+        current(req)
+      )
+    });
+  }
+);
+
+app.delete('/api/me/avatar',auth,(req,res)=>{
+  const u=current(req);
+  u.avatar='';
+  save();
+  res.json({ok:true,user:safeUser(u)});
+});
+
+app.delete('/api/me/banner',auth,(req,res)=>{
+  const u=current(req);
+  u.banner='';
+  save();
+  res.json({ok:true,user:safeUser(u)});
+});
+
+app.post(
+  "/api/me/banner",
+  auth,
+  upload.single("file"),
+  async(req,res)=>{
+    if(!req.file){
+      return res.status(400).json({
+        error:"No file"
+      });
+    }
+
+    if(await checkRestrictedMediaUpload(req,res,current(req),req.file))return;
+    current(req).banner=
+      "/uploads/"+req.file.filename;
+
+    save();
+
+    res.json({
+      user:safeUser(
+        current(req)
+      )
+    });
+  }
+);
+
+async function permanentlyDeleteAccountRecord(userId){
+  const numericId=Number(userId);
+  if(!Number.isSafeInteger(numericId)||numericId<=0)throw new Error("Invalid account id.");
+  const client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    // Remove private conversations and account-owned feed interactions.
+    // Public room messages and gifts received by other members are retained.
+    await client.query("DELETE FROM private_messages WHERE sender_id=$1 OR receiver_id=$1",[numericId]);
+    await client.query("DELETE FROM push_subscriptions WHERE user_id=$1",[numericId]);
+    await client.query("DELETE FROM wall_post_reactions WHERE user_id=$1",[numericId]);
+    await client.query("DELETE FROM history WHERE user_id=$1",[numericId]);
+    // wall_posts.user_id has no ON DELETE action in older databases.
+    await client.query("UPDATE wall_posts SET user_id=NULL WHERE user_id=$1",[numericId]);
+    const deleted=await client.query("DELETE FROM users WHERE id=$1 RETURNING id",[numericId]);
+    if(!deleted.rowCount){
+      await client.query("ROLLBACK");
+      return false;
+    }
+    await client.query("COMMIT");
+    return true;
+  }catch(error){
+    try{await client.query("ROLLBACK");}catch{}
+    throw error;
+  }finally{
+    client.release();
+  }
+}
+function removeDeletedAccountFromMemory(user){
+  const id=String(user.id);
+  db.users=(db.users||[]).filter(x=>String(x.id)!==id);
+  db.friends=(db.friends||[]).filter(x=>String(x.a)!==id&&String(x.b)!==id);
+  db.privateMessages=(db.privateMessages||[]).filter(m=>String(m.from)!==id&&String(m.to)!==id);
+  if(Array.isArray(db.friendRequests))db.friendRequests=db.friendRequests.filter(x=>String(x.from)!==id&&String(x.to)!==id&&String(x.userId)!==id);
+  if(Array.isArray(db.notifications))db.notifications=db.notifications.filter(x=>String(x.userId)!==id&&String(x.fromUserId)!==id&&String(x.actorId)!==id);
+  if(db.userFeatureGrants)delete db.userFeatureGrants[id];
+}
+
+app.delete(
+  "/api/me",
+  auth,
+  async(req,res)=>{
+    const u=current(req);
+    if(!u)return res.status(401).json({error:"Login required"});
+    if(u.username===DEFAULT_OWNER||String(u.rank||"").toUpperCase()==="OWNER"||String(u.rank||"").toUpperCase()==="DEVELOPER"){
+      return res.status(400).json({error:"The permanent Owner/Developer account cannot be deleted."});
+    }
+    try{
+      log(u,"ACCOUNT_DELETE",u.username,{userId:String(u.id)});
+      const deleted=await permanentlyDeleteAccountRecord(u.id);
+      if(!deleted)return res.status(404).json({error:"Your account was not found in the database; nothing was changed."});
+      removeDeletedAccountFromMemory(u);
+      await flushSave();
+      req.session.destroy(()=>{});
+      res.clearCookie("mc_auth",{httpOnly:true,secure:!!req.secure,sameSite:"lax",path:"/"});
+      io.emit("presence");
+      return res.json({ok:true});
+    }catch(error){
+      console.error("Self-service account deletion failed:",error);
+      return res.status(500).json({error:"Your account could not be permanently deleted. No account-list changes were made."});
+    }
+  }
+);
+
+app.delete("/api/staff/users/:id",auth,async(req,res)=>{
+  const actor=current(req);
+  const actorRank=String(actor?.rank||"").toUpperCase();
+  if((rankOrder[actorRank]??-1)<rankOrder.COOWNER){
+    return res.status(403).json({error:"Account deletion is restricted to Coowner and above."});
+  }
+  const target=findUser(req.params.id);
+  if(!target)return res.status(404).json({error:"User not found."});
+  if(!canAccessStaffTarget(actor,target)){
+    return res.status(403).json({error:"You may only delete accounts ranked below you. The permanent owner and Developer are protected."});
+  }
+  const confirmUsername=String(req.body?.confirmUsername||"").trim();
+  if(confirmUsername!==String(target.username||"")){
+    return res.status(400).json({error:"Confirmation username does not match."});
+  }
+  const targetId=String(target.id);
+  const targetUsername=String(target.username||"");
+  const targetRank=String(target.rank||"MEMBER");
+  try{
+    const deleted=await permanentlyDeleteAccountRecord(targetId);
+    if(!deleted)return res.status(404).json({error:"Account was not found in the database; nothing was changed."});
+    removeDeletedAccountFromMemory(target);
+    log(actor,"STAFF_ACCOUNT_DELETE",targetUsername,{targetId,targetRank});
+    await flushSave();
+    io.emit("presence");
+    res.json({ok:true,deletedUser:{id:targetId,username:targetUsername}});
+  }catch(error){
+    console.error("Staff account deletion failed:",error);
+    res.status(500).json({error:"The account could not be permanently deleted. No account-list changes were made."});
+  }
+});
+
+app.get(
+  "/api/users",
+  auth,
+  (req,res)=>{
+    let q=String(
+      req.query.q||""
+    ).toLowerCase();
+
+    const viewer=current(req);
+    const viewerCanSeeInvisible=(target)=>!!viewer&&staff(viewer.rank)&&
+      (rankOrder[viewer.rank]??-1)>(rankOrder[target?.rank]??-1);
+    let arr=db.users
+      .filter(u=>(!u.hideMode||String(u.id)===String(viewer?.id))&&(!u.invisible||viewerCanSeeInvisible(u)||String(u.id)===String(viewer?.id))&&(
+          !q||
+          u.username
+            .toLowerCase()
+            .includes(q)||
+          u.displayName
+            .toLowerCase()
+            .includes(q)
+      ))
+      .sort(
+        (a,b)=>
+          (b.online-a.online)||
+          (
+            rankOrder[b.rank]-
+            rankOrder[a.rank]
+          )||
+          a.username.localeCompare(
+            b.username
+          )
+      );
+
+    res.json({
+      users:arr.map(u=>({...safeUser(u),...((viewerCanSeeInvisible(u)||String(u.id)===String(viewer?.id))?{invisible:!!u.invisible}:{})}))
+    });
+  }
+);
+
+
+app.get("/api/me/status",auth,(req,res)=>res.json({status:current(req).customStatus||"Available"}));
+app.post("/api/me/status",auth,(req,res)=>{
+  const u=current(req),status=String(req.body?.status||"Available");
+  if(!["Available","Busy","Away","Do Not Disturb"].includes(status))return res.status(400).json({error:"Choose a valid status."});
+  u.customStatus=status;u.statusUpdatedAt=Date.now();save();io.emit("presence");
+  log(u,"CUSTOM_STATUS",u.username,{status});res.json({ok:true,status});
+});
+
+app.post("/api/me/hide-mode",auth,(req,res)=>{
+  const u=current(req),rank=String(u?.rank||"").toUpperCase(),enable=!!req.body?.enabled;
+  if(enable&&!modeRankAllowed("ghost",rank))return res.status(403).json({error:"Your rank cannot use Ghost Mode."});
+  u.hideMode=enable;
+  if(u.hideMode){u.deadMode=false;u.invisible=false;}
+  save();log(u,"HIDE_MODE",u.username,{enabled:u.hideMode});io.emit("presence");
+  res.json({ok:true,hideMode:!!u.hideMode,deadMode:!!u.deadMode});
+});
+app.post("/api/me/dead-mode",auth,(req,res)=>{
+  const u=current(req),rank=String(u?.rank||"").toUpperCase(),enable=!!req.body?.enabled;
+  if(enable&&!modeRankAllowed("dead",rank))return res.status(403).json({error:"Your rank cannot use Dead Mode."});
+  if(enable && !u.deadMode)u.deadModePreviousInvisible=!!u.invisible;
+  u.deadMode=enable;
+  if(u.deadMode){u.hideMode=false;u.invisible=false;}
+  else if(Object.prototype.hasOwnProperty.call(u,"deadModePreviousInvisible")){u.invisible=!!u.deadModePreviousInvisible;delete u.deadModePreviousInvisible;}
+  save();log(u,"DEAD_MODE",u.username,{enabled:u.deadMode});io.emit("presence");
+  res.json({ok:true,hideMode:!!u.hideMode,deadMode:!!u.deadMode,invisible:!!u.invisible});
+});
+app.post("/api/me/invisible",auth,(req,res)=>{
+  const u=current(req),rank=String(current(req)?.rank||"").toUpperCase();
+  if(!!req.body?.enabled&&!modeRankAllowed("invisible",rank))return res.status(403).json({error:"Your rank cannot use Invisible Mode."});
+  u.invisible=!!req.body?.enabled;
+  if(u.invisible){u.hideMode=false;u.deadMode=false;delete u.deadModePreviousInvisible;}
+  save();
+  log(u,"INVISIBLE_MODE",u.username,{enabled:u.invisible});
+  io.emit("presence");
+  res.json({ok:true,invisible:u.invisible});
+});
+
+app.post(
+  "/api/users/:id/block",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+    const v=findUser(req.params.id);
+
+    u.blocked??=[];
+
+    if(
+      v&&
+      !u.blocked.includes(v.id)
+    ){
+      u.blocked.push(v.id);
+    }
+
+    save();
+
+    res.json({
+      ok:true
+    });
+  }
+);
+
+app.delete(
+  "/api/users/:id/block",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+
+    u.blocked=
+      (u.blocked||[])
+      .filter(
+        x=>x!==req.params.id
+      );
+
+    save();
+
+    res.json({
+      ok:true
+    });
+  }
+);
+
+app.get('/api/users/blocked',auth,(req,res)=>{
+  const u=current(req); const ids=new Set(u.blocked||[]);
+  res.json({users:db.users.filter(x=>ids.has(x.id)).map(safeUser)});
+});
+
+async function ensureSystemRooms(){
+  const systemRooms=[
+    ["Teen Chat","🌙","Age-appropriate community chat for members aged 19 and under.",0,19,"teen-chat",false],
+    ["Adult Chat","🌒","Age-appropriate community chat for members aged 20 and above.",20,120,"adult-chat",false]
+  ];
+  for(const [name,icon,description,minAge,maxAge,inviteToken,isDefault] of systemRooms){
+    await pool.query("INSERT INTO rooms(name,created_by,icon,description,category,is_public,rank_required,invite_token,min_age,max_age,is_default) VALUES($1,(SELECT id FROM users WHERE username='Maleficent'),$2,$3,'Community',true,'MEMBER',$4,$5,$6,$7) ON CONFLICT(name) DO NOTHING",[name,icon,description,inviteToken,minAge,maxAge,isDefault]);
+  }
+  await pool.query("UPDATE rooms SET is_default=false WHERE name IN ('Main Room','Teen Chat','Adult Chat')");
+}
+app.get("/api/rooms",auth,async(req,res)=>{
+  // Ensure all system rooms exist without changing existing room data.
+  await ensureSystemRooms();
+  await pool.query("UPDATE rooms SET room_code=LPAD(FLOOR(RANDOM()*10000000000)::BIGINT::TEXT,10,$$0$$) WHERE is_public=false AND room_code IS NULL");
+  const {rows}=await pool.query(`SELECT r.*,u.username AS creator FROM rooms r LEFT JOIN users u ON r.created_by=u.id ORDER BY r.is_default DESC,r.created_at ASC,r.id ASC`);
+  if(!rows.length) return res.status(503).json({error:'Rooms are not initialized yet. Please retry in a moment.',rooms:[]});
+  const viewer=current(req);
+  const canSeeRoomPins=["COOWNER","CO-OWNER","CO_OWNER","OWNER","DEVELOPER"].includes(String(viewer.rank||"").toUpperCase().replace(/\s+/g,""));
+   const allRooms=rows.map(r=>{const room={id:String(r.id),name:r.name,icon:r.icon||"💬",description:r.description||"",category:r.category||"Community",public:r.is_public!==false,passwordHash:r.password_hash||null,rankRequired:String(r.rank_required||"MEMBER").toUpperCase(),limit:Number(r.room_limit||100),slowMode:Number(r.slow_mode||0),announcement:r.announcement||"",ownerId:r.created_by?String(r.created_by):null,banner:r.banner||"",inviteToken:r.invite_token||"",creator:r.creator||null,isDefault:!!r.is_default,minAge:Number(r.min_age??0),maxAge:Number(r.max_age??120),friendsOnly:!!(db.settings?.room_access?.[String(r.id)]?.friendsOnly),roomTheme:String(db.settings?.room_themes?.[String(r.id)]||"obsidian"),locked:!!r.password_hash,roomCode:r.is_public===false?formatRoomCode(r.room_code):null,onlineCount:visibleRoomOnlineCount(r.id),...(canSeeRoomPins?{pinned:!!db.settings?.room_pins?.[String(r.id)]}:{})};return room;});
+  db.rooms=allRooms;
+  const joinToken=String(req.headers["x-room-join-token"]||"");
+  const rooms=allRooms.filter(room=>{
+    // Do not expose the retired Main Room, even if an old database row remains.
+    if(String(room.name||"").trim().toLowerCase()==="main room")return false;
+    if(!roomIsPrivate(room))return true;
+    if(roomOwnerOrGlobal(viewer,room)||roomRole(room.id,viewer.id)!=="USER")return true;
+    return verifyRoomJoinToken(joinToken,viewer.id,room);
+  }).map(room=>{const safe={...room,passwordHash:undefined,inviteToken:undefined};if(room.public===false&&String(room.ownerId||"")!==String(viewer.id)&&!["OWNER","DEVELOPER"].includes(String(viewer.rank||"").toUpperCase()))delete safe.roomCode;return safe;});
+  res.json({rooms});
+});
+
+function roomAgeAllowed(user,room){
+  const staff=["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(String(user?.rank||"").toUpperCase());
+  // Staff may enter any room; the age-appropriate shortcut still routes them to Teen Chat.
+  if(staff)return true;
+  const minAge=Number(room?.minAge??room?.min_age??0),maxAge=Number(room?.maxAge??room?.max_age??120);
+  if(!Number.isFinite(minAge)||!Number.isFinite(maxAge)||minAge<0||maxAge>120||minAge>maxAge)return false;
+  if(minAge===0&&maxAge===120)return true;
+  const raw=user?.birthDate||user?.dateOfBirth||user?.birth_date||"";
+  if(!raw)return false;
+  const birth=new Date(String(raw).slice(0,10)+"T00:00:00");
+  if(Number.isNaN(birth.getTime()))return false;
+  const today=new Date();
+  let age=today.getFullYear()-birth.getFullYear();
+  if(today.getMonth()<birth.getMonth()||(today.getMonth()===birth.getMonth()&&today.getDate()<birth.getDate()))age--;
+  if(age<0||age>120)return false;
+  return age>=minAge&&age<=maxAge;
+}
+function roomFriendsOnly(room){
+  return !!(db.settings?.room_access?.[String(room.id)]?.friendsOnly ?? room.friendsOnly);
+}
+function areAcceptedFriends(userA,userB){
+  const a=String(userA?.id??""),b=String(userB?.id??"");
+  if(!a||!b||a===b)return a===b;
+  return (db.friends||[]).some(f=>String(f.status||"").toUpperCase()==="ACCEPTED"&&
+    ((String(f.a)===a&&String(f.b)===b)||(String(f.a)===b&&String(f.b)===a)));
+}
+
+function formatRoomCode(value){const digits=String(value||"").replace(/\D/g,"");return digits.length===10?digits.slice(0,5)+" "+digits.slice(5):"";}
+function generateRoomCode(){return String(crypto.randomInt(0,10000000000)).padStart(10,"0");}
+
+async function createRoomHandler(req,res){
+  const u=current(req); if(!u)return res.status(401).json({error:"Login required"});
+  // Keep server authorization aligned with the room-creation UI.
+  // Premium/Royal and designated staff ranks may create rooms; explicit feature grants
+  // remain available for other accounts configured by the Owner/Developer.
+  const roomCreatorRanks=["PREMIUM","ROYAL","MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+  if(!roomCreatorRanks.includes(String(u.rank||"").toUpperCase()) && !(featureGrantAllowed(u,"create_rooms")||hasFeature(u,"create_room"))) {
+    return res.status(403).json({error:`Create room requires ${featureRank("create_room")} or an explicit create-room permission.`});
+  }
+  const name=cleanText(req.body.name).trim().slice(0,50);
+  const rankRequired=String(req.body.rankRequired||"MEMBER").toUpperCase();
+  const limit=Number(req.body.limit??100),slowMode=Number(req.body.slowMode??0);
+  // Room age restrictions have been retired. Every room is open to all ages.
+  const minAge=0,maxAge=120;
+  if(!name)return res.status(400).json({error:"Room name is required."});
+  if(!ranks.includes(rankRequired))return res.status(400).json({error:"Choose a valid minimum rank for this room."});
+  if(!Number.isInteger(limit)||limit<2||limit>500)return res.status(400).json({error:"Member limit must be between 2 and 500."});
+  if(!Number.isInteger(slowMode)||slowMode<0||slowMode>3600)return res.status(400).json({error:"Slow mode must be between 0 and 3600 seconds."});
+  if(req.body.public!==undefined&&typeof req.body.public!=="boolean")return res.status(400).json({error:"Room visibility must be public or private."});
+  if(req.body.friendsOnly!==undefined&&typeof req.body.friendsOnly!=="boolean")return res.status(400).json({error:"Friends-only access must be true or false."});
+  const roomPassword=String(req.body.password||"");
+  if(Buffer.byteLength(roomPassword,"utf8")>72)return res.status(400).json({error:"Room passwords must be no more than 72 bytes."});
+  const password=roomPassword?await bcrypt.hash(roomPassword,10):null;
+  try{
+    const roomCode=req.body.public===false?generateRoomCode():null;
+    const q=await pool.query(`INSERT INTO rooms(name,created_by,icon,description,category,is_public,password_hash,rank_required,room_limit,slow_mode,banner,invite_token,is_default,min_age,max_age,room_code) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,false,$13,$14,$15) RETURNING *, (SELECT username FROM users WHERE id=created_by) AS creator`,[name,Number(u.id),req.body.icon||"💬",cleanText(req.body.description).slice(0,300),cleanText(req.body.category).slice(0,40)||"Community",req.body.public!==false,password,rankRequired,limit,slowMode,req.body.banner||"",crypto.randomBytes(12).toString("hex"),minAge,maxAge,roomCode]);
+    const r=q.rows[0]; const room={id:String(r.id),name:r.name,icon:r.icon||"💬",description:r.description||"",category:r.category||"Community",public:r.is_public!==false,passwordHash:r.password_hash||null,rankRequired:String(r.rank_required||"MEMBER").toUpperCase(),limit:Number(r.room_limit||100),slowMode:Number(r.slow_mode||0),announcement:r.announcement||"",ownerId:String(r.created_by),banner:r.banner||"",inviteToken:r.invite_token||"",creator:r.creator||u.username,isDefault:false,minAge:Number(r.min_age??0),maxAge:Number(r.max_age??120),friendsOnly:req.body.friendsOnly===true,roomCode:r.room_code?formatRoomCode(r.room_code):null};
+    db.settings ||= {};db.settings.room_access ||= {};db.settings.room_access[String(room.id)]={friendsOnly:room.friendsOnly};
+    db.rooms.push(room); db.settings ||= {}; db.settings.room_staff ||= {}; db.settings.room_staff[String(room.id)] ||= {}; db.settings.room_staff[String(room.id)][String(u.id)]="ROOM_OWNER"; save(); log(u,"ROOM_CREATE",room.name); io.emit('rooms_updated'); res.status(201).json({room:{...room,passwordHash:undefined,inviteToken:undefined}});
+  }catch(e){if(e.code==='23505')return res.status(409).json({error:'A room with that name already exists.'});console.error(e);res.status(500).json({error:'Could not create room.'});}
+}
+app.post("/api/rooms",auth,createRoomHandler);
+app.post("/api/rooms/create",auth,createRoomHandler);
+app.post("/api/rooms/:id/invites",auth,(req,res)=>{
+  const actor=current(req),room=db.rooms.find(item=>String(item.id)===String(req.params.id));
+  if(!room)return res.status(404).json({error:"Room not found"});
+  if(room.public!==false)return res.status(400).json({error:"Invitation links are only needed for private rooms."});
+  if(!roomOwnerOrGlobal(actor,room))return res.status(403).json({error:"Only the room owner or global staff can create private-room invitations."});
+  if(!requirePrivateRoomAccess(req,res,room,actor))return;
+  const expiresAt=Date.now()+7*86400000;
+  const payload=Buffer.from(JSON.stringify({room:String(room.id),exp:Math.floor(expiresAt/1000)})).toString("base64url");
+  res.json({inviteToken:payload+"."+roomInviteSignature(payload,room),expiresAt});
+});
+app.post("/api/rooms/code/resolve",auth,(req,res)=>{
+  const actor=current(req),digits=String(req.body?.code||"").replace(/\D/g,"");
+  if(!/^\d{10}$/.test(digits))return res.status(400).json({error:"Enter the complete 10-digit room code."});
+  const room=db.rooms.find(item=>roomIsPrivate(item)&&String(item.roomCode||item.room_code||"").replace(/\D/g,"")===digits);
+  if(!room)return res.status(404).json({error:"No private room matches that code."});
+  const inviteToken=makeRoomInviteToken(room);
+  if(!roomJoinPolicyAllowed(actor,room,{inviteToken}))return res.status(403).json({error:"This room exists, but your account does not meet its access requirements."});
+  if(!roomCapacityAvailable(actor,room))return res.status(403).json({error:"This room has reached its member limit."});
+  // A numeric room code is exchanged server-side for a user-bound join token.
+  // The code itself is never reused as a session credential or exposed in the room list.
+  const joinToken=makeRoomJoinToken(actor.id,room);
+  res.json({room:{id:String(room.id),name:room.name,icon:room.icon||"💬",description:room.description||"",category:room.category||"Community",public:false,rankRequired:String(room.rankRequired||room.rank_required||"MEMBER").toUpperCase(),limit:Number(room.limit||room.room_limit||100),slowMode:Number(room.slowMode||room.slow_mode||0),announcement:room.announcement||"",ownerId:String(room.ownerId||room.created_by||""),creator:room.creator||null,isDefault:false,minAge:0,maxAge:120,friendsOnly:roomFriendsOnly(room),roomTheme:String(db.settings?.room_themes?.[String(room.id)]||"obsidian"),locked:!!(room.passwordHash||room.password_hash),onlineCount:visibleRoomOnlineCount(room.id)},joinToken});
+});
+app.post("/api/rooms/invites/resolve",auth,(req,res)=>{
+  const actor=current(req),roomId=String(req.body?.roomId||""),inviteToken=String(req.body?.inviteToken||"");
+  const room=db.rooms.find(item=>String(item.id)===roomId&&roomIsPrivate(item));
+  if(!room||!verifyRoomInviteToken(inviteToken,room))return res.status(404).json({error:"That room invitation is invalid or expired."});
+  if(!roomJoinPolicyAllowed(actor,room,{inviteToken}))return res.status(403).json({error:"Your account does not meet this room's access requirements."});
+  res.json({room:{id:String(room.id),name:room.name,icon:room.icon||"💬",description:room.description||"",category:room.category||"Community",public:false,rankRequired:String(room.rankRequired||room.rank_required||"MEMBER").toUpperCase(),limit:Number(room.limit||room.room_limit||100),slowMode:Number(room.slowMode||room.slow_mode||0),announcement:room.announcement||"",ownerId:String(room.ownerId||room.created_by||""),creator:room.creator||null,isDefault:false,minAge:Number(room.minAge??room.min_age??0),maxAge:Number(room.maxAge??room.max_age??120),friendsOnly:roomFriendsOnly(room),roomTheme:String(room.roomTheme||"obsidian"),locked:!!(room.passwordHash||room.password_hash),onlineCount:visibleRoomOnlineCount(room.id)}});
+});
+
+function roomStaffStore(){ db.settings ||= {}; db.settings.room_staff ||= {}; db.settings.room_mutes ||= {}; db.settings.room_blocks ||= {}; db.settings.room_kicks ||= {}; return db.settings; }
+function roomRole(roomId,userId){return roomStaffStore().room_staff[String(roomId)]?.[String(userId)]||"USER";}
+function roomRoleLevel(role){return ({USER:0,ROOM_MODERATOR:1,ROOM_ADMIN:2,ROOM_OWNER:3})[String(role||"USER").toUpperCase()]||0;}
+const ROOM_ROLE_PERMISSION_DEFAULTS={
+  ROOM_MODERATOR:{mute:true,kick:false,block:false,delete_messages:true,clear_room:false,edit_rules:false,manage_staff:false,assign_ranks:false,edit_room:false},
+  ROOM_ADMIN:{mute:true,kick:true,block:true,delete_messages:true,clear_room:true,edit_rules:false,manage_staff:false,assign_ranks:false,edit_room:true}
+};
+const ROOM_ROLE_PERMISSION_KEYS=["mute","kick","block","delete_messages","clear_room","edit_rules","manage_staff","assign_ranks"];
+function roomRoleCan(roomId,userId,permission){
+  const role=roomRole(roomId,userId);
+  if(role==="ROOM_OWNER")return true;
+  if(!ROOM_ROLE_PERMISSION_DEFAULTS[role])return false;
+  const configured=db.settings?.room_role_permissions?.[role];
+  return typeof configured?.[permission]==="boolean"?configured[permission]:!!ROOM_ROLE_PERMISSION_DEFAULTS[role][permission];
+}
+function roomOwnerOrGlobal(u,room){return roomRole(room.id,u.id)==="ROOM_OWNER"||["OWNER","COOWNER","COMMISSOR","DEVELOPER"].includes(String(u.rank||"").toUpperCase())||String(room.ownerId||room.owner_id||room.createdBy||room.created_by||"")===String(u.id);}
+function requirePrivateRoomAccess(req,res,room,actor=current(req)){
+  if(!roomIsPrivate(room)||verifyRoomJoinToken(req.headers["x-room-join-token"],actor?.id,room))return true;
+  res.status(403).json({error:"Join this private room before viewing its details."});
+  return false;
+}
+function evictRoomSocketsWithoutAccess(room){
+  let changed=false;
+  for(const socket of io.sockets.sockets.values()){
+    if(String(socket.data?.roomId||"")!==String(room.id))continue;
+    const user=findUser(socket.data?.userId);
+    if(user&&roomAgeAllowed(user,room)&&verifyRoomJoinToken(socket.data?.roomJoinToken,user.id,room))continue;
+    socket.leave("room:"+room.id);
+    socket.data.roomId=null;
+    socket.data.roomJoinToken=null;
+    if(user&&String(user.roomId||"")===String(room.id))user.roomId=null;
+    socket.emit("room-error",{roomId:String(room.id),error:"Room access changed. Join the room again if you still have access."});
+    changed=true;
+  }
+  if(changed){save();io.emit("presence");}
+  return changed;
+}
+app.get("/api/owner/room-role-permissions",ownerOnly,(req,res)=>{
+  db.settings ||= {};db.settings.room_role_permissions ||= {};
+  const permissions={};
+  for(const role of Object.keys(ROOM_ROLE_PERMISSION_DEFAULTS)){
+    permissions[role]={...ROOM_ROLE_PERMISSION_DEFAULTS[role],...(db.settings.room_role_permissions[role]||{})};
+  }
+  res.json({roles:Object.keys(ROOM_ROLE_PERMISSION_DEFAULTS),keys:ROOM_ROLE_PERMISSION_KEYS,permissions});
+});
+app.put("/api/owner/room-role-permissions",ownerOnly,async(req,res)=>{
+  const incoming=req.body?.permissions;
+  if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Provide room-role permissions."});
+  const clean={};
+  for(const role of Object.keys(ROOM_ROLE_PERMISSION_DEFAULTS)){
+    const supplied=incoming[role];
+    if(!supplied||typeof supplied!=="object"||Array.isArray(supplied))return res.status(400).json({error:"Missing permissions for "+role});
+    clean[role]={};
+    for(const key of ROOM_ROLE_PERMISSION_KEYS){
+      if(typeof supplied[key]!=="boolean")return res.status(400).json({error:"Invalid permission "+role+"."+key});
+      clean[role][key]=supplied[key];
+    }
+  }
+  db.settings ||= {};db.settings.room_role_permissions=clean;
+  try{
+    await pool.query("INSERT INTO settings(key,value) VALUES('room_role_permissions',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(clean)]);
+    save();log(current(req),"ROOM_ROLE_PERMISSIONS_UPDATE","room roles",{permissions:clean});
+    res.json({ok:true,permissions:clean});
+  }catch(error){console.error("Room role permission save failed:",error);res.status(500).json({error:"Could not save room-role permissions."});}
+});
+app.get("/api/rooms/:id/staff",auth,(req,res)=>{
+  const actor=current(req),room=db.rooms.find(x=>String(x.id)===String(req.params.id));if(!room)return res.status(404).json({error:"Room not found"});
+  if(!requirePrivateRoomAccess(req,res,room,actor))return;
+  const store=roomStaffStore().room_staff[String(room.id)]||{};
+  const staff=Object.entries(store).filter(([,role])=>role!=="USER").map(([userId,role])=>({user:safeUser(db.users.find(u=>String(u.id)===String(userId))||{}),role,badge:role==="ROOM_OWNER"?"🎩":role==="ROOM_ADMIN"?"💫":"🪄"})).filter(x=>x.user?.id);
+  res.json({roomId:String(room.id),myRole:roomRole(room.id,current(req).id),staff});
+});
+app.get("/api/rooms/:id/rules",auth,(req,res)=>{
+  const actor=current(req),room=db.rooms.find(x=>String(x.id)===String(req.params.id));if(!room)return res.status(404).json({error:"Room not found"});
+  if(!requirePrivateRoomAccess(req,res,room,actor))return;
+  const rules=String(db.settings?.room_rules?.[String(room.id)]||room.rules||"");
+  res.json({roomId:String(room.id),roomName:room.name,rules});
+});
+app.put("/api/rooms/:id/rules",auth,(req,res)=>{
+  const actor=current(req),room=db.rooms.find(x=>String(x.id)===String(req.params.id));if(!room)return res.status(404).json({error:"Room not found"});
+  if(!requirePrivateRoomAccess(req,res,room,actor))return;
+  if(!roomOwnerOrGlobal(actor,room)&&!roomRoleCan(room.id,actor.id,"edit_rules"))return res.status(403).json({error:"Room-rules permission is not granted to your room role."});
+  const rules=cleanText(req.body?.rules||"").trim().slice(0,4000);
+  db.settings ||= {};db.settings.room_rules ||= {};db.settings.room_rules[String(room.id)]=rules;
+  save();log(actor,"ROOM_RULES_UPDATE",room.name,{roomId:String(room.id)});
+  res.json({ok:true,rules});
+});
+app.get("/api/rooms/:id/moderation-log",auth,(req,res)=>{
+  const actor=current(req),room=db.rooms.find(x=>String(x.id)===String(req.params.id));if(!room)return res.status(404).json({error:"Room not found"});
+  if(!requirePrivateRoomAccess(req,res,room,actor))return;
+  if(!roomOwnerOrGlobal(actor,room)&&roomRoleLevel(roomRole(room.id,actor.id))<1&&!hasRank(actor,"MOD"))return res.status(403).json({error:"Room staff access required."});
+  const logs=(db.settings?.room_moderation_logs?.[String(room.id)]||[]).slice(-100).reverse();
+  res.json({roomId:String(room.id),roomName:room.name,logs});
+});
+function recordRoomModeration(roomId,entry){
+  const settings=roomStaffStore();settings.room_moderation_logs ||= {};const key=String(roomId);
+  settings.room_moderation_logs[key] ||= [];settings.room_moderation_logs[key].push({...entry,time:Date.now()});
+  if(settings.room_moderation_logs[key].length>500)settings.room_moderation_logs[key].splice(0,settings.room_moderation_logs[key].length-500);
+}
+app.put("/api/rooms/:id/staff/:userId",auth,(req,res)=>{
+  const actor=current(req),room=db.rooms.find(x=>String(x.id)===String(req.params.id)),target=db.users.find(x=>String(x.id)===String(req.params.userId));
+  if(!room||!target)return res.status(404).json({error:"Room or user not found"});
+  if(!requirePrivateRoomAccess(req,res,room,actor))return;
+  const role=String(req.body.role||"USER").toUpperCase();
+  if(!["USER","ROOM_MODERATOR","ROOM_ADMIN"].includes(role))return res.status(400).json({error:"Invalid room rank. Choose User, Room Moderator, or Room Admin."});
+  const permissionNeeded=role==="USER"?"manage_staff":"assign_ranks";
+  if(!roomOwnerOrGlobal(actor,room)&&!roomRoleCan(room.id,actor.id,permissionNeeded))return res.status(403).json({error:"Your room role does not have permission to "+(role==="USER"?"manage or remove room staff.":"assign room ranks.")});
+  if(role!=="USER"&&(!Array.isArray(db.settings?.feature_grants?.room_rank_assign)||!db.settings.feature_grants.room_rank_assign.length))return res.status(403).json({error:"Room-rank assignment is disabled in Feature Granting."});
+  if(String(target.rank||"").toUpperCase()==="DEVELOPER"&&String(actor.rank||"").toUpperCase()!=="DEVELOPER")return res.status(403).json({error:"Only the Developer can change this account's room rank."});
+  const targetGlobalRank=String(target.rank||"MEMBER").toUpperCase();
+  const targetIsStaff=(rankOrder[targetGlobalRank]??-1)>=(rankOrder["MOD"]??4)||String(target.username||"").toLowerCase()==="maleficent";
+  if(targetIsStaff&&!canAccessStaffTarget(actor,target))return res.status(403).json({error:"You cannot change room ranks for an equal or higher-ranked staff account. Room rank never overrides global staff hierarchy."});
+  const settings=roomStaffStore(),key=String(room.id);settings.room_staff[key] ||= {};
+  if(role==="USER")delete settings.room_staff[key][String(target.id)];else settings.room_staff[key][String(target.id)]=role;
+  save();log(actor,"ROOM_RANK_CHANGE",target.username,{roomId:String(room.id),role});recordRoomModeration(room.id,{actorId:String(actor.id),actorUsername:actor.username,targetId:String(target.id),targetUsername:target.username,action:"RANK_CHANGE",role});
+  res.json({ok:true,roomId:String(room.id),userId:String(target.id),role,badge:role==="ROOM_ADMIN"?"👑":role==="ROOM_MODERATOR"?"🛡️":"⚡"});
+});
+app.post("/api/rooms/:id/staff-action",auth,async(req,res)=>{
+  const actor=current(req),room=db.rooms.find(x=>String(x.id)===String(req.params.id)),target=db.users.find(x=>String(x.id)===String(req.body.userId));
+  if(!room||!target)return res.status(404).json({error:"Room or user not found"});
+  if(!requirePrivateRoomAccess(req,res,room,actor))return;
+  const role=roomRole(room.id,actor.id),level=roomRoleLevel(role),global=["OWNER","COOWNER","COMMISSOR","DEVELOPER"].includes(String(actor.rank||"").toUpperCase());
+  const action=String(req.body.action||"").toUpperCase(),reason=cleanText(req.body.reason||"Room rule violation").slice(0,240);
+  if(target.id===actor.id)return res.status(400).json({error:"You cannot moderate yourself."});
+  const targetGlobalRank=String(target.rank||"MEMBER").toUpperCase();
+  const targetIsStaff=(rankOrder[targetGlobalRank]??-1)>=(rankOrder["MOD"]??4)||String(target.username||"").toLowerCase()==="maleficent";
+  if(targetIsStaff&&!canAccessStaffTarget(actor,target))return res.status(403).json({error:"You cannot moderate an equal or higher-ranked staff account. Room rank never overrides global staff hierarchy."});
+  if(roomRoleLevel(roomRole(room.id,target.id))>=level&&!global)return res.status(403).json({error:"You cannot moderate someone with an equal or higher room rank."});
+  const settings=roomStaffStore(),key=String(room.id),targetId=String(target.id);
+  const roomModerationEnabled=Array.isArray(db.settings?.feature_grants?.room_moderate)&&db.settings.feature_grants.room_moderate.length>0;
+  const actionPermission={MUTE:"mute",KICK:"kick",BLOCK:"block",UNBLOCK:"block"}[action];
+  if(actionPermission&&(!roomModerationEnabled||(!global&&!roomRoleCan(room.id,actor.id,actionPermission))))return res.status(403).json({error:"This room role does not have permission for "+action.toLowerCase()+"."});
+  if(action==="MUTE"){settings.room_mutes[key] ||= {};settings.room_mutes[key][targetId]={until:Date.now()+Math.max(1,Math.min(60,Number(req.body.minutes)||5))*60000,reason,by:String(actor.id)};}
+  else if(action==="BLOCK"){settings.room_blocks[key] ||= {};settings.room_blocks[key][targetId]={reason,by:String(actor.id),time:Date.now()};} else if(action==="KICK"){settings.room_kicks[key] ||= {};settings.room_kicks[key][targetId]={reason,by:String(actor.id),until:Date.now()+60000};}
+  else if(action==="UNBLOCK"){delete settings.room_blocks[key]?.[targetId];}
+  else return res.status(400).json({error:"Unsupported room action."});
+  save();log(actor,"ROOM_STAFF_ACTION",target.username,{roomId:key,action,reason});recordRoomModeration(room.id,{actorId:String(actor.id),actorUsername:actor.username,targetId:String(target.id),targetUsername:target.username,action,reason,minutes:action==="MUTE"?Math.max(1,Math.min(60,Number(req.body.minutes)||5)):undefined});
+  if(action==="KICK"||action==="BLOCK"){
+    for(const sock of io.sockets.sockets.values()){
+      if(String(sock.data?.userId||sock.userId||sock.user?.id||"")!==targetId||String(sock.data?.roomId||"")!==key)continue;
+      sock.leave("room:"+room.id);sock.data.roomId=null;sock.data.roomJoinToken=null;
+      sock.emit("room:kicked",{roomId:key,reason,blocked:action==="BLOCK",until:action==="KICK"?settings.room_kicks[key][targetId].until:null});
+    }
+    if(String(target.roomId||"")===key)target.roomId=null;
+    io.emit("presence");
+  }
+  res.json({ok:true,action,reason});
+});
+app.put("/api/rooms/:id",auth,async(req,res)=>{
+  const u=current(req),r=db.rooms.find(x=>String(x.id)===String(req.params.id)); if(!r)return res.status(404).json({error:"Room not found"});
+  if(r.isDefault || /^main room$/i.test(String(r.name||"").trim()))return res.status(403).json({error:"The permanent Main Room cannot be modified."});
+  const canEditThisRoom=roomOwnerOrGlobal(u,r)||roomRoleCan(r.id,u.id,"edit_room")||featureGrantAllowed(u,"edit_rooms")||featureGrantAllowed(u,"edit_room");
+  if(!canEditThisRoom)return res.status(403).json({error:"Room editing is available to this room's owner, room admins, and globally authorized staff."});
+  const fields={}; for(const k of ["name","icon","description","category","rankRequired","limit","slowMode","banner","public"]) if(req.body[k]!==undefined) fields[k]=req.body[k];
+  if(req.body.ageCriteria!==undefined){
+    const criteria=String(req.body.ageCriteria||"").toLowerCase();
+    const ageRanges={teen:[0,19],adult:[20,120],global:[0,120]};
+    if(!Object.prototype.hasOwnProperty.call(ageRanges,criteria))return res.status(400).json({error:"Choose Teen, Adult, or Global age criteria."});
+    fields.minAge=ageRanges[criteria][0];fields.maxAge=ageRanges[criteria][1];
+  }
+  if(fields.name!==undefined){fields.name=cleanText(fields.name).trim().slice(0,50);if(!fields.name)return res.status(400).json({error:"Room name is required."});}
+  if(fields.rankRequired!==undefined){
+    fields.rankRequired=String(fields.rankRequired||"").toUpperCase();
+    if(!ranks.includes(fields.rankRequired))return res.status(400).json({error:"Choose a valid current rank for this room."});
+  }
+  if(fields.limit!==undefined){fields.limit=Number(fields.limit);if(!Number.isInteger(fields.limit)||fields.limit<2||fields.limit>500)return res.status(400).json({error:"Member limit must be between 2 and 500."});}
+  if(fields.slowMode!==undefined){fields.slowMode=Number(fields.slowMode);if(!Number.isInteger(fields.slowMode)||fields.slowMode<0||fields.slowMode>3600)return res.status(400).json({error:"Slow mode must be between 0 and 3600 seconds."});}
+  if(fields.public!==undefined&&typeof fields.public!=="boolean")return res.status(400).json({error:"Room visibility must be public or private."});
+  if(req.body.friendsOnly!==undefined&&typeof req.body.friendsOnly!=="boolean")return res.status(400).json({error:"Friends-only access must be true or false."});
+  if(req.body.friendsOnly!==undefined){
+    db.settings ||= {};db.settings.room_access ||= {};
+    db.settings.room_access[String(r.id)]={...(db.settings.room_access[String(r.id)]||{}),friendsOnly:req.body.friendsOnly===true};
+    r.friendsOnly=req.body.friendsOnly===true;save();
+  }
+  if(req.body.password!==undefined){const roomPassword=String(req.body.password||"");if(Buffer.byteLength(roomPassword,"utf8")>72)return res.status(400).json({error:"Room passwords must be no more than 72 bytes."});fields.passwordHash=roomPassword?await bcrypt.hash(roomPassword,10):null;}
+  const sets=[],vals=[]; const map={name:"name",icon:"icon",description:"description",category:"category",rankRequired:"rank_required",limit:"room_limit",slowMode:"slow_mode",banner:"banner",public:"is_public",passwordHash:"password_hash",minAge:"min_age",maxAge:"max_age"};
+  for(const [k,v] of Object.entries(fields)){sets.push(`${map[k]}=$${vals.length+1}`);vals.push(k==="rankRequired"?String(v).toUpperCase():v);}
+  if(sets.length){vals.push(Number(r.id));const q=await pool.query(`UPDATE rooms SET ${sets.join(",")} WHERE id=$${vals.length} RETURNING *`,vals);if(!q.rowCount)return res.status(404).json({error:"Room was not found while saving changes."});const x=q.rows[0];Object.assign(r,{name:x.name,icon:x.icon,description:x.description,category:x.category,rankRequired:x.rank_required,limit:x.room_limit,slowMode:x.slow_mode,banner:x.banner,public:x.is_public,passwordHash:x.password_hash,minAge:Number(x.min_age??0),maxAge:Number(x.max_age??120)});}
+  save();
+  // Revalidate signed access after privacy, password, rank, or friend rules change.
+  evictRoomSocketsWithoutAccess(r);
+  log(u,"ROOM_EDIT",r.name);io.emit("rooms_updated");
+  res.json({room:{...r,passwordHash:undefined,inviteToken:undefined}});
+});
+
+app.put("/api/rooms/:id/pin",auth,(req,res)=>{
+  const actor=current(req),room=db.rooms.find(item=>String(item.id)===String(req.params.id));
+  if(!room)return res.status(404).json({error:"Room not found"});
+  if(!["COOWNER","CO-OWNER","CO_OWNER","OWNER","DEVELOPER"].includes(String(actor.rank||"").toUpperCase().replace(/\s+/g,"")))return res.status(403).json({error:"Only Co-owner, Owner, and Developer can pin rooms."});
+  const pinned=typeof req.body?.pinned==="boolean"?req.body.pinned:!db.settings?.room_pins?.[String(room.id)];
+  db.settings ||= {};db.settings.room_pins ||= {};db.settings.room_pins[String(room.id)]=pinned;
+  save();log(actor,pinned?"ROOM_PIN":"ROOM_UNPIN",room.name,{roomId:String(room.id)});
+  io.emit("rooms_updated");res.json({ok:true,roomId:String(room.id),pinned});
+});
+app.put("/api/rooms/:id/theme",auth,(req,res)=>{
+ const actor=current(req),room=db.rooms.find(x=>String(x.id)===String(req.params.id));
+ if(!room)return res.status(404).json({error:"Room not found"});
+ if(!roomOwnerOrGlobal(actor,room)&&!roomRoleCan(room.id,actor.id,"edit_room"))return res.status(403).json({error:"Only the room owner or authorized room staff can change the room theme."});
+ const allowed=["obsidian","midnight","lavender","rose","forest","sunset","ocean","cyberpunk","aurora","sakura","ember","ice"];
+ const theme=String(req.body.theme||"").toLowerCase();if(!allowed.includes(theme))return res.status(400).json({error:"Choose a valid room theme."});
+ db.settings ||= {};db.settings.room_themes ||= {};db.settings.room_themes[String(room.id)]=theme;save();
+ io.to("room:"+room.id).emit("room:theme",{roomId:String(room.id),theme});log(actor,"ROOM_THEME_UPDATE",room.name,{roomId:String(room.id),theme});
+ res.json({ok:true,roomId:String(room.id),theme});
+});
+app.delete("/api/rooms/:id",auth,async(req,res)=>{
+  const u=current(req); const r=db.rooms.find(x=>String(x.id)===String(req.params.id));
+  if(!r)return res.status(404).json({error:"Room not found"});
+  if(r.isDefault || /^main room$/i.test(String(r.name||"").trim())) return res.status(400).json({error:"Cannot delete the permanent Main Room."});
+  if(!featureGrantAllowed(u,"delete_rooms")&&!(roomOwnerOrGlobal(u,r)&&Array.isArray(db.settings?.feature_grants?.room_edit_own)&&db.settings.feature_grants.room_edit_own.length)) return res.status(403).json({error:"Room deletion permission required or disabled in Feature Granting."});
+  const client=await pool.connect();let evidenceId=null;
+  try{
+    await client.query("BEGIN");
+    const lockedRoom=await client.query("SELECT id FROM rooms WHERE id=$1 FOR UPDATE",[Number(r.id)]);
+    if(!lockedRoom.rowCount){await client.query("ROLLBACK");return res.status(404).json({error:"Room not found"});}
+    const stored=await client.query("SELECT id,data,created_at FROM room_messages WHERE room_id=$1 ORDER BY created_at ASC FOR UPDATE",[Number(r.id)]);
+    if(stored.rowCount){
+      const archivedMessages=stored.rows.map(row=>({...(row.data&&typeof row.data==="object"?row.data:{text:String(row.data||"")}),_evidenceMessageId:String(row.id),_evidenceCreatedAt:row.created_at}));
+      const archived=await client.query("INSERT INTO room_clear_evidence(room_id,room_name,cleared_by,cleared_by_username,message_count,messages,cleared_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,NOW()) RETURNING id",[Number(r.id),String(r.name||"Deleted room"),Number(u.id)||null,String(u.username||"Unknown")+" (room deletion)",archivedMessages.length,JSON.stringify(archivedMessages)]);
+      evidenceId=String(archived.rows[0].id);
+    }
+    await client.query("DELETE FROM rooms WHERE id=$1",[Number(r.id)]);
+    await client.query("COMMIT");
+  }catch(error){
+    try{await client.query("ROLLBACK")}catch{}
+    console.error("Room deletion failed:",error);
+    return res.status(500).json({error:"Room was not deleted because its message history could not be archived safely."});
+  }finally{client.release();}
+  for(const socket of io.sockets.sockets.values()){
+    if(String(socket.data?.roomId||"")!==String(r.id))continue;
+    socket.leave("room:"+r.id);socket.data.roomId=null;socket.data.roomJoinToken=null;
+    const user=findUser(socket.data?.userId);if(user&&String(user.roomId||"")===String(r.id))user.roomId=null;
+    socket.emit("room-error",{roomId:String(r.id),error:"This room was deleted. Its saved message history is available in staff evidence."});
+  }
+  db.rooms=db.rooms.filter(x=>String(x.id)!==String(req.params.id)); db.messages=db.messages.filter(m=>String(m.roomId)!==String(req.params.id));
+  save();io.emit("presence");log(u,"ROOM_DELETE",r.name,{roomId:String(r.id),evidenceId}); io.emit("rooms_updated"); res.json({ok:true,evidenceId});
+});
+
+app.post(
+  "/api/rooms/:id/join",
+  auth,
+  async(req,res)=>{
+    const u=current(req);
+
+    const r=db.rooms.find(
+      x=>String(x.id)===String(req.params.id)
+    );
+
+    if(!r){
+      return res.status(404).json({
+        error:"Room not found"
+      });
+    }
+    if(!roomAgeAllowed(u,r)){
+      return res.status(403).json({error:"This chat is restricted to the age group assigned to your account. Staff accounts must use Teen Chat."});
+    }
+    const roomState=roomStaffStore(),roomKey=String(r.id),uid=String(u.id);
+    const blocked=roomState.room_blocks[roomKey]?.[uid];
+    if(blocked)return res.status(403).json({error:"You are blocked from this room. Reason: "+String(blocked.reason||"Room rules").slice(0,240)});
+    const kicked=roomState.room_kicks[roomKey]?.[uid];
+    if(kicked&&Number(kicked.until)>Date.now())return res.status(403).json({error:"You were removed from this room temporarily. Reason: "+String(kicked.reason||"Room rules").slice(0,240)});
+    if(kicked&&Number(kicked.until)<=Date.now())delete roomState.room_kicks[roomKey][uid];
+    const isAgeRoom=/^(teen chat|adult chat)$/i.test(String(r.name||"").trim());
+    const isStaffAccount=["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(String(u.rank||"").toUpperCase());
+    if(!isAgeRoom&&!isStaffAccount&&!hasFeature(u,"join_rooms")){
+      return res.status(403).json({error:"Your account does not have permission to join rooms."});
+    }
+
+    if(u.banned===true){
+      return res.status(403).json({error:"You have been banned"});
+    }
+    if(u.kickedUntil && u.kickedUntil>Date.now()){
+      return res.status(403).json({error:"You have been kicked",reason:u.kickReason||"Community rules",kickedUntil:u.kickedUntil});
+    }
+
+ 
+    const userRank=String(u.rank||"MEMBER").toUpperCase();
+    const requiredRank=String(r.rankRequired||"MEMBER").toUpperCase();
+    if(!isAgeRoom && !isStaffAccount && !roomRankCanEnter(u,r)){
+      return res.status(403).json({error:`This room requires ${requiredRank.replaceAll("_"," ")} rank or higher.`});
+    }
+    if(!isAgeRoom && !isStaffAccount && roomFriendsOnly(r)&&!areAcceptedFriends(u,db.users.find(x=>String(x.id)===String(r.ownerId||r.created_by)))){
+      return res.status(403).json({error:"This room is for the room owner's accepted friends only."});
+    }
+
+    const existingJoinToken=verifyRoomJoinToken(req.headers['x-room-join-token'],u.id,r)||verifyRoomJoinToken(req.body?.joinToken,u.id,r);
+    if(!isStaffAccount&&!roomJoinPolicyAllowed(u,r,{inviteToken:req.body?.inviteToken,existingJoinToken})){
+      return res.status(403).json({error:"This room is private or your current account does not meet its access rules."});
+    }
+    if(!isStaffAccount&&!existingJoinToken&&!roomCapacityAvailable(u,r))return res.status(403).json({error:"This room has reached its member limit."});
+
+    if(
+      !isStaffAccount&&r.passwordHash&&
+      !(await bcrypt.compare(
+        req.body.password||"",
+        r.passwordHash
+      ))
+    ){
+      return res.status(403).json({
+        error:"Wrong room password."
+      });
+    }
+
+    if(!u.hideMode&&!u.invisible)systemNotice(`${u.displayName||u.username} has joined the room ${r.name}.`,r.id);
+    res.json({
+      ok:true,
+      joinToken:makeRoomJoinToken(u.id,r),
+      room:{
+        ...r,
+        passwordHash:undefined,
+        inviteToken:undefined
+      }
+    });
+  }
+);
+
+app.get('/api/rooms/:id/pinned',auth,(req,res)=>{
+  const room=db.rooms.find(x=>String(x.id)===String(req.params.id)),actor=current(req); if(!room)return res.status(404).json({error:'Room not found'});
+  if(!verifyRoomJoinToken(req.headers['x-room-join-token'],actor.id,room))return res.status(403).json({error:'Join this room before viewing pinned messages.'});
+  res.json({messages:db.messages.filter(m=>String(m.roomId)===String(room.id)&&m.pinned&&!m.deleted).sort((a,b)=>b.time-a.time)});
+});
+
+app.get("/api/rooms/:id/messages",auth,async(req,res)=>{
+  res.set("Cache-Control","no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma","no-cache");
+  res.set("Expires","0");
+  const actor=current(req),room=db.rooms.find(x=>String(x.id)===String(req.params.id));
+  if(!room)return res.status(404).json({error:"Room not found"});
+  if(!verifyRoomJoinToken(req.headers['x-room-join-token'],actor.id,room))return res.status(403).json({error:"Join this room before viewing its messages."});
+  const {rows}=await pool.query(`SELECT data FROM room_messages WHERE room_id=$1 ORDER BY created_at DESC,id DESC LIMIT 300`,[Number(req.params.id)]);
+  const now=Date.now();
+  const messages=rows.reverse().map(r=>r.data).filter(m=>m && (!m.expiresAt||Number(m.expiresAt)>now) && !m.deleted).map(m=>({...m,avatar:m.avatar||(db.users.find(user=>String(user.id)===String(m.userId))?.avatar||""),roomRank:roomRole(room.id,m.userId),roomRankBadge:({USER:"✨",ROOM_MODERATOR:"🪄",ROOM_ADMIN:"💫",ROOM_OWNER:"🎩"})[roomRole(room.id,m.userId)]||"✨"}));
+  db.messages=db.messages.filter(m=>String(m.roomId)!==String(req.params.id)).concat(messages);
+  res.json({messages});
+});
+
+function malReply(user,rawText){
+  const query=String(rawText||"").replace(/^@Mal\s*/i,"").trim().toLowerCase();
+  if(!query)return "Hey @"+(user.displayName||user.username)+"! Try @Mal time, @Mal help, or ask me a question.";
+  if(/^(time|what time is it|current time|clock)$/.test(query)){
+    return "🕒 Current India time: "+new Intl.DateTimeFormat("en-IN",{timeZone:"Asia/Kolkata",dateStyle:"medium",timeStyle:"medium"}).format(new Date())+".";
+  }
+  if(/^(date|today|what is the date)$/.test(query)){
+    return "📅 Today is "+new Intl.DateTimeFormat("en-IN",{timeZone:"Asia/Kolkata",dateStyle:"full"}).format(new Date())+".";
+  }
+  if(/^(help|commands|guide)$/.test(query)){
+    return "✨ Mal commands: @Mal time · @Mal date · @Mal help. You can also ask me a general question.";
+  }
+  if(/^(hi|hello|hey|hii|heyy)[!. ]*$/.test(query))return "Hey @"+(user.displayName||user.username)+"! ✨ What can I help with?";
+  if(/^(who are you|what are you)$/.test(query))return "I'm Mal, the chat assistant for Maleficent Chat. ✨";
+  if(/^(thanks|thank you|ty)[!. ]*$/.test(query))return "You're welcome! 💜";
+  return "✨ I'm here, @"+(user.displayName||user.username)+". Try @Mal time, @Mal date, or @Mal help.";
+}
+
+app.post("/api/rooms/:id/messages",auth,featureAllowed("send_messages"),upload.single("file"),async(req,res)=>{
+  const u=current(req);
+  if(await checkRestrictedMediaUpload(req,res,u,req.file))return;
+  if(req.file&&isUserFeatureBlocked(u,"chat_file_upload"))return res.status(403).json({error:"Sending image/audio attachments has been disabled for your account by staff."});
+  // Ghost Mode hides the sender identity; it must never disable message sending.
+  const r=db.rooms.find(x=>String(x.id)===String(req.params.id));
+  if(!r)return res.status(404).json({error:"Room not found"});
+  if(!verifyRoomJoinToken(req.headers['x-room-join-token'],u.id,r))return res.status(403).json({error:"Join this room before sending messages."});
+  const roomSettings=roomStaffStore(),roomKey=String(r.id),uid=String(u.id);
+  const roomBlock=roomSettings.room_blocks[roomKey]?.[uid];
+  if(roomBlock)return res.status(403).json({error:"You are blocked from this room. Reason: "+String(roomBlock.reason||"Room rules").slice(0,240)});
+  const roomKick=roomSettings.room_kicks[roomKey]?.[uid];
+  if(roomKick&&Number(roomKick.until)>Date.now())return res.status(403).json({error:"You were removed from this room temporarily. Reason: "+String(roomKick.reason||"Room rules").slice(0,240)});
+  if(roomKick&&Number(roomKick.until)<=Date.now())delete roomSettings.room_kicks[roomKey][uid];
+  const roomMute=roomSettings.room_mutes[roomKey]?.[uid];
+  if(roomMute&&Number(roomMute.until)>Date.now())return res.status(403).json({error:"You are muted in this room until "+new Date(Number(roomMute.until)).toLocaleTimeString()+". Reason: "+String(roomMute.reason||"Room rules").slice(0,240)});
+  if(roomMute&&Number(roomMute.until)<=Date.now())delete roomSettings.room_mutes[roomKey][uid];
+  if(u.banned===true)return res.status(403).json({error:"You have been banned",reason:u.banReason||"Community rules"});
+  if(u.kickedUntil&&u.kickedUntil>Date.now())return res.status(403).json({error:"You have been kicked",reason:u.kickReason||"Community rules",kickedUntil:u.kickedUntil});
+  if(u.mutedUntil&&u.mutedUntil>Date.now())return res.status(403).json({error:"You are muted until "+new Date(u.mutedUntil).toLocaleString()});
+  if(req.file && String(u.rank).toUpperCase()!=="DEVELOPER" && !featureGrantAllowed(u,"chat_file_upload")) return res.status(403).json({error:"Your rank cannot upload files in chat."});
+  if(String(u.rank).toUpperCase()!=="DEVELOPER" && req.file){
+    const mime=String(req.file.mimetype||"").toLowerCase();
+    const ext=path.extname(String(req.file.originalname||"")).toLowerCase();
+    const allowedAudioExt=[".mp3",".m4a",".wav",".ogg",".aac",".flac",".opus",".weba"];
+    const allowedImageExt=[".png",".jpg",".jpeg",".gif",".webp",".avif"];
+    const allowedType=mime.startsWith("image/")||mime.startsWith("audio/")||allowedAudioExt.includes(ext)||allowedImageExt.includes(ext);
+    if(!allowedType)return res.status(400).json({error:"Only image and audio files are allowed in chat."});
+  }
+  let text=cleanText(req.body.text);
+  let reelAttachment=null;
+  const reelId=String(req.body.reelId||"").trim();
+  if(reelId){
+    const reelResult=await pool.query("SELECT id,user_id,content,media_url FROM wall_posts WHERE id=$1 AND status IN ('approved','pinned') AND (expires_at IS NULL OR expires_at>NOW())",[reelId]);
+    const reel=reelResult.rows[0];
+    if(!reel||!reel.media_url||! /\.(mp4|webm|ogg)(\?|$)/i.test(String(reel.media_url))){
+      return res.status(404).json({error:"That Reel is no longer available."});
+    }
+    reelAttachment={url:String(reel.media_url),type:"video/mp4",name:"Shadow Reel"};
+    if(!text)text=String(reel.content||"").trim().slice(0,1000);
+  }
+  if(!text&&!req.file&&!reelAttachment)return res.status(400).json({error:"Message is empty."});
+  // Network-level burst guard: protect the message endpoint without treating shared IPs as proof of ban evasion.
+  if(!req.file){
+    const networkKey=String(clientIp(req)||"unknown"), now=Date.now();
+    const recent=(systemNetworkWindows.get(networkKey)||[]).filter(t=>now-t<60000);recent.push(now);systemNetworkWindows.set(networkKey,recent);
+    if(recent.length>80){systemAudit({target:u.id,actor:"SYSTEM",action:"NETWORK_RATE_LIMIT",reason:"More than 80 chat message requests in one minute from the same network address.",source:"network_protection"});return res.status(429).json({error:"Network protection: too many message requests. Please wait a moment."});}
+    if(systemNetworkWindows.size>5000){for(const [k,v] of systemNetworkWindows)if(!v.length||now-v[v.length-1]>120000)systemNetworkWindows.delete(k);}
+  }
+  // Configurable AutoGuard: flood and repeated-message checks run on the server.
+  if(!req.file && String(u.rank||"").toUpperCase()!=="DEVELOPER"){
+    const now=Date.now(), key=String(u.id), signature=String(text||"").toLowerCase().replace(/\\s+/g," ").trim().slice(0,300);
+    const prev=systemModerationWindows.get(key)||{times:[],texts:[]};
+    prev.times=prev.times.filter(t=>now-t<10000); prev.times.push(now);
+    prev.texts=prev.texts.filter(x=>now-x.time<60000); prev.texts.push({text:signature,time:now});
+    systemModerationWindows.set(key,prev);
+    const repeated=prev.texts.filter(x=>x.text===signature).length;
+    const mentionCount=(String(text||"").match(/@[A-Za-z0-9_]{2,24}/g)||[]).length;
+    const suspiciousShortener=/(?:bit[.]ly|tinyurl[.]com|t[.]co|is[.]gd|cutt[.]ly|rb[.]gy)/i.test(String(text||""));
+    const flood=prev.times.length>6 || repeated>=4 || mentionCount>=7 || suspiciousShortener;
+    const configured=db.settings?.system_moderation?.spam_flood;
+    if(flood && configured?.enabled===true){
+      const applied=applySystemRule(u,configured,configured.reason||"Spam/flood detected","spam_flood");
+      if(applied){
+        if(String(configured.action).toUpperCase()==="WARN") return res.status(429).json({error:"AutoGuard warning: "+(configured.reason||"Please slow down.")});
+        if(String(configured.action).toUpperCase()==="MUTE") return res.status(429).json({error:"AutoGuard muted you for "+(configured.durationMinutes||5)+" minutes."});
+        if(String(configured.action).toUpperCase()==="KICK") return res.status(429).json({error:"AutoGuard temporarily kicked you."});
+        if(String(configured.action).toUpperCase()==="BAN") return res.status(403).json({error:"AutoGuard blocked this account."});
+      }
+      return res.status(429).json({error:"Please slow down and avoid repeating messages."});
+    }
+  }
+
+  // Slash commands execute on the server so permission checks cannot be bypassed in the browser.
+  const commandMatch=!req.file&&text.match(/^\/([a-z0-9]+)(?:\s+([\s\S]*))?$/i);
+  if(commandMatch){
+    const typedCommand=commandMatch[1].toLowerCase(),args=String(commandMatch[2]||"").trim();
+    const commandDefs=["rose","bread","brain","welcome","ship","bank","convert","steal","roast","aura","anonymous","abrakadabra","clear"];
+    if(typedCommand==="guide"){
+      if(args)return res.status(400).json({error:"Use /guide without extra text."});
+      const rank=String(u.rank||"MEMBER").toUpperCase();
+      const commandSettings=db.settings?.command_management||{};
+      const descriptions={
+        rose:{usage:"/rose [username]",description:"Send a rose to yourself or another user."},
+        bread:{usage:"/bread [username]",description:"Send bread to yourself or another user."},
+        brain:{usage:"/brain [username]",description:"Show brain power for a user."},
+        welcome:{usage:"/welcome username",description:"Show the Welcome Back popup for a user."},
+        ship:{usage:"/ship username",description:"Check compatibility with a user."},
+        bank:{usage:"/bank",description:"Show your Bank Balance with Diamonds, Gold and XP level."},
+        convert:{usage:"/convert X",description:"Convert X Diamonds into Gold at 1 Diamond = 100 Gold."},
+        steal:{usage:"/steal username",description:"Try the Gold-steal game against a user."},
+        roast:{usage:"/roast username",description:"Generate a playful roast for a user."},
+        aura:{usage:"/aura username",description:"Generate an aura reading for a user."},
+        anonymous:{usage:"/anonymous username message",description:"Send an anonymous private message."},
+        abrakadabra:{usage:"/abrakadabra",description:"Try your luck with your Gold balance."},
+        clear:{usage:"/clear",description:"Clear the current room (authorized ranks only)."},
+        mode:{usage:"/mode",description:"Open your available presence-mode controls."},
+        guide:{name:"guide",usage:"/guide",description:"Show this rank-specific command guide."}
+      };
+      const visible=[];
+      for(const key of commandDefs){
+        const config=commandSettings[key]||{};
+        const allowedRanks=(key==="bank"||key==="convert")?RANK_TIERS.all:(Array.isArray(config.ranks)?config.ranks:(REQUESTED_COMMAND_RANKS[key]||RANK_TIERS.all));
+        if(rank!=="DEVELOPER"&&!allowedRanks.map(x=>String(x||"").toUpperCase()).includes(rank))continue;
+        const item=descriptions[key];if(!item)continue;
+        visible.push({name:String(config.name||key),usage:"/"+String(config.name||key)+(item.usage||("/"+key)).slice(("/"+key).length),description:item.description});
+      }
+      const clearRanks=Array.isArray(commandSettings.clear?.ranks)?commandSettings.clear.ranks:(REQUESTED_COMMAND_RANKS.clear||RANK_TIERS.admin);
+      const clearAllowed=rank==="DEVELOPER"||clearRanks.map(x=>String(x||"").toUpperCase()).includes(rank);
+      const modes=["invisible","dead","ghost"].filter(mode=>modeRankAllowed(mode,rank));
+      if(modes.length)visible.push({...descriptions.mode,description:"Open available modes: "+modes.join(", ")+".",name:"mode"});
+      visible.push(descriptions.guide);
+      return res.json({command:true,guide:true,rank,commands:visible.filter(item=>item.name!=="clear"||clearAllowed)});
+    }
+    const commandSettings=db.settings?.command_management||{};
+    const commandKey=commandDefs.find(key=>String(commandSettings[key]?.name||key).toLowerCase()===typedCommand)||typedCommand;
+    if(commandDefs.includes(commandKey)){
+      const config=commandSettings[commandKey],allowedRanks=(commandKey==="bank"||commandKey==="convert")?RANK_TIERS.all:(Array.isArray(config?.ranks)?config.ranks:(REQUESTED_COMMAND_RANKS[commandKey]||RANK_TIERS.all));
+      const actorRank=String(u.rank||"MEMBER").toUpperCase();
+      if(actorRank!=="DEVELOPER"&&!allowedRanks.includes(actorRank))return res.status(403).json({error:"Your rank cannot use this command."});
+    }
+    const canonicalCommand=commandKey;
+
+    if(canonicalCommand==="anonymous"){
+      const match=args.match(/^@?([a-z0-9_]{2,24})\s+([\s\S]+)$/i);
+      if(!match)return res.status(400).json({error:"Use /anonymous username your message."});
+      const target=db.users.find(x=>String(x.username||"").toLowerCase()===match[1].toLowerCase());
+      if(!target)return res.status(404).json({error:"That username was not found."});
+      if(String(target.id)===String(u.id))return res.status(400).json({error:"You cannot send an anonymous message to yourself."});
+      const anonymousText=cleanText(match[2]).slice(0,2000);
+      if(!anonymousText)return res.status(400).json({error:"Write a message after the username."});
+      const message={id:id(),from:"system-bot",to:target.id,text:anonymousText,time:Date.now(),read:false,delivered:true,anonymous:true,systemBot:true};
+      await pool.query("INSERT INTO private_messages(id,sender_id,receiver_id,message,data,created_at) VALUES($1,NULL,$2,$3,$4::jsonb,NOW())",[message.id,Number(target.id),message.text,JSON.stringify(message)]);
+      db.privateMessages.push(message);
+      notify(target.id,"private-message","Anonymous message","You received an anonymous message from System Bot.");
+      io.to("user:"+target.id).emit("dm",message);
+      return res.json({command:true,anonymousSent:true});
+    }
+    if(canonicalCommand==="abrakadabra"){
+      if(args)return res.status(400).json({error:"Use /Abrakadabra without an amount."});
+      const before=Math.max(0,Math.min(1000000,Math.floor(Number(u.gold)||0)));
+      const magnitude=Math.floor(Math.random()*1000001);
+      const delta=(Math.random()<0.5?-1:1)*magnitude;
+      const after=Math.max(0,Math.min(1000000,before+delta));
+      u.gold=after;
+      db.goldTransactions ||= [];
+      db.goldTransactions.push({id:id(),time:Date.now(),actor:u.id,userId:u.id,type:"ABRAKADABRA",before,after,delta:after-before});
+      save();
+      io.to("user:"+u.id).emit("gold:update",{gold:after});
+      log(u,"GOLD_ABRAKADABRA",u.username,{before,after,delta:after-before});
+      const outcome=after-before;
+      const response="🪄 Abrakadabra! "+(outcome>0?"You gained "+outcome.toLocaleString()+" Gold!":outcome<0?"You lost "+Math.abs(outcome).toLocaleString()+" Gold!":"Your Gold balance stayed the same.")+" Balance: "+after.toLocaleString()+"/1,000,000 Gold.";
+      const notice=await auroraRoomMessage(response,r.id);
+      return res.json({message:notice,command:true,gold:after,delta:outcome});
+    }
+    if(canonicalCommand==="bank"){
+      if(args)return res.status(400).json({error:"Use /bank without a username or extra text."});
+      const bankMessage={
+        id:id(),roomId:String(r.id),userId:null,username:"Bot",displayName:"Bot",rank:"BOT",
+        system:false,isBot:true,bot:"Bot",bankCommand:true,bankUsername:String(u.username||"User"),
+        bankDiamonds:Math.max(0,Number(u.diamonds)||0),bankGold:Math.max(0,Number(u.gold)||0),bankLevel:Math.max(1,Number(u.level)||1),bankXp:Math.max(0,Number(u.xp)||0),
+        text:"BANK BALANCE — "+String(u.username||"User"),reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true
+      };
+      await pool.query(`INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,NULL,$3::jsonb,NOW())`,
+        [bankMessage.id,Number(r.id),JSON.stringify(bankMessage)]);
+      db.messages.push(bankMessage);
+      io.to("room:"+r.id).emit("message",bankMessage);
+      return res.json({message:bankMessage,command:true});
+    }
+    if(canonicalCommand==="convert"){
+      if(!/^\d+$/.test(args))return res.status(400).json({error:"Use /convert X with a whole number of Diamonds."});
+      const amount=Number(args);
+      if(!Number.isSafeInteger(amount)||amount<1)return res.status(400).json({error:"Enter a valid whole number of Diamonds."});
+      const converted=await convertDiamonds(u,amount);
+      if(!converted)return res.status(400).json({error:"You do not have enough Diamonds."});
+      const walletMessage={
+        id:id(),roomId:String(r.id),userId:null,username:"Bot",displayName:"Bot",rank:"BOT",
+        system:false,isBot:true,bot:"Bot",walletCommand:true,walletCommandTitle:"CONVERSION SUCCESSFUL",
+        walletCommandDiamonds:amount,walletCommandGold:amount*100,
+        text:"Converted "+amount.toLocaleString()+" Diamonds into "+(amount*100).toLocaleString()+" Gold.",
+        reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true
+      };
+      await pool.query(`INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,NULL,$3::jsonb,NOW())`,
+        [walletMessage.id,Number(r.id),JSON.stringify(walletMessage)]);
+      db.messages.push(walletMessage);
+      io.to("room:"+r.id).emit("message",walletMessage);
+      return res.json({message:walletMessage,command:true,diamonds:converted.diamonds,gold:converted.gold});
+    }
+    if(canonicalCommand==="steal"){
+      if(!args)return res.status(400).json({error:"Use /steal username."});
+      const requested=args.replace(/^@/,"").trim().split(/\s+/)[0];
+      const target=db.users.find(x=>String(x.username||"").toLowerCase()===requested.toLowerCase());
+      if(!target)return res.status(404).json({error:"That username was not found."});
+      if(String(target.id)===String(u.id))return res.status(400).json({error:"You cannot steal from yourself."});
+      const targetGold=Math.max(0,Math.floor(Number(target.gold)||0));
+      const thiefGold=Math.max(0,Math.floor(Number(u.gold)||0));
+      const mode=Math.random();
+      let outcome,amount,textLine;
+      if(targetGold<1){
+        outcome="empty";amount=0;
+        textLine="🪙 @"+target.username+" has no Gold.";
+      }else if(mode<0.20){
+        outcome="bail";amount=Math.min(targetGold,Math.max(1,Math.floor(Math.random()*Math.min(101,targetGold)+1)));
+        target.gold=targetGold-amount;
+        await pool.query("UPDATE users SET gold=$1 WHERE id=$2",[target.gold,Number(target.id)]);
+        textLine="🚨 Bail fee: @"+target.username+" lost "+amount.toLocaleString()+" Gold. You got nothing.";
+        db.goldTransactions ||= [];
+        db.goldTransactions.push({id:id(),time:Date.now(),actor:u.id,userId:target.id,type:"STEAL_BAIL",delta:-amount,from:target.id});
+        io.to("user:"+target.id).emit("gold:update",{gold:target.gold});
+      }else if(mode<0.35){
+        outcome="reverse";amount=Math.min(thiefGold,Math.max(1,Math.floor(Math.random()*Math.min(101,Math.max(1,thiefGold))+1)));
+        u.gold=thiefGold-amount;target.gold=targetGold+amount;
+        await pool.query("UPDATE users SET gold=$1 WHERE id=$2",[u.gold,Number(u.id)]);
+        await pool.query("UPDATE users SET gold=$1 WHERE id=$2",[target.gold,Number(target.id)]);
+        textLine="🔄 @"+target.username+" took "+amount.toLocaleString()+" Gold from you.";
+        db.goldTransactions ||= [];
+        db.goldTransactions.push({id:id(),time:Date.now(),actor:u.id,userId:u.id,type:"STEAL_REVERSE_LOSS",delta:-amount,to:target.id},{id:id(),time:Date.now(),actor:u.id,userId:target.id,type:"STEAL_REVERSE_GAIN",delta:amount,from:u.id});
+        io.to("user:"+target.id).emit("gold:update",{gold:target.gold});
+        io.to("user:"+u.id).emit("gold:update",{gold:u.gold});
+      }else{
+        amount=Math.min(targetGold,Math.max(1,Math.floor(Math.random()*Math.min(101,targetGold)+1)));
+        outcome="success";target.gold=targetGold-amount;u.gold=thiefGold+amount;
+        await pool.query("UPDATE users SET gold=$1 WHERE id=$2",[u.gold,Number(u.id)]);
+        await pool.query("UPDATE users SET gold=$1 WHERE id=$2",[target.gold,Number(target.id)]);
+        textLine="💰 You stole "+amount.toLocaleString()+" Gold from @"+target.username+".";
+        db.goldTransactions ||= [];
+        db.goldTransactions.push({id:id(),time:Date.now(),actor:u.id,userId:target.id,type:"STEAL_LOSS",delta:-amount,to:u.id},{id:id(),time:Date.now(),actor:u.id,userId:u.id,type:"STEAL_GAIN",delta:amount,from:target.id});
+        io.to("user:"+target.id).emit("gold:update",{gold:target.gold});
+        io.to("user:"+u.id).emit("gold:update",{gold:u.gold});
+      }
+      save();
+      log(u,"GOLD_STEAL",target.username,{outcome,amount,targetId:target.id});
+      const stealMessage={
+        id:id(),roomId:String(r.id),userId:null,username:"Bot",displayName:"Bot",rank:"BOT",
+        system:false,isBot:true,bot:"Bot",stealCommand:true,stealOutcome:outcome,
+        stealActorUsername:String(u.username||"User"),stealTargetUsername:String(target.username||"User"),
+        stealAmount:amount,text:textLine,reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true
+      };
+      await pool.query(`INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,NULL,$3::jsonb,NOW())`,
+        [stealMessage.id,Number(r.id),JSON.stringify(stealMessage)]);
+      db.messages.push(stealMessage);
+      io.to("room:"+r.id).emit("message",stealMessage);
+      return res.json({message:stealMessage,command:true,outcome,amount});
+    }
+    if(canonicalCommand==="welcome"){
+      if(!args)return res.status(400).json({error:"Use /welcome username."});
+      const requested=args.replace(/^@/,"").trim();
+      const target=db.users.find(x=>String(x.username||"").toLowerCase()===requested.toLowerCase());
+      if(!target)return res.status(404).json({error:"That username was not found."});
+      const welcomeMessage={
+        id:id(),roomId:String(r.id),userId:null,username:"Bot",displayName:"Bot",rank:"BOT",
+        system:false,isBot:true,bot:"Bot",welcomeBack:true,welcomeTargetUsername:target.username,
+        usernameColor:"#ff4fd8",text:"WELCOME BACK\n"+target.username,
+        reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true
+      };
+      await pool.query(`INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,NULL,$3::jsonb,NOW())`,
+        [welcomeMessage.id,Number(r.id),JSON.stringify(welcomeMessage)]);
+      db.messages.push(welcomeMessage);
+      io.to("room:"+r.id).emit("message",welcomeMessage);
+      return res.json({message:welcomeMessage,command:true});
+    }
+    if(canonicalCommand==="ship"){
+      if(!args)return res.status(400).json({error:"Use /ship username."});
+      const requested=args.replace(/^@/,"").trim().split(/\s+/)[0];
+      const target=db.users.find(x=>String(x.username||"").toLowerCase()===requested.toLowerCase());
+      if(!target)return res.status(404).json({error:"That username was not found."});
+      const compatibility=Math.floor(Math.random()*101);
+      const shipMessage={
+        id:id(),roomId:String(r.id),userId:null,username:"Bot",displayName:"Bot",rank:"BOT",
+        system:false,isBot:true,bot:"Bot",shipCompatibility:true,
+        shipUsernames:[String(u.username||"User"),String(target.username)],
+        shipCompatibilityPercent:compatibility,
+        usernameColor:"#ff4fd8",
+        text:"COMPATIBILITY CHECK\n"+String(u.username||"User")+" + "+String(target.username)+" = "+compatibility+"%",
+        reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true
+      };
+      await pool.query(`INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,NULL,$3::jsonb,NOW())`,
+        [shipMessage.id,Number(r.id),JSON.stringify(shipMessage)]);
+      db.messages.push(shipMessage);
+      io.to("room:"+r.id).emit("message",shipMessage);
+      return res.json({message:shipMessage,command:true});
+    }
+    if(canonicalCommand==="bread"){
+      let target=u;
+      if(args){
+        const requested=args.replace(/^@/,"").trim().split(/\\s+/)[0];
+        target=db.users.find(x=>String(x.username||"").toLowerCase()===requested.toLowerCase());
+        if(!target)return res.status(404).json({error:"That username was not found."});
+      }
+      const breadMessage={
+        id:id(),roomId:String(r.id),userId:null,username:"Bot",displayName:"Bot",rank:"BOT",
+        system:false,isBot:true,bot:"Bot",breadCommand:true,breadTargetUsername:String(target.username||"User"),
+        text:"FOR YOU",reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true
+      };
+      await pool.query(`INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,NULL,$3::jsonb,NOW())`,
+        [breadMessage.id,Number(r.id),JSON.stringify(breadMessage)]);
+      db.messages.push(breadMessage);
+      io.to("room:"+r.id).emit("message",breadMessage);
+      return res.json({message:breadMessage,command:true});
+    }
+    if(canonicalCommand==="brain"){
+      let target=u;
+      if(args){
+        const requested=args.replace(/^@/,"").trim().split(/\\s+/)[0];
+        target=db.users.find(x=>String(x.username||"").toLowerCase()===requested.toLowerCase());
+        if(!target)return res.status(404).json({error:"That username was not found."});
+      }
+      const brainMessage={
+        id:id(),roomId:String(r.id),userId:null,username:"Bot",displayName:"Bot",rank:"BOT",
+        system:false,isBot:true,bot:"Bot",brainCommand:true,brainTargetUsername:String(target.username||"User"),
+        text:"BRAIN POWER",reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true
+      };
+      await pool.query(`INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,NULL,$3::jsonb,NOW())`,
+        [brainMessage.id,Number(r.id),JSON.stringify(brainMessage)]);
+      db.messages.push(brainMessage);
+      io.to("room:"+r.id).emit("message",brainMessage);
+      return res.json({message:brainMessage,command:true});
+    }
+    if(canonicalCommand==="rose"){
+      let target=u;
+      if(args){
+        const requested=args.replace(/^@/,"").trim().split(/\\s+/)[0];
+        target=db.users.find(x=>String(x.username||"").toLowerCase()===requested.toLowerCase());
+        if(!target)return res.status(404).json({error:"That username was not found."});
+      }
+      const roseMessage={
+        id:id(),roomId:String(r.id),userId:null,username:"Bot",displayName:"Bot",rank:"BOT",
+        system:false,isBot:true,bot:"Bot",roseCommand:true,roseTargetUsername:String(target.username||"User"),
+        text:"FOR YOU",reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true
+      };
+      await pool.query(`INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,NULL,$3::jsonb,NOW())`,
+        [roseMessage.id,Number(r.id),JSON.stringify(roseMessage)]);
+      db.messages.push(roseMessage);
+      io.to("room:"+r.id).emit("message",roseMessage);
+      return res.json({message:roseMessage,command:true});
+    }
+    if(canonicalCommand==="roast" || canonicalCommand==="aura"){
+      if(!args)return res.status(400).json({error:"Use /"+commandKey+" username."});
+      const requested=args.replace(/^@/,"").trim().split(/\\s+/)[0];
+      const target=db.users.find(x=>String(x.username||"").toLowerCase()===requested.toLowerCase());
+      if(!target)return res.status(404).json({error:"That username was not found."});
+      let botMessage;
+      if(canonicalCommand==="roast"){
+        const roasts=[
+          "has so many tabs open that even their brain needs a loading screen. 💀",
+          "could get lost in their own profile settings. 😭",
+          "has the energy of a phone at 1% insisting it is fine. 🔋",
+          "is proof that chaos can have a username. 🌀",
+          "would lose a staring contest to the loading spinner. 🫠",
+          "is buffering in 4K today. 📡"
+        ];
+        const roast=roasts[Math.floor(Math.random()*roasts.length)];
+        botMessage={id:id(),roomId:String(r.id),userId:null,username:"Bot",displayName:"Bot",rank:"BOT",system:false,isBot:true,bot:"Bot",roastCommand:true,roastTargetUsername:target.username,text:"@"+target.username+" "+roast,reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true};
+      }else{
+        const auras=[
+          {color:"#a855f7",name:"SHADOW MONARCH",vibe:"mysterious and unstoppable"},
+          {color:"#ff4fd8",name:"CHAOS MAGNET",vibe:"unpredictable main-character energy"},
+          {color:"#5cffb0",name:"FOREST PHANTOM",vibe:"calm, rare, and quietly powerful"},
+          {color:"#60a5fa",name:"MIDNIGHT ORACLE",vibe:"dreamy and hard to read"},
+          {color:"#fbbf24",name:"GOLDEN MENACE",vibe:"bold confidence with a little chaos"}
+        ];
+        const aura=auras[Math.floor(Math.random()*auras.length)];
+        const score=Math.floor(Math.random()*101);
+        botMessage={id:id(),roomId:String(r.id),userId:null,username:"Bot",displayName:"Bot",rank:"BOT",system:false,isBot:true,bot:"Bot",auraCommand:true,auraTargetUsername:target.username,auraScore:score,auraName:aura.name,auraVibe:aura.vibe,auraColor:aura.color,text:"AURA ANALYSIS\\n@"+target.username+" — "+aura.name+" ("+score+"%)",reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true};
+      }
+      await pool.query(`INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,NULL,$3::jsonb,NOW())`,
+        [botMessage.id,Number(r.id),JSON.stringify(botMessage)]);
+      db.messages.push(botMessage);
+      io.to("room:"+r.id).emit("message",botMessage);
+      return res.json({message:botMessage,command:true});
+    }
+    if(commandKey!=="clear")return res.status(400).json({error:"Unknown command. Available commands: /clear, /Abrakadabra, /welcome, /ship, /roast, /aura, /rose, /bread, and /brain."});
+
+  }
+  if((r.locked||db.settings?.locked_rooms?.[String(r.id)]) && !hasRank(u,"MOD") && String(u.rank).toUpperCase()!=="DEVELOPER")return res.status(403).json({error:"This room is locked. Only staff can send messages."});
+
+  // Report-only filter words use the "r:" prefix. Keep the message unchanged and do not notify the sender.
+  const reportOnlyMatch=reportOnlyFilteredWord(text);
+  if(reportOnlyMatch && String(u.rank).toUpperCase()!=="DEVELOPER"){
+    const autoReport={
+      id:id(),time:Date.now(),reporter:null,reporterUsername:"System filter",
+      reportedUserId:u.id,reportedUserUsername:u.username,reportedUserDisplayName:u.displayName||u.username,
+      messageId:id(),roomId:String(r.id),
+      messageSnapshot:{text:text,username:u.username,displayName:u.displayName||u.username,rank:u.rank,roomId:String(r.id),time:Date.now()},
+      category:"Filtered-word alert",reason:"Matched report-only filter rule",
+      status:"OPEN",kind:"message",automatic:true,matchedWord:reportOnlyMatch
+    };
+    try{
+      await pool.query("INSERT INTO reports(id,reporter_id,reported_id,conversation_user_id,reason,data,created_at) VALUES($1,NULL,$2,NULL,$3,$4::jsonb,NOW())",[autoReport.id,Number(u.id),autoReport.reason,JSON.stringify(autoReport)]);
+      db.reports ||= [];db.reports.push(autoReport);
+      // Automated filtered-word alerts are stored as staff Reports; do not create a separate notification entry.
+      save();
+    }catch(e){console.error("Report-only filter persistence failed:",e?.message||e);}
+  }
+  const matchedFilter=filteredWord(text);
+  const affected=(db.settings.filter_affected_ranks||[]).map(x=>String(x).toUpperCase());
+  let autoMuted=false;
+  if(matchedFilter && String(u.rank).toUpperCase()!=="DEVELOPER" && affected.includes(String(u.rank).toUpperCase())){
+    const minutes=Math.max(1,Number(db.settings.filterMuteDurationMinutes||5));
+    const stars="*".repeat(Math.max(3,String(matchedFilter).length));
+    const re=new RegExp(String(matchedFilter).replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"gi");
+    text=text.replace(re,stars); u.mutedUntil=Date.now()+minutes*60000; u.muteReason="Automatic filtered-word protection"; autoMuted=true;
+    db.moderationHistory.push({id:id(),time:Date.now(),target:u.id,actor:"SYSTEM",action:"AUTO_MUTE",reason:`Filtered word: ${matchedFilter}`,minutes});
+    notify(u.id,"moderation","Auto-mute",`Your message matched the room filter and you were muted for ${minutes} minute${minutes===1?"":"s"}.`);
+  }
+  const roomRank=roomRole(r.id,u.id);
+  const anonymousMode=!!(u.hideMode||u.deadMode); // Ghost and Dead messages are sent as Aurora.
+   const m={id:id(),roomId:String(r.id),userId:anonymousMode?null:u.id,username:anonymousMode?"Aurora":u.username,displayName:anonymousMode?"Aurora":u.displayName,rank:anonymousMode?"BOT":u.rank,avatar:anonymousMode?"":(u.avatar||""),system:anonymousMode,isBot:anonymousMode,bot:anonymousMode?"Aurora":undefined,anonymous:anonymousMode,roomRank:anonymousMode?"USER":roomRank,roomRankBadge:({USER:"✨",ROOM_MODERATOR:"🪄",ROOM_ADMIN:"💫",ROOM_OWNER:"🎩"})[anonymousMode?"USER":roomRank]||"✨",
+    usernameColor:u.settings?.usernameColor||"",chatFont:u.settings?.chatFont||"",text,
+    attachment:req.file?{url:"/uploads/"+req.file.filename,type:req.file.mimetype,name:req.file.originalname}:reelAttachment,
+    replyTo:req.body.replyTo||null,forwardedFrom:req.body.forwardedFrom||null,reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true};
+  const expiresIn=Number(req.body.expiresIn||0); if(expiresIn>0)m.expiresAt=Date.now()+Math.min(expiresIn,7*86400000);
+
+  // The database insert is the delivery guarantee. Update the in-memory index and
+  // broadcast immediately, then acknowledge the sender before optional work.
+  // Achievements, XP, activity logging, push, and bot lookups must not make a
+  // successfully stored message look stuck in the composer.
+  const slowModeReservation=reserveRoomSlowMode(u,r);
+  if(!slowModeReservation.ok)return res.status(429).json({error:`Slow mode is on. Try again in ${slowModeReservation.retryAfterSeconds} seconds.`,retryAfterSeconds:slowModeReservation.retryAfterSeconds});
+  try{
+    await pool.query(`INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,$3,$4::jsonb,NOW())`,
+      [m.id,Number(r.id),Number(u.id),JSON.stringify(m)]);
+  }catch(error){releaseRoomSlowMode(slowModeReservation);throw error;}
+  db.messages.push(m);
+  // Fan out to the room and every authenticated user who currently has a
+  // connected socket subscribed to it. Do not rely on users.roomId here: that
+  // persisted presence field can lag behind reconnects or another device's
+  // room switch. Socket.IO unions targets, so each socket receives one copy.
+  let roomDelivery=io.to("room:"+r.id);
+  const activeRoomUsers=new Set();
+  for(const connectedSocket of io.sockets.sockets.values()){
+    if(connectedSocket.rooms.has("room:"+r.id) && connectedSocket.data?.userId!=null){
+      activeRoomUsers.add(String(connectedSocket.data.userId));
+    }
+  }
+  for(const memberId of activeRoomUsers){
+    roomDelivery=roomDelivery.to("user:"+memberId);
+  }
+  roomDelivery.emit("message",m);
+  res.json({message:m,autoMuted});
+
+  setImmediate(async()=>{
+    try{
+      u.stats ||= {messages:0,rooms:0,friends:0};
+      u.stats.messages=(u.stats.messages||0)+1;
+      checkAchievements(u);
+      awardXp(u,Number(db.settings.xpPerMessage||5));
+      u.gold=(u.gold||0)+Number(db.settings.goldPerMessage||0);
+
+      // Persist only this sender's message-progress fields. save() writes every user
+      // and rebuilds filter words, which is far too expensive to run per chat message.
+      const progress={
+        stats:u.stats,achievements:u.achievements,level:u.level,
+        xpToday:u.xpToday,xpDailyDay:u.xpDailyDay
+      };
+      await pool.query(
+        `UPDATE users SET gold=$2,xp=$3,profile_data=COALESCE(profile_data,'{}'::jsonb) || $4::jsonb WHERE id=$1`,
+        [Number(u.id),Number(u.gold||0),Number(u.xp||0),JSON.stringify(progress)]
+      );
+
+      // Push is best-effort and never part of the message-send response path.
+      sendWebPushToPublicRoom(r,m,u.id).catch(err=>console.warn("Room push notification failed:",err?.message||err));
+
+      if(!anonymousMode && /^@Mal\s+/i.test(text)){
+        const reply=malReply(u,text);
+        if(reply){
+          const bot={id:id(),system:false,isBot:true,userId:"bot-mal",username:"Mal",displayName:"Mal",rank:"BOT",text:reply,roomId:String(r.id),time:Date.now(),reactions:{},pinned:false,deleted:false};
+          await pool.query(`INSERT INTO room_messages(id,room_id,data,created_at) VALUES($1,$2,$3::jsonb,NOW())`,[bot.id,Number(r.id),JSON.stringify(bot)]);
+          db.messages.push(bot);
+          io.to("room:"+r.id).emit("message",bot);
+        }
+      }
+      const botMention=anonymousMode?null:text.match(/^@([A-Za-z0-9_]+)\s+([\s\S]*)/);
+      if(botMention && !/^Mal$/i.test(botMention[1]) && !(/^Aurora$/i.test(botMention[1]) && /^(truth|dare)\b/i.test(String(botMention[2]||"").trim()))){
+        const bq=await pool.query(`SELECT * FROM bots WHERE LOWER(name)=LOWER($1) AND is_active=true LIMIT 1`,[botMention[1]]);
+        const botRow=bq.rows[0];
+        if(botRow && botRow.auto_reply){
+          const bot={id:id(),system:false,isBot:true,userId:'bot-'+botRow.id,username:botRow.name,displayName:botRow.name,rank:'BOT',text:botRow.auto_reply,roomId:String(r.id),time:Date.now(),reactions:{},pinned:false,deleted:false};
+          await pool.query(`INSERT INTO room_messages(id,room_id,data,created_at) VALUES($1,$2,$3::jsonb,NOW())`,[bot.id,Number(r.id),JSON.stringify(bot)]);
+          db.messages.push(bot);
+          io.to("room:"+r.id).emit("message",bot);
+        }
+      }
+      // Keep message activity in memory without triggering a full-site save per message.
+      db.activityTimeline ||= {};
+      const activityEntries=db.activityTimeline[String(u.id)] ||= [];
+      activityEntries.push({id:id(),type:"message",message:`${u.username} sent a message in ${r.name||"a room"}`,details:{roomId:r.id},time:Date.now()});
+      if(activityEntries.length>100)activityEntries.splice(0,activityEntries.length-100);
+    }catch(error){
+      console.error("Post-send chat side effect failed:",error?.message||error);
+    }
+  });
+});
+
+async function getStoredRoomMessage(messageId){
+  const result=await pool.query("SELECT data FROM room_messages WHERE id=$1 LIMIT 1",[String(messageId)]);
+  let message=result.rows[0]?.data;
+  if(typeof message==="string"){try{message=JSON.parse(message)}catch{return null}}
+  if(!message||typeof message!=="object")return null;
+  const index=db.messages.findIndex(item=>String(item.id)===String(message.id));
+  if(index>=0)db.messages[index]=message;else db.messages.push(message);
+  return message;
+}
+async function saveStoredRoomMessage(message){
+  const result=await pool.query("UPDATE room_messages SET data=$2::jsonb WHERE id=$1 RETURNING data",[String(message.id),JSON.stringify(message)]);
+  if(!result.rowCount)return null;
+  let saved=result.rows[0]?.data;
+  if(typeof saved==="string"){try{saved=JSON.parse(saved)}catch{return null}}
+  if(!saved||typeof saved!=="object")return null;
+  const index=db.messages.findIndex(item=>String(item.id)===String(saved.id));
+  if(index>=0)db.messages[index]=saved;else db.messages.push(saved);
+  return saved;
+}
+
+app.patch("/api/messages/:id",auth,featureAllowed("edit_message"),async(req,res)=>{
+  const u=current(req);
+  try{
+    const m=await getStoredRoomMessage(req.params.id);
+    if(!m)return res.status(404).json({error:"Message not found"});
+    const room=db.rooms.find(item=>String(item.id)===String(m.roomId));
+    if(!room)return res.status(404).json({error:"Room not found"});
+    if(!requirePrivateRoomAccess(req,res,room,u))return;
+      if(String(m.userId)!==String(u.id)&&!hasRank(u,"MOD"))return res.status(403).json({error:"No permission"});
+    const text=cleanText(req.body.text).slice(0,5000);
+    if(!text.trim()&&!m.attachment)return res.status(400).json({error:"Message text cannot be empty."});
+    const updated={...m,text,edited:true,editedAt:Date.now()};
+    const saved=await saveStoredRoomMessage(updated);
+    if(!saved)return res.status(404).json({error:"Message could not be saved."});
+    io.to("room:"+saved.roomId).emit("message:update",saved);
+    res.json({message:saved});
+  }catch(error){console.error("Room message edit failed:",error);res.status(500).json({error:"Could not save the message edit."});}
+});
+
+app.delete(
+  "/api/messages/:id",
+  auth,
+  async(req,res)=>{
+    const u=current(req);
+    try{
+      const m=await getStoredRoomMessage(req.params.id);
+      if(!m)return res.status(404).json({error:"Message not found"});
+      const room=db.rooms.find(item=>String(item.id)===String(m.roomId));
+      if(!room)return res.status(404).json({error:"Room not found"});
+      if(!requirePrivateRoomAccess(req,res,room,u))return;
+      const roomDeleteEnabled=Array.isArray(db.settings?.feature_grants?.room_delete_messages)&&db.settings.feature_grants.room_delete_messages.length>0;
+      const roomStaffCanDelete=roomDeleteEnabled&&roomRoleCan(room.id,u.id,"delete_messages");
+      const ownMessage=String(m.userId)===String(u.id);
+      if(ownMessage&&!featureGrantAllowed(u,"delete_own_messages"))return res.status(403).json({error:"Your account does not have permission to delete its own messages."});
+      if(!ownMessage&&!hasRank(u,"MOD")&&!roomStaffCanDelete)return res.status(403).json({error:"No permission"});
+      const deletedSnapshot={
+        id:m.id,roomId:m.roomId,userId:m.userId,username:m.username,
+        displayName:m.displayName,rank:m.rank,text:m.text||"",time:m.time,
+        attachment:m.attachment||null,deletedBy:u.username,deletedAt:Date.now()
+      };
+      const updated={...m,deleted:true,deletedSnapshot,text:"This message was deleted."};
+      const saved=await saveStoredRoomMessage(updated);
+      if(!saved)return res.status(404).json({error:"Message could not be saved."});
+      await log(u,"MESSAGE_DELETE",m.username||m.id,{...deletedSnapshot,room:room.name||m.roomId,reason:"MESSAGE_DELETE"});
+      io.to("room:"+saved.roomId).emit("message:update",saved);
+      res.json({ok:true});
+    }catch(error){console.error("Room message deletion failed:",error);res.status(500).json({error:"Could not save the message deletion."});}
+  }
+);
+
+app.post(
+  "/api/messages/:id/reaction",
+  auth,
+  featureAllowed("react_message"),
+  async(req,res)=>{
+    const u=current(req);
+    const emoji=String(req.body?.emoji||"👍");
+    const allowed=["❤️","😂","😭","😮","🔥","👏","👍","👎","🥰","🎉"];
+    if(!allowed.includes(emoji))return res.status(400).json({error:"Unsupported reaction."});
+    try{
+      const m=await getStoredRoomMessage(req.params.id);
+      if(!m)return res.status(404).json({error:"Message not found"});
+      const room=db.rooms.find(item=>String(item.id)===String(m.roomId));
+      if(!room)return res.status(404).json({error:"Room not found"});
+      if(!requirePrivateRoomAccess(req,res,room,u))return;
+      if(m.deleted)return res.status(400).json({error:"This message has been deleted."});
+      const reactions=m.reactions&&typeof m.reactions==="object"?{...m.reactions}:{};
+      const users=Array.isArray(reactions[emoji])?reactions[emoji].map(String):[];
+      const userId=String(u.id);
+      reactions[emoji]=users.includes(userId)?users.filter(x=>x!==userId):[...users,userId];
+      const saved=await saveStoredRoomMessage({...m,reactions});
+      if(!saved)return res.status(404).json({error:"Message could not be saved."});
+      io.to("room:"+saved.roomId).emit("message:update",saved);
+      res.json({message:saved});
+    }catch(error){console.error("Room message reaction failed:",error);res.status(500).json({error:"Could not save the reaction."});}
+  }
+);
+
+app.post(
+  "/api/messages/:id/pin",
+  auth,
+  featureAllowed("pin_message"),
+  async(req,res)=>{
+    const u=current(req);
+    try{
+      const m=await getStoredRoomMessage(req.params.id);
+      if(!m)return res.status(404).json({error:"Message not found"});
+      const room=db.rooms.find(item=>String(item.id)===String(m.roomId));
+      if(!room)return res.status(404).json({error:"Room not found"});
+      if(!requirePrivateRoomAccess(req,res,room,u))return;
+      if(!hasRank(u,"MOD"))return res.status(403).json({error:"Moderator required"});
+      const saved=await saveStoredRoomMessage({...m,pinned:!m.pinned});
+      if(!saved)return res.status(404).json({error:"Message could not be saved."});
+      io.to("room:"+saved.roomId).emit("message:update",saved);
+      res.json({message:saved});
+    }catch(error){console.error("Room message pin failed:",error);res.status(500).json({error:"Could not save the pin change."});}
+  }
+);
+
+app.post(
+  "/api/messages/:id/report",
+  auth,
+  featureAllowed("report_message"),
+  async(req,res)=>{
+    const u=current(req);
+    let m;
+    try{m=await getStoredRoomMessage(req.params.id)}catch(error){console.error("Room message report lookup failed:",error);return res.status(500).json({error:"Could not load this message."});}
+    if(!m)return res.status(404).json({error:"Message not found"});
+    const room=db.rooms.find(item=>String(item.id)===String(m.roomId));
+    if(!room)return res.status(404).json({error:"Room not found"});
+    if(!requirePrivateRoomAccess(req,res,room,u))return;
+
+    const report={
+      id:id(),
+      time:Date.now(),
+      reporter:u.id,
+      reporterUsername:u.username,
+      messageId:m.id,
+      roomId:m.roomId,
+      reportedUserId:m.userId,
+      reportedUserUsername:m.username,
+      reportedUserDisplayName:m.displayName,
+      reportedUserRank:m.rank,
+      messageSnapshot:{
+        id:m.id, text:m.text||"", username:m.username, displayName:m.displayName,
+        rank:m.rank, roomId:m.roomId, time:m.time, attachment:m.attachment||null
+      },
+
+      category:
+        cleanText(
+          req.body.category
+        ).slice(0,60)||
+        "Other",
+
+      reason:
+        cleanText(
+          req.body.reason
+        ).slice(0,500),
+
+      status:"OPEN",
+      kind:"message"
+    };
+
+    try{
+      const reportedId=Number(report.reportedUserId);
+      await pool.query("INSERT INTO reports(id,reporter_id,reported_id,conversation_user_id,reason,data,created_at) VALUES($1,$2,$3,NULL,$4,$5::jsonb,NOW())",[report.id,Number(u.id),Number.isFinite(reportedId)?reportedId:null,report.reason||"Message report",JSON.stringify(report)]);
+    }catch(e){
+      console.error("Message report persistence failed:",e);
+      return res.status(500).json({error:"Could not save this report. Please try again."});
+    }
+
+    db.reports.push(report);
+
+    notifyStaff(
+      "report",
+      "New report",
+      "A message was reported."
+    );
+
+    save();
+
+    res.json({
+      report
+    });
+  }
+);
+
+function notifyStaff(
+  type,
+  title,
+  text
+){
+  db.users
+    .filter(
+      u=>staff(u.rank)
+    )
+    .forEach(
+      u=>notify(
+        u.id,
+        type,
+        title,
+        text
+      )
+    );
+}
+
+app.post(
+  "/api/rooms/:id/clear",
+  auth,
+  async(req,res)=>{
+    const u=current(req);
+    const room=db.rooms.find(r=>String(r.id)===String(req.params.id));
+    if(!room)return res.status(404).json({error:"Room not found"});
+    if(!requirePrivateRoomAccess(req,res,room,u))return;
+    const roomOwnerCanClear=roomRoleCan(room.id,u.id,"clear_room")&&Array.isArray(db.settings?.feature_grants?.room_clear_own)&&db.settings.feature_grants.room_clear_own.length>0;
+    if(!commandAllowed(u,"clear")&&!roomOwnerCanClear){
+      return res.status(403).json({
+        error:`The /clear command requires ${commandSettings().clear.replace(/_/g," ")} or higher.`
+      });
+    }
+
+    // Save an evidence snapshot in the same transaction before deleting visible room history.
+    // A failed archive insert aborts the clear, so messages cannot be lost without evidence.
+    const client=await pool.connect();
+    let evidenceId=null,removedCount=0;
+    try{
+      await client.query("BEGIN");
+      const stored=await client.query(
+        "SELECT id,data,created_at FROM room_messages WHERE room_id=$1 ORDER BY created_at ASC",
+        [Number(room.id)]
+      );
+      const evidenceMessages=stored.rows.map(row=>({
+        ...(row.data&&typeof row.data==="object"?row.data:{text:String(row.data||"")}),
+        _evidenceMessageId:String(row.id),
+        _evidenceCreatedAt:row.created_at
+      }));
+      if(evidenceMessages.length){
+        const archived=await client.query(
+          "INSERT INTO room_clear_evidence(room_id,room_name,cleared_by,cleared_by_username,message_count,messages,cleared_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,NOW()) RETURNING id",
+          [Number(room.id),String(room.name||"Unknown room"),Number(u.id)||null,String(u.username||"Unknown"),evidenceMessages.length,JSON.stringify(evidenceMessages)]
+        );
+        evidenceId=String(archived.rows[0].id);
+      }
+      const removed=await client.query("DELETE FROM room_messages WHERE room_id=$1",[Number(room.id)]);
+      removedCount=Number(removed.rowCount||0);
+      await client.query("COMMIT");
+    }catch(error){
+      try{await client.query("ROLLBACK")}catch{}
+      console.error("Room clear evidence archive failed:",error);
+      return res.status(500).json({error:"Room was not cleared because its message evidence could not be safely archived."});
+    }finally{client.release();}
+
+    db.messages=db.messages.filter(m=>String(m.roomId)!==String(room.id));
+    await save();
+    await log(u,"ROOM_CLEAR",room.name,{roomId:String(room.id),removed:removedCount,evidenceId});
+    io.to("room:"+room.id).emit("room:clear");
+    res.json({ok:true,removed:removedCount,evidenceId});
+  }
+);
+
+// Cleared-room evidence is restricted server-side to Instructor and higher ranks.
+function requireClearedRoomEvidenceAccess(req,res,next){
+  const viewer=current(req);
+  if(!viewer||!hasRank(viewer,"INSTRUCTOR"))return res.status(403).json({error:"Cleared room message inspection requires Instructor rank or higher."});
+  next();
+}
+app.get("/api/staff/cleared-room-evidence",auth,requireClearedRoomEvidenceAccess,async(req,res)=>{
+  try{
+    const q=String(req.query.q||"").trim().toLowerCase();
+    const result=await pool.query(
+      `SELECT id,room_id,room_name,cleared_by,cleared_by_username,cleared_at,message_count
+       FROM room_clear_evidence
+       WHERE ($1='' OR LOWER(room_name) LIKE $2 OR LOWER(cleared_by_username) LIKE $2)
+       ORDER BY cleared_at DESC LIMIT 200`,
+      [q,q?"%"+q+"%":"%"]
+    );
+    res.json({evidence:result.rows.map(row=>({...row,id:String(row.id),room_id:row.room_id===null?null:String(row.room_id),cleared_by:row.cleared_by===null?null:String(row.cleared_by),cleared_at:row.cleared_at}))});
+  }catch(error){console.error("Cleared-room evidence list failed:",error);res.status(500).json({error:"Could not load cleared-room evidence."});}
+});
+app.get("/api/staff/cleared-room-evidence/:id",auth,requireClearedRoomEvidenceAccess,async(req,res)=>{
+  try{
+    const result=await pool.query("SELECT id,room_id,room_name,cleared_by,cleared_by_username,cleared_at,message_count,messages FROM room_clear_evidence WHERE id=$1",[req.params.id]);
+    if(!result.rowCount)return res.status(404).json({error:"Cleared-room evidence record not found."});
+    const row=result.rows[0];
+    res.json({evidence:{...row,id:String(row.id),room_id:row.room_id===null?null:String(row.room_id),cleared_by:row.cleared_by===null?null:String(row.cleared_by),messages:Array.isArray(row.messages)?row.messages:[]}});
+  }catch(error){console.error("Cleared-room evidence detail failed:",error);res.status(500).json({error:"Could not open this evidence record."});}
+});
+app.delete("/api/staff/cleared-room-evidence/:id",auth,requireClearedRoomEvidenceAccess,async(req,res)=>{
+  const viewer=current(req);
+  try{
+    const deleted=await pool.query("DELETE FROM room_clear_evidence WHERE id=$1 RETURNING id,room_name,message_count",[req.params.id]);
+    if(!deleted.rowCount)return res.status(404).json({error:"Cleared-room evidence record not found."});
+    await log(viewer,"ROOM_CLEAR_EVIDENCE_DELETE",deleted.rows[0].room_name,{evidenceId:String(deleted.rows[0].id),messageCount:Number(deleted.rows[0].message_count||0)});
+    res.json({ok:true,deletedId:String(deleted.rows[0].id)});
+  }catch(error){console.error("Cleared-room evidence delete failed:",error);res.status(500).json({error:"Could not delete this evidence record."});}
+});
+
+app.get(
+  "/api/search/messages",
+  auth,
+  (req,res)=>{
+    const q=String(req.query.q||"").trim().toLowerCase();
+    const author=String(req.query.author||"").trim().toLowerCase();
+    const roomId=String(req.query.roomId||"").trim();
+    const from=Number(req.query.from||0);
+    const to=Number(req.query.to||0);
+    const messages=db.messages
+      .filter(m=>{
+        const text=String(m.deletedSnapshot?.text ?? m.text ?? "").toLowerCase();
+        if(q && !text.includes(q)) return false;
+        if(author && !String(m.username||"").toLowerCase().includes(author)) return false;
+        if(roomId && m.roomId!==roomId) return false;
+        if(from && m.time<from) return false;
+        if(to && m.time>to) return false;
+        return true;
+      })
+      .slice(-300)
+      .reverse();
+    res.json({messages,rooms:db.rooms.map(r=>({id:r.id,name:r.name}))});
+  }
+);
+
+app.get(
+  "/api/saved-messages",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+    const ids=Array.isArray(u.saved)?u.saved:[];
+    const byId=new Map(db.messages.map(m=>[m.id,m]));
+    const messages=ids.map(x=>byId.get(x)).filter(Boolean).reverse();
+    res.json({messages,savedIds:ids});
+  }
+);
+
+app.post(
+  "/api/messages/:id/save",
+  auth,
+  featureAllowed("save_message"),
+  (req,res)=>{
+    const u=current(req);
+
+    u.saved??=[];
+
+    u.saved.includes(
+      req.params.id
+    )
+      ?u.saved=
+        u.saved.filter(
+          x=>x!==req.params.id
+        )
+      :u.saved.push(
+        req.params.id
+      );
+
+    save();
+
+    res.json({
+      saved:
+        u.saved.includes(
+          req.params.id
+        )
+    });
+  }
+);
+
+app.post(
+  "/api/messages/:id/forward",
+  auth,
+  featureAllowed("send_messages"),
+  async(req,res)=>{
+    const u=current(req);
+    try{
+      const m=await getStoredRoomMessage(req.params.id);
+      if(!m)return res.status(404).json({error:"Message not found"});
+      if(m.deleted)return res.status(400).json({error:"Deleted messages cannot be forwarded."});
+      const sourceRoom=db.rooms.find(item=>String(item.id)===String(m.roomId));
+      const room=db.rooms.find(item=>String(item.id)===String(req.body.roomId));
+      if(!sourceRoom||!room)return res.status(404).json({error:"Room not found"});
+      if(!requirePrivateRoomAccess(req,res,sourceRoom,u))return;
+      const existingJoinToken=verifyRoomJoinToken(req.headers["x-room-join-token"],u.id,room);
+      if(!roomJoinPolicyAllowed(u,room,{existingJoinToken})||((roomIsPrivate(room)||room.passwordHash)&&!existingJoinToken))return res.status(403).json({error:"Join this room before forwarding a message into it."});
+      const forwarded={...m,id:id(),roomId:String(room.id),userId:u.id,username:u.username,displayName:u.displayName,avatar:u.avatar||"",forwardedFrom:m.id,time:Date.now(),edited:false,deleted:false,pinned:false};
+      await pool.query("INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,$3,$4::jsonb,NOW())",[forwarded.id,Number(room.id),Number(u.id),JSON.stringify(forwarded)]);
+      db.messages.push(forwarded);
+      io.to("room:"+room.id).emit("message",forwarded);
+      res.json({message:forwarded});
+    }catch(error){console.error("Message forward failed:",error);res.status(500).json({error:"Could not forward this message."});}
+  }
+);
+
+app.post(
+  "/api/friends/:id/request",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+    const v=findUser(req.params.id);
+
+    if(
+      !v||
+      v.id===u.id
+    ){
+      return res.status(400).json({
+        error:"Invalid user"
+      });
+    }
+
+    if(
+      !db.friends.some(
+        f=>
+          (
+            f.a===u.id&&
+            f.b===v.id
+          )||
+          (
+            f.a===v.id&&
+            f.b===u.id
+          )
+      )
+    ){
+      db.friends.push({
+        a:u.id,
+        b:v.id,
+        status:"PENDING",
+        by:u.id,
+        time:Date.now()
+      });
+    }
+
+    save();
+
+    notify(
+      v.id,
+      "friend-request",
+      "Friend request",
+      "@"+u.username+
+      " sent you a friend request."
+    );
+
+    res.json({
+      ok:true
+    });
+  }
+);
+
+app.post(
+  "/api/friends/:id/accept",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+
+    const f=db.friends.find(
+      f=>
+        (
+          (
+            f.a===req.params.id&&
+            f.b===u.id
+          )||
+          (
+            f.b===req.params.id&&
+            f.a===u.id
+          )
+        )&&
+        f.status==="PENDING"
+    );
+
+    if(!f){
+      return res.status(404).json({
+        error:"Request not found"
+      });
+    }
+
+    f.status="ACCEPTED";
+
+    save();
+
+    notify(
+      req.params.id,
+      "friend",
+      "Friend request accepted",
+      "You are now friends."
+    );
+
+    res.json({
+      ok:true
+    });
+  }
+);
+
+app.delete(
+  "/api/friends/:id",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+
+    db.friends=
+      db.friends.filter(
+        f=>
+          !(
+            (
+              f.a===u.id&&
+              f.b===req.params.id
+            )||
+            (
+              f.b===u.id&&
+              f.a===req.params.id
+            )
+          )
+      );
+
+    save();
+
+    res.json({
+      ok:true
+    });
+  }
+);
+
+app.get(
+  "/api/friends",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+
+    const ids=
+      db.friends
+        .filter(
+          f=>
+            (
+              f.a===u.id||
+              f.b===u.id
+            )&&
+            f.status==="ACCEPTED"
+        )
+        .map(
+          f=>
+            f.a===u.id
+              ?f.b
+              :f.a
+        );
+
+    const incoming=db.friends
+      .filter(f=>f.status==="PENDING"&&f.b===u.id)
+      .map(f=>findUser(f.a))
+      .filter(Boolean)
+      .map(safeUser);
+    const outgoing=db.friends
+      .filter(f=>f.status==="PENDING"&&f.a===u.id)
+      .map(f=>findUser(f.b))
+      .filter(Boolean)
+      .map(safeUser);
+
+    const visibleToViewer=user=>user&&!user.hideMode;
+    res.json({
+      users:ids.map(findUser).filter(visibleToViewer).map(safeUser),
+      incoming:incoming.filter(user=>visibleToViewer(findUser(user.id))),
+      outgoing:outgoing.filter(user=>visibleToViewer(findUser(user.id)))
+    });
+  }
+);
+
+function privateMessagesBlocked(userA,userB){
+  const a=String(userA?.id??""),b=String(userB?.id??"");
+  if(!a||!b)return true;
+  return (userA.blocked||[]).some(id=>String(id)===b)||(userB.blocked||[]).some(id=>String(id)===a);
+}
+app.get("/api/dm/conversations",auth,featureAllowed("private_messages"),async(req,res)=>{
+  res.set("Cache-Control","no-store");
+  const u=current(req);
+  const {rows}=await pool.query(`SELECT DISTINCT ON (other_id) other_id,data,created_at,id,
+    (SELECT COUNT(*)::int FROM private_messages unread WHERE unread.sender_id=other_id AND unread.receiver_id=$1 AND unread.data->>'read' IS DISTINCT FROM 'true') AS unread_count
+    FROM (
+      SELECT id,CASE WHEN sender_id=$1 THEN receiver_id ELSE sender_id END AS other_id,data,created_at
+      FROM private_messages WHERE sender_id=$1 OR receiver_id=$1
+    ) q ORDER BY other_id,created_at DESC,id DESC`,[Number(u.id)]);
+  const conversations=rows.map(r=>({user:safeUser(findUser(String(r.other_id))),lastMessage:r.data,unreadCount:Number(r.unread_count||0)})).filter(x=>x.user);
+  const anonymous=await pool.query(`SELECT data,created_at,(SELECT COUNT(*)::int FROM private_messages unread WHERE unread.sender_id IS NULL AND unread.receiver_id=$1 AND unread.data->>'read' IS DISTINCT FROM 'true') AS unread_count FROM private_messages WHERE sender_id IS NULL AND receiver_id=$1 ORDER BY created_at DESC LIMIT 1`,[Number(u.id)]);
+  if(anonymous.rowCount)conversations.push({user:{id:"system-bot",username:"System",displayName:"System Bot",rank:"BOT",online:false,settings:{}},lastMessage:anonymous.rows[0].data,unreadCount:Number(anonymous.rows[0].unread_count||0)});
+  res.json({conversations});
+});
+
+app.get("/api/dm/:id",auth,featureAllowed("private_messages"),async(req,res)=>{
+  res.set("Cache-Control","no-store");
+  const u=current(req);
+  if(String(req.params.id)==="system-bot"){
+    const {rows}=await pool.query("SELECT data FROM private_messages WHERE sender_id IS NULL AND receiver_id=$1 ORDER BY created_at DESC,id DESC LIMIT 300",[Number(u.id)]);
+    return res.json({messages:rows.reverse().map(r=>r.data)});
+  }
+  const v=findUser(req.params.id); if(!v)return res.status(404).json({error:"User not found"});
+  if(privateMessagesBlocked(u,v))return res.status(403).json({error:"Messaging blocked"});
+  const {rows}=await pool.query(`SELECT data FROM private_messages WHERE (sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1) ORDER BY created_at DESC,id DESC LIMIT 300`,[Number(u.id),Number(v.id)]);
+  res.json({messages:rows.reverse().map(r=>r.data)});
+});
+
+app.post("/api/translate",auth,async(req,res)=>{
+  const text=String(req.body?.text||"").trim().slice(0,4000);
+  if(!text)return res.status(400).json({error:"There is no text to translate."});
+  const providers=[
+    async()=>{
+      const apiKey=String(process.env.OPENAI_API_KEY||"").trim();
+      if(!apiKey)throw new Error("OpenAI translation key is not configured");
+      const response=await fetch("https://api.openai.com/v1/chat/completions",{
+        method:"POST",headers:{authorization:"Bearer "+apiKey,"content-type":"application/json"},
+        body:JSON.stringify({model:String(process.env.OPENAI_MODEL||"gpt-4o-mini"),temperature:0,response_format:{type:"json_object"},messages:[
+          {role:"system",content:'You are a translation engine. Detect the source language and translate the user text into natural English. If it is already English, keep it unchanged. Return only a JSON object with keys "translated" and "detectedLanguage".'},
+          {role:"user",content:text}
+        ]}),signal:AbortSignal.timeout(15000)
+      });
+      if(!response.ok)throw new Error("OpenAI translation returned "+response.status);
+      const data=await response.json(),parsed=JSON.parse(String(data?.choices?.[0]?.message?.content||"{}"));
+      const translated=String(parsed.translated||"").trim();
+      if(!translated)throw new Error("OpenAI returned an empty translation");
+      return {translated,detectedLanguage:String(parsed.detectedLanguage||"").slice(0,24),provider:"OpenAI"};
+    },
+    async()=>{
+      const endpoint="https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q="+encodeURIComponent(text);
+      const response=await fetch(endpoint,{headers:{"accept":"application/json","user-agent":"Mozilla/5.0 MaleficentChat/1.0"},signal:AbortSignal.timeout(10000)});
+      if(!response.ok)throw new Error("Google Translate returned "+response.status);
+      const data=await response.json();
+      const translated=Array.isArray(data?.[0])?data[0].map(part=>String(part?.[0]||"")).join(""):"";
+      if(!translated)throw new Error("Google Translate returned an empty result");
+      return {translated,detectedLanguage:String(data?.[2]||"").slice(0,24),provider:"Google"};
+    },
+    async()=>{
+      const endpoint="https://api.mymemory.translated.net/get?q="+encodeURIComponent(text)+"&langpair=autodetect%7Cen";
+      const response=await fetch(endpoint,{headers:{"accept":"application/json","user-agent":"Mozilla/5.0 MaleficentChat/1.0"},signal:AbortSignal.timeout(10000)});
+      if(!response.ok)throw new Error("MyMemory returned "+response.status);
+      const data=await response.json();
+      const translated=String(data?.responseData?.translatedText||"").trim();
+      if(!translated||Number(data?.responseStatus)>=400)throw new Error("MyMemory returned no translation");
+      return {translated,detectedLanguage:String(data?.responseData?.detectedLanguage||"").slice(0,24),provider:"MyMemory"};
+    }
+  ];
+  let lastError=null;
+  for(const translate of providers){
+    try{return res.json({...await translate(),targetLanguage:"en"});}
+    catch(error){lastError=error;console.warn("Message translation provider failed:",error?.message||error);}
+  }
+  console.error("All message translation providers failed:",lastError?.message||lastError);
+  return res.status(502).json({error:"Translation services are temporarily unavailable. Please try again shortly."});
+});
+
+
+app.post("/api/native/device/register",auth,featureAllowed("private_messages"),async(req,res)=>{
+  const u=current(req),fcmToken=String(req.body?.fcmToken||"").trim();
+  if(!fcmToken||fcmToken.length>4096)return res.status(400).json({error:"Invalid Firebase device token."});
+  const credential=crypto.randomBytes(32).toString("base64url");
+  const credentialHash=crypto.createHash("sha256").update(credential).digest("hex");
+  try{
+    await pool.query(
+      `INSERT INTO native_device_tokens(user_id,fcm_token,credential_hash,last_used_at)
+       VALUES($1,$2,$3,NOW())
+       ON CONFLICT(fcm_token) DO UPDATE SET user_id=EXCLUDED.user_id,credential_hash=EXCLUDED.credential_hash,last_used_at=NOW()`,
+      [Number(u.id),fcmToken,credentialHash]
+    );
+    res.json({ok:true,deviceCredential:credential});
+  }catch(error){console.error("Native device registration failed:",error?.message||error);res.status(500).json({error:"Could not register this device."});}
+});
+
+app.post("/api/native/dm/reply",async(req,res)=>{
+  const credential=String(req.headers["x-device-credential"]||"").trim();
+  const peerId=String(req.body?.peerId||"").trim();
+  const message=cleanText(req.body?.text).trim();
+  if(!credential||credential.length>256)return res.status(401).json({error:"Device authorization required."});
+  if(!peerId||!message)return res.status(400).json({error:"A recipient and reply are required."});
+  try{
+    const hash=crypto.createHash("sha256").update(credential).digest("hex");
+    const stored=await pool.query("SELECT user_id FROM native_device_tokens WHERE credential_hash=$1 LIMIT 1",[hash]);
+    if(!stored.rowCount)return res.status(401).json({error:"Device authorization expired. Open Maleficent Chat to reconnect."});
+    const u=findUser(String(stored.rows[0].user_id)),v=findUser(peerId);
+    if(!u||!v)return res.status(404).json({error:"Conversation user not found."});
+    if(u.banned===true||(u.kickedUntil&&Number(u.kickedUntil)>Date.now()))return res.status(403).json({error:"Account is restricted."});
+    const networkDecision=await networkAccessDecision(req,u);
+    if(!networkDecision.allowed)return res.status(403).json({error:networkDecision.reason||"Network access is restricted."});
+    const construction=db.settings?.under_construction||{};
+    if(construction.enabled===true&&!["DEVELOPER","OWNER"].includes(String(u.rank||"").toUpperCase()))return res.status(503).json({error:"The site is under construction."});
+    if(isUserFeatureBlocked(u,"private_messages")||!hasFeature(u,"private_messages"))return res.status(403).json({error:"Private messaging is not available for this account."});
+    if(privateMessagesBlocked(u,v))return res.status(403).json({error:"Messaging blocked."});
+    const m={id:id(),from:u.id,to:v.id,text:message.slice(0,4000),attachment:null,replyTo:null,time:Date.now(),read:false,delivered:true};
+    await pool.query("INSERT INTO private_messages(id,sender_id,receiver_id,message,data,created_at) VALUES($1,$2,$3,$4,$5::jsonb,NOW())",[m.id,Number(u.id),Number(v.id),m.text,JSON.stringify(m)]);
+    db.privateMessages.push(m);
+    notify(v.id,"private-message",`💌 @${u.username}`,m.text.slice(0,180),`/?dm=${encodeURIComponent(u.id)}`);
+    io.to("user:"+u.id).emit("dm",m);io.to("user:"+v.id).emit("dm",m);
+    await pool.query("UPDATE native_device_tokens SET last_used_at=NOW() WHERE credential_hash=$1",[hash]);
+    res.json({ok:true,messageId:m.id});
+  }catch(error){console.error("Native inline reply failed:",error?.message||error);res.status(500).json({error:"Could not send reply."});}
+});
+
+app.post("/api/dm/:id",auth,featureAllowed("private_messages"),upload.single("file"),async(req,res)=>{
+  const u=current(req),v=findUser(req.params.id); if(!v)return res.status(404).json({error:"User not found"});
+  if(await checkRestrictedMediaUpload(req,res,u,req.file))return;
+  if(privateMessagesBlocked(u,v))return res.status(403).json({error:"Messaging blocked"});
+  const m={id:id(),from:u.id,to:v.id,text:cleanText(req.body.text),attachment:req.file?{url:"/uploads/"+req.file.filename,type:req.file.mimetype,name:req.file.originalname}:null,replyTo:req.body.replyTo||null,time:Date.now(),read:false,delivered:true};
+  if(!m.text&&!m.attachment)return res.status(400).json({error:"Empty message"});
+  await pool.query(`INSERT INTO private_messages(id,sender_id,receiver_id,message,data,created_at) VALUES($1,$2,$3,$4,$5::jsonb,NOW())`,
+    [m.id,Number(u.id),Number(v.id),m.text,JSON.stringify(m)]);
+  // private_messages is already the durable source; avoid save(), which rewrites
+  // every user row and filter-word entry for each private message.
+  db.privateMessages.push(m);
+  const dmPreview=m.text?String(m.text).trim().slice(0,180):(m.attachment?"📎 Attachment":"New private message");
+  notify(v.id,"private-message",`💌 @${u.username}`,dmPreview,`/?dm=${encodeURIComponent(u.id)}`);
+  // Notify every active device for both participants. The client deduplicates
+  // by message ID, so the sender can safely reconcile the optimistic/API copy.
+  // Send separately to both authenticated user rooms so every active device
+  // for each participant receives the new private message.
+  io.to("user:"+u.id).emit("dm",m);io.to("user:"+v.id).emit("dm",m);
+  res.json({message:m});
+});
+
+app.delete("/api/dm/messages/:messageId",auth,featureAllowed("private_messages"),async(req,res)=>{
+  const u=current(req),messageId=String(req.params.messageId||"");
+  if(!messageId||messageId.length>160)return res.status(400).json({error:"Invalid message id."});
+  try{
+    const stored=await pool.query(`SELECT data->'attachment' AS attachment FROM private_messages WHERE id=$1 AND sender_id=$2`,[messageId,Number(u.id)]);
+    if(!stored.rowCount)return res.status(404).json({error:"Message not found or it was not sent by you."});
+    const {rows}=await pool.query(`UPDATE private_messages
+      SET message='',data=COALESCE(data,'{}'::jsonb)||jsonb_build_object('text','','attachment',NULL,'deleted',true,'deletedAt',$3::bigint)
+      WHERE id=$1 AND sender_id=$2 AND data->'deleted' IS DISTINCT FROM 'true'::jsonb
+      RETURNING sender_id,receiver_id,data`,[messageId,Number(u.id),Date.now()]);
+    if(!rows.length)return res.status(404).json({error:"Message not found or it was not sent by you."});
+    const message=rows[0].data;
+    const attachmentUrl=String(stored.rows[0].attachment?.url||"");
+    if(attachmentUrl.startsWith("/uploads/")){
+      const fileName=attachmentUrl.slice("/uploads/".length),filePath=path.resolve(UP,fileName);
+      if(fileName&&path.basename(fileName)===fileName&&path.dirname(filePath)===UP){
+        await fs.promises.unlink(filePath).catch(error=>{if(error.code!=="ENOENT")console.warn("Deleted private-message attachment could not be removed:",error.message);});
+      }
+    }
+    const index=(db.privateMessages||[]).findIndex(item=>String(item.id)===messageId);
+    if(index>=0)db.privateMessages[index]=message;
+    const payload={message};
+    io.to("user:"+rows[0].sender_id).emit("dm-updated",payload);
+    io.to("user:"+rows[0].receiver_id).emit("dm-updated",payload);
+    res.set("Cache-Control","no-store");
+    res.json({ok:true,message});
+  }catch(error){
+    console.error("Private message deletion failed:",error.message);
+    res.status(500).json({error:"Could not delete that message. Please try again."});
+  }
+});
+
+app.post(
+  "/api/dm/:id/read",
+  auth,
+  featureAllowed("private_messages"),
+  async(req,res)=>{
+    const u=current(req);
+    const senderId=String(req.params.id);
+    if(senderId==="system-bot"){
+      await pool.query("UPDATE private_messages SET data=jsonb_set(COALESCE(data,'{}'::jsonb),'{read}','true'::jsonb,true) WHERE sender_id IS NULL AND receiver_id=$1",[Number(u.id)]);
+      db.privateMessages.filter(m=>(m.anonymous===true||m.from==null)&&String(m.to??m.receiverId)===String(u.id)).forEach(m=>m.read=true);
+      return res.json({ok:true});
+    }
+    const sender=findUser(senderId);
+    if(!sender) return res.status(404).json({error:"User not found"});
+    if(senderId===String(u.id)) return res.status(400).json({error:"Cannot mark your own messages as received."});
+    if(privateMessagesBlocked(u,sender))
+      return res.status(403).json({error:"Messaging blocked"});
+    try {
+      // Persist first: never tell the client a receipt was saved if PostgreSQL failed.
+      await pool.query(
+        `UPDATE private_messages
+         SET data=jsonb_set(COALESCE(data,'{}'::jsonb),'{read}','true'::jsonb,true)
+         WHERE sender_id=$1 AND receiver_id=$2`,
+        [Number(senderId),Number(u.id)]
+      );
+      // Update the compatibility cache without rewriting the entire legacy
+      // application snapshot. PostgreSQL already committed the authoritative read state.
+      db.privateMessages
+        .filter(m=>String(m.from??m.sender_id)===senderId&&String(m.to??m.receiverId)===String(u.id))
+        .forEach(m=>m.read=true);
+      // Propagate the persisted read receipt to every connected device belonging
+      // to the sender so message status changes without reopening the chat.
+      io.to("user:"+senderId).emit("dm-read",{from:senderId,to:String(u.id),time:Date.now()});
+      res.set("Cache-Control","no-store");
+      res.json({ok:true});
+    } catch(err) {
+      console.error("Could not persist private-message read receipts:",err.message);
+      res.status(500).json({error:"Could not save read receipts. Please try again."});
+    }
+  }
+);
+
+async function auroraRoomMessage(text, roomId){
+  const notice={id:id(),system:true,username:'Aurora',displayName:'Aurora',rank:'BOT',text:String(text),roomId:String(roomId),time:Date.now(),reactions:{},pinned:false,deleted:false};
+  try{await pool.query(`INSERT INTO room_messages(id,room_id,data,created_at) VALUES($1,$2,$3::jsonb,NOW())`,[notice.id,Number(roomId),JSON.stringify(notice)]);}catch(err){console.error("Aurora message persistence failed:",err.message);}
+  db.messages.push(notice); save(); io.to('room:'+roomId).emit('message',notice); return notice;
+}
+function systemNotice(text, roomId=null){
+  // Room-scoped announcements go only to the room explicitly supplied by the
+  // caller. Site-wide account notices must never fall back to a retired room
+  // or whichever room happens to be first in the database.
+  if(roomId){
+    auroraRoomMessage(text,roomId).catch(err=>console.error("Aurora notice failed:",err.message));
+    return;
+  }
+  const notice={id:id(),system:true,username:'Aurora',displayName:'Aurora',rank:'BOT',text:String(text),roomId:null,time:Date.now(),reactions:{},pinned:false,deleted:false};
+  io.emit('system-message',notice);
+}
+
+async function sendRankChangeBotDM(target,newRank){
+  if(!target?.id)return;
+  const rank=String(newRank||'MEMBER').toUpperCase();
+  const message={
+    id:id(),from:"system-bot",to:target.id,
+    text:"Your Rank Has Been Changed To "+rank,
+    time:Date.now(),read:false,delivered:true,anonymous:true,systemBot:true
+  };
+  await pool.query(
+    "INSERT INTO private_messages(id,sender_id,receiver_id,message,data,created_at) VALUES($1,NULL,$2,$3,$4::jsonb,NOW())",
+    [message.id,Number(target.id),message.text,JSON.stringify(message)]
+  );
+  db.privateMessages.push(message);
+  notify(target.id,"private-message","Your rank has been changed","Your Rank Has Been Changed To "+rank);
+  io.to("user:"+target.id).emit("dm",message);
+}
+
+const DAILY_DIAMOND_REWARDS=[2,3,4,5,6,8,15];
+app.get('/api/daily/status',auth,async(req,res)=>{
+  const q=await pool.query(`SELECT last_claim,streak,TO_CHAR(last_claim,'YYYY-MM-DD') AS claim_day FROM daily_rewards WHERE user_id=$1`,[Number(current(req).id)]);
+  const days=await pool.query(`SELECT TO_CHAR((NOW() AT TIME ZONE 'UTC')::date,'YYYY-MM-DD') AS today,TO_CHAR((NOW() AT TIME ZONE 'UTC')::date-1,'YYYY-MM-DD') AS yesterday`);
+  const row=q.rows[0],today=days.rows[0].today,yesterday=days.rows[0].yesterday,claimed=!!(row&&row.claim_day===today);
+  const nextStreak=row&&row.claim_day===yesterday?Number(row.streak||0)+1:claimed?Number(row.streak||0)+1:1;
+  res.json({claimed,streak:Number(row?.streak||0),nextDiamonds:DAILY_DIAMOND_REWARDS[(nextStreak-1)%7],schedule:DAILY_DIAMOND_REWARDS});
+});
+app.post('/api/daily/claim',auth,async(req,res)=>{
+  const u=current(req);if(!u)return res.status(401).json({error:'Login required'});
+  const gold=Math.max(0,Number(db.settings?.daily_reward_gold??25)),xp=Math.max(0,Number(db.settings?.daily_reward_xp??15));
+  const client=await pool.connect();let streak=1,diamonds=DAILY_DIAMOND_REWARDS[0],balances;
+  try{
+    await client.query('BEGIN');
+    await client.query(`INSERT INTO daily_rewards(user_id,last_claim,streak) VALUES($1,NULL,0) ON CONFLICT(user_id) DO NOTHING`,[Number(u.id)]);
+    const previous=await client.query(`SELECT last_claim,streak,TO_CHAR(last_claim,'YYYY-MM-DD') AS claim_day FROM daily_rewards WHERE user_id=$1 FOR UPDATE`,[Number(u.id)]);
+    const days=await client.query(`SELECT TO_CHAR((NOW() AT TIME ZONE 'UTC')::date,'YYYY-MM-DD') AS today,TO_CHAR((NOW() AT TIME ZONE 'UTC')::date-1,'YYYY-MM-DD') AS yesterday`);
+    const row=previous.rows[0],today=days.rows[0].today,yesterday=days.rows[0].yesterday;
+    if(row?.claim_day===today){await client.query('ROLLBACK');return res.status(409).json({error:'Already claimed today.',claimed:true,streak:Number(row.streak||0),diamonds:Number(u.diamonds||0),gold:Number(u.gold||0),xp:Number(u.xp||0)});}
+    streak=row?.claim_day===yesterday?Number(row.streak||0)+1:1;
+    diamonds=DAILY_DIAMOND_REWARDS[(streak-1)%7];
+    await client.query(`UPDATE daily_rewards SET last_claim=NOW() AT TIME ZONE 'UTC',streak=$2 WHERE user_id=$1`,[Number(u.id),streak]);
+    const updated=await client.query(`UPDATE users SET gold=COALESCE(gold,0)+$1,xp=COALESCE(xp,0)+$2,diamonds=COALESCE(diamonds,0)+$3 WHERE id=$4 RETURNING gold,xp,diamonds`,[gold,xp,diamonds,Number(u.id)]);
+    if(!updated.rowCount)throw new Error('Account not found while claiming daily reward.');
+    balances=updated.rows[0];
+    await client.query(`INSERT INTO wallet_transactions(id,recipient_id,currency,amount,type,note) VALUES($1,$2,'DIAMONDS',$3,'DAILY_REWARD',$4)`,[id(),Number(u.id),diamonds,'Daily login reward · Day '+(((streak-1)%7)+1)]);
+    await client.query('COMMIT');
+  }catch(e){await client.query('ROLLBACK').catch(()=>{});console.error('Daily reward claim failed:',e);return res.status(500).json({error:'Could not claim your daily reward. Please try again.'});}finally{client.release();}
+  u.gold=Number(balances.gold||0);u.xp=Number(balances.xp||0);u.diamonds=Number(balances.diamonds||0);u.level=Math.floor(u.xp/(db.settings.xpPerLevel||100))+1;
+  db.goldTransactions ||= [];if(gold)db.goldTransactions.push({id:id(),time:Date.now(),actor:'SYSTEM',userId:u.id,type:'DAILY_REWARD_GOLD',delta:gold});
+  notify(u.id,'wallet','Daily Diamond reward',`You received ${diamonds} Diamonds, ${gold} Gold and ${xp} XP.`);
+  io.to('user:'+u.id).emit('wallet:update',{userId:u.id,diamonds:u.diamonds,gold:u.gold});
+  io.to('user:'+u.id).emit('gold:update',{gold:u.gold});save();
+  res.json({ok:true,diamonds:u.diamonds,diamondAmount:diamonds,gold:u.gold,xp:u.xp,amount:gold,xpAmount:xp,streak,day:((streak-1)%7)+1});
+});
+app.post('/api/rewards/daily',auth,(req,res)=>res.redirect(307,'/api/daily/claim'));
+
+require('./diamond-store-routes').registerDiamondStoreRoutes({app,pool,current,notify,io,log,id,db,ownerOnly,auth});
+app.get('/api/wallet',auth,async(req,res)=>{
+  const u=current(req);
+  res.set('Cache-Control','no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma','no-cache');
+  res.set('Expires','0');
+  const account=await pool.query('SELECT diamonds,gold FROM users WHERE id=$1',[Number(u.id)]);
+  if(!account.rowCount)return res.status(404).json({error:'Wallet account not found.'});
+  u.diamonds=Number(account.rows[0].diamonds||0);u.gold=Number(account.rows[0].gold||0);
+  const history=await pool.query(`SELECT wt.id,wt.currency,wt.amount::text AS amount,wt.type,wt.note,wt.created_at,wt.sender_id,send.username AS sender_username,wt.recipient_id,receive.username AS recipient_username
+    FROM wallet_transactions wt LEFT JOIN users send ON send.id=wt.sender_id LEFT JOIN users receive ON receive.id=wt.recipient_id
+    WHERE wt.sender_id=$1 OR wt.recipient_id=$1 ORDER BY wt.created_at DESC LIMIT 100`,[Number(u.id)]);
+  res.json({wallet:{diamonds:u.diamonds,gold:u.gold,conversionRate:100},transactions:history.rows.map(row=>({...row,amount:Number(row.amount),created_at:row.created_at})),packages:[{id:'starter',price:1,diamonds:5000},{id:'popular',price:2,diamonds:12000},{id:'royal',price:3,diamonds:20000},{id:'legendary',price:5,diamonds:40000}],dailyDiamondRewards:DAILY_DIAMOND_REWARDS});
+});
+app.get('/api/wallet/recipients',auth,(req,res)=>{
+  const q=String(req.query.q||'').trim().replace(/^@/,'').toLowerCase();
+  if(q.length<2)return res.json({users:[]});
+  const users=db.users.filter(v=>String(v.id)!==String(current(req).id)&&String(v.username||'').toLowerCase().includes(q)).slice(0,10).map(safeUser);
+  res.json({users});
+});
+app.post('/api/wallet/convert',auth,async(req,res)=>{
+  const amount=Number(req.body?.amount);
+  if(!Number.isSafeInteger(amount)||amount<1)return res.status(400).json({error:'Enter a whole number of Diamonds to convert.'});
+  try{
+    const result=await convertDiamonds(current(req),amount);
+    if(!result)return res.status(400).json({error:'You do not have enough Diamonds.'});
+    res.json({ok:true,converted:amount,receivedGold:amount*100,wallet:{diamonds:result.diamonds,gold:result.gold}});
+  }catch(error){console.error('Wallet conversion failed:',error);res.status(500).json({error:'Could not convert Diamonds right now.'});}
+});
+app.post('/api/wallet/reward',auth,async(req,res)=>{
+  const actor=current(req),rank=String(actor.rank||'').toUpperCase();
+  if(!['COOWNER','OWNER','DEVELOPER'].includes(rank))return res.status(403).json({error:'Only Coowner, Owner and Developer can grant Gold or Diamond rewards.'});
+  const currency=String(req.body?.currency||'DIAMONDS').toUpperCase();
+  if(!['DIAMONDS','GOLD'].includes(currency))return res.status(400).json({error:'Choose Gold or Diamonds.'});
+  const target=findUser(req.body?.userId||req.body?.username),amount=Number(req.body?.amount),reason=cleanText(req.body?.reason||'').trim().slice(0,240);
+  const max=rank==='COOWNER'?10:rank==='OWNER'?100:Number.MAX_SAFE_INTEGER;
+  const unit=currency==='GOLD'?'gold':'Diamonds',column=currency==='GOLD'?'gold':'diamonds';
+  if(!target||!Number.isSafeInteger(amount)||amount<1||amount>max||!reason)return res.status(400).json({error:rank==='COOWNER'?'Choose a user, reason and a reward from 1 to 10.':rank==='OWNER'?'Choose a user, reason and a reward from 1 to 100.':'Choose a user, valid amount and reason.'});
+  const client=await pool.connect();let balance;
+  try{
+    await client.query('BEGIN');
+    const updated=await client.query(`UPDATE users SET ${column}=COALESCE(${column},0)+$1 WHERE id=$2 RETURNING diamonds,gold`,[amount,Number(target.id)]);
+    if(!updated.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'Recipient account not found.'});}
+    target.diamonds=Number(updated.rows[0].diamonds||0);
+    target.gold=Number(updated.rows[0].gold||0);
+    balance=Number(updated.rows[0][column]||0);
+    await client.query(`INSERT INTO wallet_transactions(id,sender_id,recipient_id,currency,amount,type,note) VALUES($1,$2,$3,$4,$5,'STAFF_REWARD',$6)`,[id(),Number(actor.id),Number(target.id),currency,amount,reason]);
+    await client.query('COMMIT');
+  }catch(error){await client.query('ROLLBACK').catch(()=>{});console.error('Staff wallet reward failed:',error);return res.status(500).json({error:'Could not grant '+unit+'.'});}finally{client.release();}
+  target[column]=balance;
+  io.to('user:'+target.id).emit('wallet:update',{userId:target.id,diamonds:target.diamonds||0,gold:target.gold||0});
+  if(currency==='GOLD')io.to('user:'+target.id).emit('gold:update',{gold:balance});
+  notify(target.id,'wallet',currency==='GOLD'?'Gold received':'Diamonds received',currency==='GOLD'?`The MC Staff Team awarded you ${amount} gold. Reason: ${reason}`:`The MC Staff Team awarded you ${amount} Diamonds. Reason: ${reason}`);
+  log(actor,currency==='GOLD'?'GOLD_STAFF_REWARD':'DIAMOND_STAFF_REWARD',target.username,{currency,amount,reason});
+  res.json({ok:true,recipient:safeUser(target),amount,reason,currency,balance});
+});
+
+app.get('/api/achievements/:userId',auth,async(req,res)=>{const {rows}=await pool.query(`SELECT id,user_id,name,icon,earned_at FROM achievements WHERE user_id=$1 ORDER BY earned_at DESC,id DESC`,[Number(req.params.userId)]);res.json({achievements:rows});});
+app.get('/api/achievements',auth,async(req,res)=>{const {rows}=await pool.query(`SELECT id,user_id,name,icon,earned_at FROM achievements WHERE user_id=$1 ORDER BY earned_at DESC,id DESC`,[Number(current(req).id)]);res.json({achievements:rows});});
+app.get('/api/account/export',auth,(req,res)=>{
+  const u=current(req);
+  res.json({exportedAt:Date.now(),account:{username:u.username,displayName:u.displayName,createdAt:u.createdAt,rank:u.rank,level:u.level,xp:u.xp,gold:u.gold,bio:u.bio,interests:u.interests,achievements:u.achievements},loginHistory:u.loginHistory||[]});
+});
+
+app.post('/api/staff/system-notifications',auth,featureAllowed('view_staff_dashboard'),async(req,res)=>{
+  const actor=current(req);
+  if(!hasRank(actor,'COOWNER'))return res.status(403).json({error:'Co-owner rank or higher required to send system notifications.'});
+  const title=String(req.body?.title||'').trim().slice(0,100);
+  const message=String(req.body?.message||'').trim().slice(0,2000);
+  const targetRank=String(req.body?.targetRank||'ALL').trim().toUpperCase();
+  const targetRange=String(req.body?.targetRange||'EXACT').trim().toUpperCase();
+  const allowedTargets=['ALL','MEMBER','VIP','PREMIUM','ROYAL','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'];
+  const allowedRanges=['EXACT','AND_ABOVE','AND_BELOW'];
+  if(!title||!message)return res.status(400).json({error:'Enter both a notification title and message.'});
+  if(!allowedTargets.includes(targetRank))return res.status(400).json({error:'Choose a valid recipient rank.'});
+  if(!allowedRanges.includes(targetRange))return res.status(400).json({error:'Choose a valid recipient range.'});
+  try{
+    const q=await pool.query('SELECT id,rank FROM users ORDER BY id');
+    const rankLevels={MEMBER:0,USER:0,VIP:1,PREMIUM:2,ROYAL:3,MOD:4,MODERATOR:4,ADMIN:5,SUPER_ADMIN:6,COMMISSOR:7,INSTRUCTOR:8,COOWNER:9,OWNER:10,DEVELOPER:11};
+    const selectedLevel=rankLevels[targetRank];
+    const audience=q.rows.filter(row=>{
+      if(targetRank==='ALL')return true;
+      const userLevel=rankLevels[String(row.rank||'MEMBER').toUpperCase()];
+      if(userLevel===undefined||selectedLevel===undefined)return false;
+      if(targetRange==='AND_ABOVE')return userLevel>=selectedLevel;
+      if(targetRange==='AND_BELOW')return userLevel<=selectedLevel;
+      return userLevel===selectedLevel;
+    });
+    if(!audience.length)return res.status(400).json({error:'No users were found for that audience.'});
+    const ids=audience.map(row=>Number(row.id)).filter(Number.isFinite);
+    const client=await pool.connect();
+    let inserted=[];
+    try{
+      await client.query('BEGIN');
+      for(const userId of ids){
+        const result=await client.query(
+          "INSERT INTO notifications(user_id,type,title,message,is_read) VALUES($1,'system-announcement',$2,$3,false) RETURNING user_id",
+          [userId,title,message]
+        );
+        if(result.rows[0])inserted.push(Number(result.rows[0].user_id));
+      }
+      await client.query('COMMIT');
+    }catch(err){try{await client.query('ROLLBACK')}catch{}throw err;}finally{client.release();}
+    for(const userId of inserted){
+      io.to('user:'+userId).emit('notification');
+      await sendWebPushToUser(userId,{title:String(title||'Maleficent Chat announcement'),body:String(message||'You have a new announcement').slice(0,180),url:'/',tag:'mc-system-announcement',kind:'system-announcement'});
+    }
+    try{await pool.query("INSERT INTO admin_audit_logs(actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5)",[Number(actor.id),'system_notification_sent','notification_audience',targetRank,JSON.stringify({title,recipientCount:inserted.length,targetRank,targetRange})]);}catch{}
+    res.json({ok:true,sent:inserted.length,targetRank,targetRange,title});
+  }catch(err){console.error('System notification send failed:',err);res.status(500).json({error:'Could not send the system notification. Please try again.'});}
+});
+
+app.get('/api/push/public-key',(req,res)=>{
+  if(!webPushConfigured())return res.json({enabled:false,publicKey:'',error:'Web Push is not configured on the server yet.'});
+  res.json({enabled:true,publicKey:VAPID_PUBLIC_KEY});
+});
+app.get('/api/push/status',auth,async(req,res)=>{
+  try{
+    const user=current(req);
+    const result=await pool.query('SELECT id,created_at,last_used_at FROM push_subscriptions WHERE user_id=$1 ORDER BY created_at DESC',[Number(user.id)]);
+    res.json({configured:webPushConfigured(),permissionHint:'Check browser notification permission on this device.',subscriptionCount:result.rowCount,subscriptions:result.rows.map(row=>({id:row.id,createdAt:row.created_at,lastUsedAt:row.last_used_at}))});
+  }catch(error){console.error('Push status failed:',error);res.status(500).json({error:'Could not read push subscription status.'});}
+});
+app.post('/api/push/test',auth,async(req,res)=>{
+  const user=current(req);
+  const report=await sendWebPushToUser(user.id,{title:'Maleficent Chat test',body:'Background notifications are reaching this device.',url:'/',tag:'mc-push-test-'+Date.now(),kind:'push-test'});
+  if(!report.configured)return res.status(503).json({ok:false,...report,message:'VAPID configuration is missing or invalid.',error:'VAPID configuration is missing or invalid.'});
+  if(report.subscriptions===0)return res.status(409).json({ok:false,...report,message:'This account has no saved push subscriptions. Enable background notifications on this device first.',error:'This account has no saved push subscriptions. Enable background notifications on this device first.'});
+  if(report.delivered===0)return res.status(502).json({ok:false,...report,message:'The push provider rejected delivery. Check the error details and recreate this device subscription if the VAPID keys changed.',error:report.errors.join(' | ')||'The push provider rejected delivery.'});
+  res.json({ok:true,...report,message:'Push provider accepted the test notification. Check this device notification tray.'});
+});
+app.post('/api/push/subscribe',auth,async(req,res)=>{
+  if(!webPushConfigured())return res.status(503).json({error:'Web Push is not configured on the server yet.'});
+  const subscription=req.body||{},endpoint=String(subscription.endpoint||'').trim(),p256dh=String(subscription.keys?.p256dh||'').trim(),authKey=String(subscription.keys?.auth||'').trim();
+  if(!/^https:\/\//i.test(endpoint)||endpoint.length>4000||!p256dh||!authKey)return res.status(400).json({error:'A valid browser push subscription is required.'});
+  await pool.query('INSERT INTO push_subscriptions(user_id,endpoint,p256dh,auth) VALUES($1,$2,$3,$4) ON CONFLICT(endpoint) DO UPDATE SET user_id=EXCLUDED.user_id,p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,last_used_at=NOW()',[Number(current(req).id),endpoint,p256dh,authKey]);
+  res.json({ok:true});
+});
+app.delete('/api/push/subscribe',auth,async(req,res)=>{
+  const endpoint=String(req.body?.endpoint||'').trim();
+  if(!endpoint)return res.status(400).json({error:'Subscription endpoint is required.'});
+  await pool.query('DELETE FROM push_subscriptions WHERE user_id=$1 AND endpoint=$2',[Number(current(req).id),endpoint]);
+  res.json({ok:true});
+});
+app.get('/api/notifications',auth,async(req,res)=>{const {rows}=await pool.query(`SELECT id,type,title,message,is_read,created_at FROM notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 20`,[Number(current(req).id)]);res.json({notifications:rows.map(n=>({id:String(n.id),type:n.type,title:n.title||n.type,text:n.message,message:n.message,time:n.created_at,read:n.is_read}))});});
+app.get('/api/notifications/unread',auth,async(req,res)=>{const {rows}=await pool.query(`SELECT id,type,title,message,is_read,created_at FROM notifications WHERE user_id=$1 AND is_read=false ORDER BY created_at DESC LIMIT 100`,[Number(current(req).id)]);res.json({notifications:rows.map(n=>({id:String(n.id),type:n.type,title:n.title||n.type,text:n.message,message:n.message,time:n.created_at,read:n.is_read}))});});
+app.get('/api/warnings/pending',auth,async(req,res)=>{
+  const {rows}=await pool.query(`SELECT id,message,created_at FROM notifications WHERE user_id=$1 AND type='warning' AND is_read=false ORDER BY created_at ASC LIMIT 20`,[Number(current(req).id)]);
+  res.json({warnings:rows.map(n=>({id:String(n.id),type:"warning",text:n.message,message:n.message,time:n.created_at}))});
+});
+app.patch('/api/notifications/:id/read',auth,async(req,res)=>{const r=await pool.query(`UPDATE notifications SET is_read=true WHERE id=$1 AND user_id=$2 AND type<>'warning' RETURNING id`,[req.params.id,Number(current(req).id)]);if(!r.rowCount)return res.status(404).json({error:'Notification not found or requires warning acknowledgement.'});res.json({ok:true});});
+app.post('/api/notifications/:id/acknowledge-warning',auth,async(req,res)=>{const r=await pool.query(`UPDATE notifications SET is_read=true WHERE id=$1 AND user_id=$2 AND type='warning' RETURNING id`,[req.params.id,Number(current(req).id)]);if(!r.rowCount)return res.status(404).json({error:'Warning not found or already acknowledged.'});res.json({ok:true});});
+app.post('/api/notifications/read',auth,async(req,res)=>{await pool.query(`UPDATE notifications SET is_read=true WHERE user_id=$1 AND type<>'warning'`,[Number(current(req).id)]);res.json({ok:true});});
+app.delete('/api/notifications/:id',auth,async(req,res)=>{await pool.query(`DELETE FROM notifications WHERE id=$1 AND user_id=$2 AND type<>'warning'`,[req.params.id,Number(current(req).id)]);res.json({ok:true});});
+app.delete('/api/notifications',auth,async(req,res)=>{await pool.query(`DELETE FROM notifications WHERE user_id=$1 AND type<>'warning'`,[Number(current(req).id)]);res.json({ok:true});});
+
+app.post(
+  "/api/moderation/:action",
+  auth,
+  async (req,res)=>{
+    const actor=current(req);
+
+    const action=req.params.action.toUpperCase();
+    const permission={MUTE:"can_mute",UNMUTE:"can_mute",KICK:"can_kick",REVOKE_KICK:"can_kick",BAN:"can_ban",REVOKE_BAN:"can_ban",WARN:"can_warn"}[action];
+    const explicit=permission?userFeatureGrant(actor,permission):null;
+    if(explicit===false || (explicit!==true&&!hasFeature(actor,"moderate_user"))){
+      return res.status(403).json({
+        error:"Moderator required"
+      });
+    }
+
+    const target=findUser(
+      req.body.userId
+    );
+
+    if(!target){
+      return res.status(404).json({
+        error:"User not found"
+      });
+    }
+    if(!canAccessStaffTarget(actor,target)){
+      return res.status(403).json({
+        error:"You cannot moderate yourself or an equal/higher-ranked staff account."
+      });
+    }
+
+    let until=null;
+
+    if(action==="MUTE"){
+      until=
+        Date.now()+
+        Math.max(
+          1,
+          Number(req.body.minutes)||10
+        )*
+        60000;
+    }
+
+    if(action==="KICK"){
+      until=
+        Date.now()+
+        Math.max(
+          1,
+          Number(req.body.minutes)||5
+        )*
+        60000;
+    }
+
+    if(action==="BAN"){
+      until=null;
+    }
+
+    if(action==="MUTE"){
+      target.mutedUntil=until;
+      target.muteReason=cleanText(req.body.reason)||"MUTE";
+      target.online=false;
+    }
+    if(action==="KICK"){
+      target.kickedUntil=until;
+      target.kickReason=cleanText(req.body.reason)||"KICK";
+      target.online=false;
+    }
+    let autoBannedAccounts=[];
+    if(action==="BAN"){
+      target.banned=true;
+      target.banReason=cleanText(req.body.reason)||"BAN";
+      target.online=false;
+      // Auto-ban linked accounts only when public IP and browser user-agent recur together.
+      // Shared IP alone is not enough to ban household or public-network users.
+      try{
+        const history=await pool.query("SELECT host(ip_address) AS ip, user_agent FROM user_ip_history WHERE user_id=$1 AND ip_address IS NOT NULL AND COALESCE(user_agent, chr(0))<>chr(0) ORDER BY recorded_at DESC LIMIT 100",[Number(target.id)]);
+        const sep=String.fromCharCode(10);
+        const signals=[...new Set(history.rows.map(row=>String(row.ip||"")+sep+String(row.user_agent||"")))];
+        const publicSignals=signals.filter(signal=>{
+          const ip=signal.split(sep)[0].toLowerCase();
+          const parts=ip.split(".").map(Number);
+          const privateV4=ip.startsWith("127.")||ip.startsWith("10.")||ip.startsWith("192.168.")||ip.startsWith("169.254.")||(parts.length===4&&parts[0]===172&&parts[1]>=16&&parts[1]<=31);
+          return ip&&!privateV4&&!["::1"].includes(ip)&&!ip.startsWith("fc")&&!ip.startsWith("fd")&&!ip.startsWith("fe80:");
+        });
+        const ips=[...new Set(publicSignals.map(signal=>signal.split(sep)[0]))];
+        const agents=[...new Set(publicSignals.map(signal=>signal.slice(signal.indexOf(sep)+1)).filter(Boolean))];
+        if(ips.length&&agents.length){
+          const linked=await pool.query("SELECT u.id FROM users u JOIN user_ip_history h ON h.user_id=u.id WHERE u.id<>$1 AND host(h.ip_address)=ANY($2::text[]) AND h.user_agent=ANY($3::text[]) GROUP BY u.id HAVING COUNT(DISTINCT concat_ws(chr(1),host(h.ip_address),h.user_agent))>=2",[Number(target.id),ips,agents]);
+          for(const row of linked.rows){
+            const linkedUser=findUser(String(row.id));
+            if(!linkedUser||linkedUser.banned||!canAccessStaffTarget(actor,linkedUser))continue;
+            linkedUser.banned=true;
+            linkedUser.banReason="Automatic linked-account ban following moderation of @"+target.username+": "+target.banReason;
+            linkedUser.online=false;
+            autoBannedAccounts.push({id:String(linkedUser.id),username:linkedUser.username});
+            db.moderationHistory.push({id:id(),time:Date.now(),actor:"SYSTEM",target:linkedUser.id,action:"BAN",reason:linkedUser.banReason,expiresAt:null});
+            systemAudit({target:linkedUser.id,actor:"SYSTEM",action:"BAN",reason:linkedUser.banReason,source:"linked-account-auto-ban",durationMinutes:0});
+            notify(linkedUser.id,"moderation","Account automatically banned",linkedUser.banReason);
+            io.to("user:"+linkedUser.id).emit("ban-lock",{reason:linkedUser.banReason});
+          }
+        }
+      }catch(error){console.error("[LINKED_ACCOUNT_BAN] Automatic linked-account check failed:",error?.message||error);}
+    }
+
+    if(action==="UNMUTE"||action==="REVOKE_MUTE"){
+      target.mutedUntil=null; target.muteReason="";
+    }
+    if(action==="REVOKE_KICK"){
+      target.kickedUntil=null; target.kickReason="";
+    }
+    if(action==="REVOKE_BAN"){
+      target.banned=false; target.banReason="";
+    }
+
+    if(action==="WARN"){
+      target.warnings=(target.warnings||0)+1;
+    }
+
+    // Force every active session/socket out immediately; clients receive the full-screen lock panel first.
+    if(action==="BAN"||action==="KICK"){
+      const event=action==="BAN"?"ban-lock":"kick-lock";
+      const payload=action==="BAN"?{reason:target.banReason||"Community rules"}:{reason:target.kickReason||"Community rules",kickedUntil:target.kickedUntil};
+      for(const sock of io.sockets.sockets.values()){
+        const socketUserId=String(sock.data?.userId||sock.userId||sock.user?.id||"");
+        if(socketUserId!==String(target.id))continue;
+        sock.emit(event,payload);
+        // Drop room memberships and disconnect live transport after delivering the lock event.
+        for(const joined of [...sock.rooms])if(joined!==sock.id)sock.leave(joined);
+        setTimeout(()=>{try{sock.disconnect(true);}catch{}},150);
+      }
+    }
+
+    db.moderationHistory.push({
+      id:id(),
+      time:Date.now(),
+      actor:actor.id,
+      target:target.id,
+      action,
+      reason:
+        cleanText(
+          req.body.reason
+        ),
+      expiresAt:until
+    });
+
+    log(
+      actor,
+      action,
+      target.username,
+      {
+        reason:req.body.reason
+      }
+    );
+
+    systemAudit({target:target.id,actor:actor.id,actorUsername:actor.username,action,reason:cleanText(req.body.reason)||action,source:"staff",durationMinutes:(action==="MUTE"||action==="KICK")?Math.max(1,Number(req.body.minutes)||10):0});
+    save();
+    // Warnings are private account-level notices, never public room announcements.
+    if(action!=="WARN"){
+      const actionText={MUTE:'muted',KICK:'kicked',BAN:'banned',UNMUTE:'unmuted',REVOKE_MUTE:'unmuted',REVOKE_BAN:'unbanned',REVOKE_KICK:'unkicked'}[action]||action.toLowerCase();
+      // Moderation outcomes are delivered privately to the affected account.
+    }
+
+    const moderationReason=cleanText(req.body.reason)||"Community rules";
+    if(action==="WARN"){
+      const warningId=await notify(target.id,"warning","Warning ⚠️",moderationReason);
+      io.to("user:"+target.id).emit("warning-popup",{id:String(warningId||""),reason:moderationReason});
+    }else if(action==="MUTE"){
+      const minutes=Math.max(1,Number(req.body.minutes)||10);
+      const muteMessage="You have been muted for "+minutes+" minutes";
+      notify(target.id,"moderation","You have been muted",muteMessage);
+      io.to("user:"+target.id).emit("mute-notice",{minutes,until:target.mutedUntil,reason:target.muteReason,message:muteMessage});
+    }else if(action==="KICK"){
+      notify(target.id,"moderation","You have been kicked",target.kickReason);
+      io.to("user:"+target.id).emit("kick-lock",{until:target.kickedUntil,reason:target.kickReason});
+    }else if(action==="BAN"){
+      notify(target.id,"moderation","You have been banned",target.banReason);
+      io.to("user:"+target.id).emit("ban-lock",{reason:target.banReason});
+    }
+
+    io.emit("presence");
+
+    res.json({
+      user:safeUser(target),
+      autoBannedAccounts
+    });
+  }
+);
+
+app.get("/api/users/:id/action-history",auth,(req,res)=>{
+  const u=current(req);
+  if(!hasFeature(u,"view_user_history")) return res.status(403).json({error:"User history access is not granted to your rank."});
+  const target=findUser(req.params.id);
+  if(!target) return res.status(404).json({error:"User not found"});
+  if(!canAccessStaffTarget(u,target))return res.status(403).json({error:"You can only view staff history for users ranked below you."});
+  const history=db.moderationHistory.filter(x=>x.target===target.id).map(x=>({
+    ...x, actorUsername:x.actor==="SYSTEM"?"SYSTEM":(findUser(x.actor)?.username||x.actor)
+  })).sort((a,b)=>b.time-a.time);
+  res.json({user:safeUser(target),history});
+});
+
+app.delete("/api/users/:id/action-history/:actionId",auth,(req,res)=>{
+  const actor=current(req);
+  if(!hasFeature(actor,"view_user_history")) return res.status(403).json({error:"User history access is not granted to your rank."});
+  const target=findUser(req.params.id);
+  if(!target) return res.status(404).json({error:"User not found"});
+  if(!canAccessStaffTarget(actor,target))return res.status(403).json({error:"You can only manage staff history for users ranked below you."});
+  const before=db.moderationHistory.length;
+  db.moderationHistory=db.moderationHistory.filter(x=>!(String(x.target)===String(target.id)&&String(x.id)===String(req.params.actionId)));
+  if(db.moderationHistory.length===before) return res.status(404).json({error:"History action not found"});
+  save();
+  log(actor,"USER_HISTORY_ACTION_DELETE",target.username,{actionId:String(req.params.actionId)});
+  res.json({ok:true});
+});
+
+app.post("/api/users/:id/action-history/clear",auth,(req,res)=>{
+  const actor=current(req);
+  if(!hasFeature(actor,"view_user_history")) return res.status(403).json({error:"User history access is not granted to your rank."});
+  const target=findUser(req.params.id);
+  if(!target) return res.status(404).json({error:"User not found"});
+  if(!canAccessStaffTarget(actor,target))return res.status(403).json({error:"You can only manage staff history for users ranked below you."});
+  const before=db.moderationHistory.length;
+  db.moderationHistory=db.moderationHistory.filter(x=>String(x.target)!==String(target.id));
+  const removed=before-db.moderationHistory.length;
+  save();
+  log(actor,"USER_HISTORY_CLEAR",target.username,{removed});
+  res.json({ok:true,removed});
+});
+
+app.get("/api/owner/message-persistence-status",auth,ownerOnly,async(req,res)=>{
+  // Read-only diagnostic: never changes or clears message history.
+  const [dbInfo,roomCount,dmCount,latestRoom,latestDm] = await Promise.all([
+    pool.query("SELECT current_database() AS database, current_schema() AS schema"),
+    pool.query("SELECT COUNT(*)::int AS count FROM room_messages"),
+    pool.query("SELECT COUNT(*)::int AS count FROM private_messages"),
+    pool.query("SELECT MAX(created_at) AS latest FROM room_messages"),
+    pool.query("SELECT MAX(created_at) AS latest FROM private_messages")
+  ]);
+  res.set("Cache-Control","no-store");
+  res.json({
+    ok:true,
+    diagnostic:"read-only",
+    deploymentCommit:process.env.RENDER_GIT_COMMIT||process.env.SOURCE_VERSION||null,
+    processUptimeSeconds:Math.floor(process.uptime()),
+    database:dbInfo.rows[0],
+    roomMessages:{count:roomCount.rows[0].count,latestAt:latestRoom.rows[0].latest},
+    privateMessages:{count:dmCount.rows[0].count,latestAt:latestDm.rows[0].latest},
+  });
+});
+
+app.post("/api/owner/refresh-site-messages",auth,ownerOnly,async(req,res)=>{
+  // Explicit Owner Space data reset, separate from browser-cache refresh.
+  // Preserve accounts/settings/reports/audit logs; delete chat records and archived copies.
+  const client=await pool.connect();
+  let roomMessagesRemoved=0,privateMessagesRemoved=0,archivedMessagesRemoved=0;
+  try{
+    await client.query("BEGIN");
+    const roomDelete=await client.query("DELETE FROM room_messages");
+    const privateDelete=await client.query("DELETE FROM private_messages");
+    const evidenceDelete=await client.query("DELETE FROM room_clear_evidence");
+    roomMessagesRemoved=Number(roomDelete.rowCount||0);
+    privateMessagesRemoved=Number(privateDelete.rowCount||0);
+    archivedMessagesRemoved=Number(evidenceDelete.rowCount||0);
+    await client.query("COMMIT");
+  }catch(error){
+    try{await client.query("ROLLBACK")}catch{}
+    console.error("Owner message refresh failed:",error);
+    return res.status(500).json({error:"Messages were not cleared because the database reset failed. No partial deletion was committed."});
+  }finally{client.release();}
+  db.messages=[];
+  db.privateMessages=[];
+  save();
+  await log(current(req),"SITE_MESSAGES_CLEAR","All room and private chat messages cleared",{roomMessagesRemoved,privateMessagesRemoved,archivedMessagesRemoved});
+  io.emit("site:messages-cleared");
+  res.set("Cache-Control","no-store");
+  res.json({ok:true,roomMessagesRemoved,privateMessagesRemoved,archivedMessagesRemoved});
+});
+
+app.get(
+  "/api/moderation/history/:id",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+
+    if(
+      String(u.id)!==String(req.params.id)&&
+      !hasFeature(u,"view_user_history")
+    ){
+      return res.status(403).json({
+        error:"User history access is not granted to your rank."
+      });
+    }
+
+    res.json({
+      history:
+        db.moderationHistory
+          .filter(
+            x=>
+              x.target===
+              req.params.id
+          )
+    });
+  }
+);
+
+app.get("/api/staff/ip-inspection/diagnostics",auth,ownerOnly,(req,res)=>{
+  const normalizeIp=value=>{
+    let ip=String(value||"").split(",")[0].trim();
+    if(ip.startsWith("::ffff:")) ip=ip.slice(7);
+    return ip||"unavailable";
+  };
+  const isPrivateIp=value=>{
+    const ip=normalizeIp(value).toLowerCase();
+    return ip==="unavailable"||ip==="unknown"||ip==="::1"||ip==="127.0.0.1"||ip.startsWith("10.")||ip.startsWith("192.168.")||/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip)||ip.startsWith("fc")||ip.startsWith("fd")||ip.startsWith("fe80:");
+  };
+  const sources={
+    expressIp:normalizeIp(req.ip),
+    socketRemoteAddress:normalizeIp(req.socket?.remoteAddress),
+    forwardedFor:normalizeIp(req.headers["x-forwarded-for"]),
+    realIp:normalizeIp(req.headers["x-real-ip"]),
+    cloudflareConnectingIp:normalizeIp(req.headers["cf-connecting-ip"])
+  };
+  res.json({sources,privateOrUnavailable:Object.fromEntries(Object.entries(sources).map(([key,value])=>[key,isPrivateIp(value)])),trustProxy:app.get("trust proxy")});
+});
+app.get("/api/staff/ip-inspection/users",auth,async(req,res)=>{
+  const actor=current(req),viewerRank=String(actor?.rank||"").toUpperCase();
+  if(!["INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(viewerRank))return res.status(403).json({error:"Your rank does not have IP Inspection access."});
+  const canInspectTarget=target=>viewerRank==="OWNER"||viewerRank==="DEVELOPER"||(String(target?.id)!==String(actor?.id)&&(rankOrder[String(target?.rank||"MEMBER").toUpperCase()]??999)<(rankOrder[viewerRank]??-1));
+  const term=String(req.query.q||"").trim().replace(/^@/,"").slice(0,80);
+  try{const result=await pool.query("SELECT id,username,email,created_at FROM users WHERE ($1='' OR username ILIKE '%'||$1||'%' OR COALESCE(email,'') ILIKE '%'||$1||'%') ORDER BY LOWER(username) LIMIT 30",[term]);if(result.rows.length||!Array.isArray(db.users))return res.json({users:result.rows.filter(u=>canInspectTarget({...u,rank:db.users.find(x=>String(x.id)===String(u.id))?.rank})).slice(0,30)});}
+  catch(error){console.error("[IP_INSPECTION] SQL account search unavailable; using persisted users:",error?.message||error);}
+  const q=term.toLowerCase(),users=(db.users||[]).filter(u=>!q||String(u.username||"").toLowerCase().includes(q)||String(u.email||"").toLowerCase().includes(q)).sort((a,b)=>String(a.username||"").localeCompare(String(b.username||""))) .filter(canInspectTarget).slice(0,30).map(u=>({id:u.id,username:u.username,email:u.email||"",created_at:u.createdAt||u.created_at||null}));
+  return res.json({users});
+});
+const ipGeoCache = new Map();
+async function lookupIpNetworkDetails(ip){
+  const now=Date.now();
+  const cached=ipGeoCache.get(ip);
+  if(cached&&cached.expiresAt>now)return cached.value;
+  const unavailable={lookupStatus:"Unavailable"};
+  // Provider one: no-key IP Info API, which returns geolocation and ASN/network fields.
+  try{
+    const response=await fetch("https://ip-info.com/json?ip="+encodeURIComponent(ip),{
+      headers:{"Accept":"application/json","User-Agent":"MaleficentChat-IPInspection/1.1"},
+      signal:AbortSignal.timeout(6500)
+    });
+    if(response.ok){
+      const d=await response.json();
+      const value={
+        country:d.country||d.country_name||"",
+        countryCode:d.country_code||d.countryCode||d.countryCode2||"",
+        countryCode:d.country_code||d.countryCode||d.country_code2||"",
+        region:d.region||d.region_name||"",
+        city:d.city||"",
+        postalCode:d.postal||d.postal_code||d.zip||"",
+        networkProvider:d.isp||d.org||d.organization||d.asn_name||"",
+        organization:d.org||d.organization||"",
+        asn:d.asn||d.as_number||"",
+        hostname:d.hostname||"",
+        timezone:d.timezone||d.time_zone||"",
+        coordinates:d.loc||([d.latitude,d.longitude].every(v=>v!==undefined&&v!==null)?d.latitude+","+d.longitude:""),
+        networkType:d.connection_type||d.type||"",
+        vpnDetected:!!(d.vpn||d.is_vpn||d.proxy||d.is_proxy||d.tor||d.is_tor||d.hosting),
+        vpnSignals:[d.vpn||d.is_vpn?"VPN":null,d.proxy||d.is_proxy?"Proxy":null,d.tor||d.is_tor?"Tor":null,d.hosting?"Hosting / datacenter":null].filter(Boolean),
+        lookupStatus:"Success",
+        lookupSource:"IP Info"
+      };
+      if(value.country||value.region||value.city||value.networkProvider||value.asn){
+        ipGeoCache.set(ip,{value,expiresAt:now+6*60*60*1000});
+        return value;
+      }
+    }
+  }catch{}
+  // Fallback provider in case the primary service is unavailable or rate-limited.
+  try{
+    const response=await fetch("https://ipapi.co/"+encodeURIComponent(ip)+"/json/",{
+      headers:{"Accept":"application/json","User-Agent":"MaleficentChat-IPInspection/1.1"},
+      signal:AbortSignal.timeout(6500)
+    });
+    if(response.ok){
+      const d=await response.json();
+      if(!d.error){
+        const value={
+          country:d.country_name||"",
+          countryCode:d.country_code||d.country||"",
+          region:d.region||"",
+          city:d.city||"",
+          postalCode:d.postal||d.postal_code||d.zip||"",
+          networkProvider:d.org||d.asn||"",
+          organization:d.org||"",
+          asn:d.asn||"",
+          hostname:d.hostname||"",
+          timezone:d.timezone||"",
+          coordinates:d.latitude!=null&&d.longitude!=null?d.latitude+","+d.longitude:"",
+          networkType:d.version||"",
+          vpnDetected:false,
+          vpnSignals:[],
+          lookupStatus:"Success",
+          lookupSource:"ipapi.co"
+        };
+        if(value.country||value.region||value.city||value.networkProvider||value.asn){
+          ipGeoCache.set(ip,{value,expiresAt:now+6*60*60*1000});
+          return value;
+        }
+      }
+    }
+  }catch{}
+  ipGeoCache.set(ip,{value:unavailable,expiresAt:now+5*60*1000});
+  return unavailable;
+}
+app.get('/api/staff/user/:id/ip-insights',auth,async(req,res)=>{
+  try{
+    const actor=current(req), target=findUser(req.params.id);
+    if(!target)return res.status(404).json({error:'User not found'});
+    if(!hasRank(actor,'MOD')||String(target.id)===String(actor.id)||rankOrder[String(target.rank).toUpperCase()]>=rankOrder[String(actor.rank).toUpperCase()]){
+      return res.status(403).json({error:'Staff permission required to view these insights.'});
+    }
+    const targetIps=await pool.query('SELECT DISTINCT host(ip_address) AS ip_address FROM user_ip_history WHERE user_id=$1',[Number(target.id)]);
+    const ips=targetIps.rows.map(r=>r.ip_address).filter(Boolean);
+    let matches=[];
+    if(ips.length){
+      const found=await pool.query(`SELECT u.id,u.username,u.created_at,MIN(h.recorded_at) AS first_seen,MAX(h.recorded_at) AS last_seen,COUNT(h.id)::int AS shared_ip_events
+        FROM users u JOIN user_ip_history h ON h.user_id=u.id
+        WHERE u.id<>$1 AND host(h.ip_address)=ANY($2::text[])
+        GROUP BY u.id,u.username,u.created_at
+        ORDER BY u.created_at ASC NULLS LAST,LOWER(u.username)`,[Number(target.id),ips]);
+      matches=found.rows.map(row=>{
+        const historic=findUser(String(row.id));
+        return {id:String(row.id),username:row.username,registeredAt:row.created_at,firstSeen:row.first_seen,lastSeen:row.last_seen,sharedIpEvents:row.shared_ip_events,usernameHistory:(historic?.usernameHistory||[]).map(item=>({from:item.from||item.username||'',to:item.to||'',time:item.time||item.changedAt||null,changedBy:item.changedBy||''}))};
+      });
+    }
+    res.json({
+      user:{id:String(target.id),username:target.username,registeredAt:target.createdAt||null,usernameHistory:(target.usernameHistory||[]).map(item=>({from:item.from||item.username||'',to:item.to||'',time:item.time||item.changedAt||null,changedBy:item.changedBy||''}))},
+      matches,
+      note:'Shared IP addresses can be used by families, schools, workplaces, mobile carriers, VPNs, and public networks. A match alone does not prove that accounts belong to the same person. IP addresses are intentionally hidden in this profile insights view.'
+    });
+  }catch(err){
+    console.error('[IP_INSIGHTS] failed:',err?.stack||err?.message||err);
+    res.status(500).json({error:'Could not load account insights.'});
+  }
+});
+
+
+app.get("/api/developer/network-security",auth,developerOnly,async(req,res)=>{
+  try{
+    const config=await getDeveloperNetworkSecurity();
+    const q=String(req.query.q||"").trim().replace(/^@/,"").slice(0,80);
+    let account=null,timeline=[],deviceSignals=[],risk={score:0,level:"Low",reasons:[]};
+    if(q){
+      const found=await pool.query("SELECT id,username,created_at FROM users WHERE username ILIKE $1 ORDER BY LOWER(username) LIMIT 1",["%"+q+"%"]);
+      const user=found.rows[0];
+      if(user){
+        account={id:String(user.id),username:user.username,registeredAt:user.created_at};
+        const history=await pool.query("SELECT host(ip_address) AS ip_address,event_type,recorded_at,user_agent FROM user_ip_history WHERE user_id=$1 ORDER BY recorded_at DESC LIMIT 250",[Number(user.id)]);
+        const cutoff=Date.now()-2*60*60*1000;
+        const recent=history.rows.filter(row=>new Date(row.recorded_at).getTime()>=cutoff);
+        const ips=[...new Set(recent.map(row=>row.ip_address).filter(Boolean))];
+        const recentDetails=await Promise.all(ips.slice(0,15).map(async ip=>({ip,network:await lookupIpNetworkDetails(ip)})));
+        const byIp=Object.fromEntries(recentDetails.map(x=>[x.ip,x.network]));
+        timeline=history.rows.map(row=>({ip_address:row.ip_address,event_type:row.event_type,recorded_at:row.recorded_at,user_agent:row.user_agent||"",network:byIp[row.ip_address]||{}}));
+        const device=await pool.query("SELECT COUNT(*)::int AS registrations,COUNT(DISTINCT ip_hash)::int AS ip_hashes,MAX(created_at) AS last_seen FROM device_fingerprints WHERE user_id=$1",[Number(user.id)]);
+        const sameIps=ips.length?await pool.query("SELECT COUNT(DISTINCT user_id)::int AS accounts FROM user_ip_history WHERE host(ip_address)=ANY($1::text[]) AND user_id<>$2",[ips,Number(user.id)]):{rows:[{accounts:0}]};
+        const deviceIpMatches=await pool.query("SELECT COUNT(DISTINCT other.user_id)::int AS accounts FROM device_fingerprints mine JOIN device_fingerprints other ON other.ip_hash=mine.ip_hash AND other.user_id<>mine.user_id WHERE mine.user_id=$1 AND mine.ip_hash IS NOT NULL",[Number(user.id)]);
+        const twoHourIps=new Set(recent.map(row=>row.ip_address).filter(Boolean)).size;
+        const cities=new Set(recentDetails.map(x=>[x.network?.city,x.network?.region,x.network?.country].filter(Boolean).join("|")).filter(Boolean));
+        const vpnSignals=recentDetails.filter(x=>x.network?.vpnDetected).length;
+        const sharedAccounts=Number(sameIps.rows[0]?.accounts||0);
+        const reasons=[];
+        let score=0;
+        if(twoHourIps>=5){score+=25;reasons.push(twoHourIps+" IP addresses used in 2 hours");}
+        else if(twoHourIps>=3){score+=15;reasons.push(twoHourIps+" IP addresses used in 2 hours");}
+        if(cities.size>=3){score+=20;reasons.push(cities.size+" approximate locations in recent IP history");}
+        if(vpnSignals){score+=20;reasons.push(vpnSignals+" recent IPs flagged as VPN/proxy/hosting");}
+        if(sharedAccounts>=5){score+=20;reasons.push(sharedAccounts+" accounts share recent IPs");}
+        if(recent.length>=10){score+=15;reasons.push(recent.length+" connection events in 2 hours");}
+        score=Math.min(100,score);
+        risk={score,level:score>=70?"High":score>=40?"Elevated":score>=20?"Moderate":"Low",reasons};
+        deviceSignals=[{label:"Registered device records",value:Number(device.rows[0]?.registrations||0)},{label:"Distinct stored IP hashes",value:Number(device.rows[0]?.ip_hashes||0)},{label:"Accounts sharing recent IPs",value:sharedAccounts},{label:"Accounts correlated by registration device/IP record",value:Number(deviceIpMatches.rows[0]?.accounts||0)}];
+      }
+    }
+    res.json({config,account,timeline,deviceSignals,risk,disclaimer:"Risk is a local heuristic, not a third-party global blacklist. IP geolocation and VPN flags can be inaccurate; shared IPs do not prove shared ownership."});
+  }catch(error){console.error("[DEV_NETWORK_SECURITY] read failed:",error?.stack||error);res.status(500).json({error:"Could not load Developer network security data."});}
+});
+app.put("/api/developer/network-security",auth,developerOnly,async(req,res)=>{
+  try{
+    const old=await getDeveloperNetworkSecurity(),body=req.body||{};
+    const next={...old};
+    if(body.blockVpn!==undefined)next.blockVpn=body.blockVpn===true;
+    if(body.allowedCountries!==undefined)next.allowedCountries=normalizedList(body.allowedCountries);
+    if(body.blockedCountries!==undefined)next.blockedCountries=normalizedList(body.blockedCountries);
+    if(body.blockedVpnCountries!==undefined)next.blockedVpnCountries=normalizedList(body.blockedVpnCountries);
+    if(body.blockedRegions!==undefined)next.blockedRegions=normalizedList(body.blockedRegions);
+    const saved=await saveDeveloperNetworkSecurity(next,current(req));
+    log(current(req),"DEV_NETWORK_POLICY_UPDATE","Developer network access policy",{blockVpn:saved.blockVpn,allowedCountries:saved.allowedCountries,blockedCountries:saved.blockedCountries,blockedVpnCountries:saved.blockedVpnCountries,blockedRegions:saved.blockedRegions});
+    res.json({ok:true,config:saved});
+  }catch(error){console.error("[DEV_NETWORK_SECURITY] update failed:",error?.stack||error);res.status(500).json({error:"Could not save Developer network policy."});}
+});
+app.post("/api/developer/network-security/ip-rules",auth,developerOnly,async(req,res)=>{
+  try{
+    const pattern=String(req.body?.pattern||"").trim();
+    const reason=String(req.body?.reason||"").trim().slice(0,240);
+    if(!networkRuleIsValid(pattern))return res.status(400).json({error:"Use an IPv4 address, wildcard such as 45.67.1.*, or CIDR range such as 45.67.0.0/16."});
+    const config=await getDeveloperNetworkSecurity();
+    if((config.ipRules||[]).some(rule=>rule.pattern===pattern))return res.status(409).json({error:"That IP/range rule already exists."});
+    config.ipRules=[...(config.ipRules||[]),{id:crypto.randomUUID(),pattern,reason:reason||"Blocked by Developer",createdAt:Date.now(),createdBy:current(req).username}].slice(-500);
+    const saved=await saveDeveloperNetworkSecurity(config,current(req));
+    log(current(req),"DEV_NETWORK_RULE_ADD",pattern,{reason});
+    res.json({ok:true,config:saved});
+  }catch(error){console.error("[DEV_NETWORK_SECURITY] rule add failed:",error?.stack||error);res.status(500).json({error:"Could not add the IP/range rule."});}
+});
+app.delete("/api/developer/network-security/ip-rules/:id",auth,developerOnly,async(req,res)=>{
+  try{
+    const config=await getDeveloperNetworkSecurity(),before=(config.ipRules||[]).length;
+    config.ipRules=(config.ipRules||[]).filter(rule=>String(rule.id)!==String(req.params.id));
+    if(config.ipRules.length===before)return res.status(404).json({error:"IP/range rule not found."});
+    const saved=await saveDeveloperNetworkSecurity(config,current(req));
+    log(current(req),"DEV_NETWORK_RULE_REMOVE",req.params.id,{});
+    res.json({ok:true,config:saved});
+  }catch(error){console.error("[DEV_NETWORK_SECURITY] rule remove failed:",error?.stack||error);res.status(500).json({error:"Could not remove the IP/range rule."});}
+});
+app.get("/api/developer/network-security/lookup",auth,developerOnly,async(req,res)=>{
+  const ip=String(req.query.ip||"").trim();
+  if(!networkRuleIsValid(ip)||ip.includes("*")||ip.includes("/"))return res.status(400).json({error:"Enter a single IPv4 address to look up."});
+  try{const network=await lookupIpNetworkDetails(ip);res.json({ip,network,mapUrl:/^-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?$/.test(String(network.coordinates||""))?"https://www.openstreetmap.org/?mlat="+encodeURIComponent(network.coordinates.split(",")[0])+"&mlon="+encodeURIComponent(network.coordinates.split(",")[1])+"&zoom=10":null});}
+  catch(error){res.status(500).json({error:"IP lookup failed."});}
+});
+
+
+function developerNetworkAccess(req,res){
+ const actor=current(req);
+ if(String(actor?.rank||"").toUpperCase()!=="DEVELOPER"){res.status(403).json({error:"Developer account access required."});return null;}
+ db.settings ||= {}; db.settings.developer_network_security ||= {ipRules:[],blockVpn:false,allowedCountries:[],blockedCountries:[],blockedRegions:[]};
+ const cfg=db.settings.developer_network_security;cfg.ipRules||=[];cfg.allowedCountries||=[];cfg.blockedCountries||=[];cfg.blockedRegions||=[];
+ return {actor,cfg};
+}
+function networkIpNorm(ip){return String(ip||"").trim().replace(/^::ffff:/i,"").replace(/^\[|\]$/g,"").replace(/\/\d{1,3}$/,"");}
+function networkIpv4Number(ip){return ipv4Integer(networkIpNorm(ip));}
+function networkRuleMatches(ip,pattern){
+ const value=networkIpNorm(ip),rule=String(pattern||"").trim();if(!value||!rule)return false;
+ if(rule.includes("*")){const p=rule.split(".");if(p.length!==4)return false;const v=value.split(".");return v.length===4&&p.every((x,i)=>x==="*"?(Number(v[i])<=255&&/^\d{1,3}$/.test(v[i])):x===v[i]);}
+ if(rule.includes("/")){const parts=rule.split("/"),n=networkIpv4Number(value),b=networkIpv4Number(parts[0]),bits=Number(parts[1]);if(n===null||b===null||!Number.isInteger(bits)||bits<0||bits>32)return false;const mask=bits===0?0:(0xffffffff<<(32-bits))>>>0;return (n&mask)===(b&mask);}
+ return value===rule;
+}
+function networkPolicyList(v){return String(v||"").split(/[,;\n]+/).map(x=>x.trim().toLowerCase()).filter(Boolean).slice(0,100);}
+async function evaluateDeveloperNetworkPolicy(ip){
+ const c=db.settings?.developer_network_security||{};const rule=(c.ipRules||[]).find(r=>r.enabled!==false&&networkRuleMatches(ip,r.pattern));if(rule)return {blocked:true,reason:rule.reason||"IP / range ban"};
+ if(!(c.ipRules||[]).some(r=>r.enabled!==false)&&(c.blockVpn!==true)&&!(c.allowedCountries||[]).length&&!(c.blockedCountries||[]).length&&!(c.blockedRegions||[]).length)return {blocked:false};
+ const n=await lookupIpNetworkDetails(networkIpNorm(ip)),country=String(n.country||"").toLowerCase(),region=String(n.region||"").toLowerCase(),code=String(n.countryCode||n.country_code||"").toLowerCase();
+ if(country||code){if((c.allowedCountries||[]).length&&!(c.allowedCountries||[]).some(x=>x===country||x===code||country.includes(x)||x.includes(country)))return {blocked:true,reason:"Country is not on the developer allowlist"};if((c.blockedCountries||[]).some(x=>x===country||x===code||country.includes(x)||x.includes(country)))return {blocked:true,reason:"Access from this country is blocked"};if((c.blockedRegions||[]).some(x=>region.includes(x)||x.includes(region)))return {blocked:true,reason:"Access from this region is blocked"};}
+ if(c.blockVpn&&n.vpnDetected)return {blocked:true,reason:"VPN / proxy / hosting network is blocked"};return {blocked:false,network:n};
+}
+app.get("/api/developer/network-security",auth,(req,res)=>{const a=developerNetworkAccess(req,res);if(a)res.json({config:a.cfg});});
+app.post("/api/developer/network-security/rules",auth,(req,res)=>{
+ const a=developerNetworkAccess(req,res);if(!a)return;const pattern=String(req.body?.pattern||"").trim().slice(0,64);
+ const valid=networkRuleIsValid(pattern);
+ if(!valid)return res.status(400).json({error:"Enter an IPv4 address, wildcard such as 45.67.1.*, or CIDR such as 45.67.0.0/16."});
+ if(a.cfg.ipRules.some(r=>r.pattern===pattern&&r.enabled!==false))return res.status(409).json({error:"That rule already exists."});
+ a.cfg.ipRules.unshift({id:crypto.randomUUID(),pattern,reason:String(req.body?.reason||"Developer network ban").slice(0,240),enabled:true,createdAt:Date.now(),createdBy:a.actor.username});save();log(a.actor,"DEVELOPER_IP_RANGE_BAN",pattern);res.json({ok:true,config:a.cfg});
+});
+app.delete("/api/developer/network-security/rules/:id",auth,(req,res)=>{const a=developerNetworkAccess(req,res);if(!a)return;const old=a.cfg.ipRules.length;a.cfg.ipRules=a.cfg.ipRules.filter(r=>String(r.id)!==String(req.params.id));if(old===a.cfg.ipRules.length)return res.status(404).json({error:"Rule not found."});save();log(a.actor,"DEVELOPER_IP_RANGE_UNBAN",String(req.params.id));res.json({ok:true,config:a.cfg});});
+app.put("/api/developer/network-security/policy",auth,(req,res)=>{const a=developerNetworkAccess(req,res);if(!a)return;const b=req.body||{};a.cfg.blockVpn=b.blockVpn===true;a.cfg.allowedCountries=networkPolicyList(b.allowedCountries);a.cfg.blockedCountries=networkPolicyList(b.blockedCountries);a.cfg.blockedRegions=networkPolicyList(b.blockedRegions);save();log(a.actor,"DEVELOPER_NETWORK_POLICY_UPDATE","network policy");res.json({ok:true,config:a.cfg});});
+app.get("/api/developer/network-security/lookup",auth,async(req,res)=>{const a=developerNetworkAccess(req,res);if(!a)return;const ip=networkIpNorm(req.query.ip);if(networkIpv4Number(ip)===null)return res.status(400).json({error:"Enter a valid public IPv4 address."});const network=await lookupIpNetworkDetails(ip);const signals=[];if(network.vpnDetected)signals.push("VPN / proxy / hosting signal");if((a.cfg.ipRules||[]).some(r=>networkRuleMatches(ip,r.pattern)))signals.push("Matches a developer IP ban rule");const xy=String(network.coordinates||"").split(",");const mapUrl=xy.length===2&&xy.every(x=>Number.isFinite(Number(x)))?"https://www.openstreetmap.org/?mlat="+xy[0]+"&mlon="+xy[1]+"#map=10/"+xy[0]+"/"+xy[1]:null;res.json({ip,network,riskScore:Math.min(100,signals.reduce((v,x)=>v+(x.includes("ban")?70:35),0)),riskSignals:signals,mapUrl});});
+app.get("/api/developer/network-security/timeline",auth,async(req,res)=>{const a=developerNetworkAccess(req,res);if(!a)return;const qname=String(req.query.q||"").trim().replace(/^@/,"").slice(0,80);const u=(db.users||[]).find(x=>String(x.username||"").toLowerCase()===qname.toLowerCase());if(!u)return res.status(404).json({error:"Account not found."});const q=await pool.query("SELECT host(ip_address) AS ip_address,event_type,recorded_at,user_agent FROM user_ip_history WHERE user_id=$1 ORDER BY recorded_at DESC LIMIT 200",[Number(u.id)]);const events=q.rows,ips=[...new Set(events.map(x=>networkIpNorm(x.ip_address)).filter(Boolean))],geo={};await Promise.all(ips.slice(0,40).map(async ip=>{if(networkIpv4Number(ip)!==null)geo[ip]=await lookupIpNetworkDetails(ip);}));const recent=events.filter(x=>Date.now()-new Date(x.recorded_at).getTime()<7200000).length,signals=[];if(ips.length>=5)signals.push("Frequent IP changes");if(ips.length>=10)signals.push("High IP churn");if(recent>=10)signals.push("Many IP-history events in the last 2 hours");if(events.some(x=>geo[networkIpNorm(x.ip_address)]?.vpnDetected))signals.push("VPN / proxy signal in history");const riskScore=Math.min(100,(ips.length>=10?45:ips.length>=5?25:0)+(recent>=10?25:0)+(signals.some(x=>x.startsWith("VPN"))?30:0));res.json({username:u.username,distinctIpCount:ips.length,riskScore,riskSignals:signals,events:events.map(x=>({...x,network:geo[networkIpNorm(x.ip_address)]||{}})),deviceFingerprintRegistered:!!(await pool.query("SELECT 1 FROM device_fingerprints WHERE user_id=$1 LIMIT 1",[Number(u.id)])).rowCount,disclaimer:"Local heuristic only, not a global blacklist or proof of abuse. IP locations are approximate."});});
+
+app.get("/api/staff/ip-inspection",auth,async(req,res)=>{
+  const actor=current(req),viewerRank=String(actor?.rank||"").toUpperCase();
+  if(!["INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(viewerRank))return res.status(403).json({error:"Your rank does not have IP Inspection access."});
+  const fullAccess=viewerRank==="OWNER"||viewerRank==="DEVELOPER";
+  const canInspectTarget=target=>fullAccess||(String(target?.id)!==String(actor?.id)&&(rankOrder[String(target?.rank||"MEMBER").toUpperCase()]??999)<(rankOrder[viewerRank]??-1));
+  let stage="prepare-query";
+  try{
+    const search=String(req.query.q||"").trim().slice(0,100).replace(/^@/,"");
+    const limit=Math.min(200,Math.max(1,Number(req.query.limit)||100));
+    const params=[];
+    let where="";
+    if(search){
+      params.push("%"+search+"%");
+      where="WHERE u.username ILIKE $1 OR COALESCE(u.email,'') ILIKE $1 OR COALESCE(h.ip_address::text,'') ILIKE $1";
+    }
+    params.push(limit);
+    const limitPlaceholder="$"+params.length;
+    stage="query-ip-history";
+    const q=await pool.query(`SELECT h.id,h.user_id,u.username,u.email,h.ip_address::text AS ip_address,h.event_type,h.user_agent,h.recorded_at,u.created_at AS registered_at FROM users u LEFT JOIN user_ip_history h ON h.user_id=u.id ${where} ORDER BY h.recorded_at DESC NULLS LAST,u.username LIMIT ${limitPlaceholder}`,params);
+    const permittedRows=q.rows.filter(row=>!db.users.find(u=>String(u.id)===String(row.user_id))?.hideMode&&canInspectTarget({id:row.user_id,rank:db.users.find(u=>String(u.id)===String(row.user_id))?.rank}));
+    stage="lookup-network-details";
+    const normalizeIp=ip=>String(ip||"").trim().replace(/^::ffff:/i,"").replace(/^\[|\]$/g,"").replace(/\/\d{1,3}$/,"");
+    const isPrivateOrLocal=ip=>{
+      const value=normalizeIp(ip).toLowerCase();
+      return !value||["unknown","unavailable","::1","127.0.0.1","0.0.0.0"].includes(value)||
+        value.startsWith("127.")||value.startsWith("10.")||value.startsWith("192.168.")||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(value)||value.startsWith("169.254.")||
+        /^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./.test(value)||
+        value.startsWith("fc")||value.startsWith("fd")||value.startsWith("fe80:")||
+        value.startsWith("2001:db8:")||value.startsWith("192.0.2.")||
+        value.startsWith("198.51.100.")||value.startsWith("203.0.113.");
+    };
+    const uniqueIps=[...new Set(permittedRows.map(x=>normalizeIp(x.ip_address)))].filter(ip=>!isPrivateOrLocal(ip));
+    const sourceUserIds=[...new Set(permittedRows.filter(row=>row.ip_address&&!isPrivateOrLocal(normalizeIp(row.ip_address))).map(row=>Number(row.user_id)).filter(Number.isFinite))];
+    const matchedIps=[...new Set(permittedRows.map(row=>normalizeIp(row.ip_address)).filter(ip=>ip&&!isPrivateOrLocal(ip)))];
+    let sameIpAccounts=[];
+    if(matchedIps.length&&sourceUserIds.length){
+      const matches=await pool.query(`SELECT DISTINCT u.id,u.username,u.email,u.created_at,host(h.ip_address) AS ip_address,h.event_type,h.recorded_at,h.user_agent
+        FROM users u JOIN user_ip_history h ON h.user_id=u.id
+        WHERE host(h.ip_address)=ANY($1::text[]) AND NOT (u.id=ANY($2::int[]))
+        ORDER BY u.username,h.recorded_at DESC`,[matchedIps,sourceUserIds]);
+      const seen=new Set();
+      sameIpAccounts=matches.rows.filter(row=>!db.users.find(u=>String(u.id)===String(row.id))?.hideMode&&canInspectTarget({id:row.id,rank:db.users.find(u=>String(u.id)===String(row.id))?.rank})).filter(row=>{const key=String(row.id)+'|'+row.ip_address;if(seen.has(key))return false;seen.add(key);return true;});
+    }
+    const lookups=await Promise.all(uniqueIps.slice(0,60).map(async ip=>[ip,await lookupIpNetworkDetails(ip)]));
+    const geo=Object.fromEntries(lookups);
+    const records=permittedRows.map(row=>{
+      const ip=normalizeIp(row.ip_address);
+      const privateIp=isPrivateOrLocal(ip);
+      let network=privateIp?{lookupStatus:ip?"Private/local IP — no public geolocation":"No IP recorded"}:(geo[ip]||{lookupStatus:"Not looked up"});
+      // Providers differ in VPN flags; when no explicit flag is returned, use
+      // conservative network-name signals and label these as possible matches.
+      if(!network.vpnDetected){
+        const signalText=[network.networkProvider,network.organization,network.asn,network.hostname,network.networkType].join(" ").toLowerCase();
+        const vpnTerms=/\b(vpn|proxy|tor exit|nordvpn|expressvpn|surfshark|proton vpn|mullvad|private internet access|cyberghost|torguard|windscribe|datacamp|hosting|vps|dedicated server|cloud server|datacenter|data center)\b/i;
+        if(vpnTerms.test(signalText)){network={...network,vpnDetected:true,vpnSignals:["Possible VPN / proxy / hosting network"],vpnDetectionMethod:"network-name heuristic"};}
+      }
+      return {...row,network,...(fullAccess?{login_status:(db.users.find(u=>String(u.id)===String(row.user_id))?.online?"Online":"Offline")}: {})};
+    });
+    const vpnAccountsMap=new Map();
+    for(const row of records){
+      if(!row.network?.vpnDetected||!row.username)continue;
+      const key=String(row.user_id||row.username);
+      const existing=vpnAccountsMap.get(key);
+      if(!existing||new Date(row.recorded_at||0)>new Date(existing.recorded_at||0))vpnAccountsMap.set(key,row);
+    }
+    const vpnAccounts=[...vpnAccountsMap.values()].map(row=>({
+      username:row.username,rank:db.users.find(u=>String(u.id)===String(row.user_id))?.rank||"MEMBER",
+      event_type:row.event_type,recorded_at:row.recorded_at,
+      country:row.network.country||"",networkProvider:row.network.networkProvider||"",
+      signals:row.network.vpnSignals||[],method:row.network.vpnDetectionMethod||"provider flag",
+      ip_address:row.ip_address
+    }));
+    const personalizedRecords=viewerRank==="INSTRUCTOR"?records.map(row=>({username:row.username,email:row.email||"",network:{country:row.network?.country||"",region:row.network?.region||"",city:row.network?.city||""}})):viewerRank==="COOWNER"?records.map(({user_agent,id,user_id,...row})=>({...row,network:Object.fromEntries(Object.entries(row.network||{}).filter(([key])=>key!=="postalCode"))})):records;
+    const personalizedMatches=viewerRank==="INSTRUCTOR"?[]:sameIpAccounts.map(row=>{const {user_agent,...safe}=row;const network=geo[row.ip_address]||{};return fullAccess?{...safe,network}:{id:safe.id,username:safe.username,email:safe.email,created_at:safe.created_at,ip_address:safe.ip_address,event_type:safe.event_type,recorded_at:safe.recorded_at,network:{country:network.country||"",region:network.region||"",city:network.city||"",networkProvider:network.networkProvider||"",asn:network.asn||"",lookupStatus:network.lookupStatus||"Unavailable"}};});
+    return res.json({
+      accessProfile:viewerRank,
+      accessFields:viewerRank==="INSTRUCTOR"?["email","location"]:viewerRank==="COOWNER"?["email","ip_address","location","networkProvider","networkTechnical","eventTime"]:["all"],
+      vpnAccounts:fullAccess?vpnAccounts:[],
+      sameIpAccounts:personalizedMatches,
+      records:personalizedRecords,
+      limit,
+      geolocationNote:"Approximate IP location and network data are retrieved server-side from IP Info, with ipapi.co as a fallback. Results may be missing or inaccurate, especially for VPNs, mobile networks, or private addresses."
+    });
+  }catch(err){
+    console.error("[IP_INSPECTION] request failed at "+stage+":",err?.stack||err?.message||err);
+    if(!res.headersSent)return res.status(500).json({error:"IP Inspection failed during "+stage+". Check server logs for [IP_INSPECTION]."});
+  }
+});
+
+
+
+app.get("/api/staff/admin/users",auth,async(req,res)=>{
+  const actor=current(req);
+  if(!hasRank(actor,"ADMIN")) return res.status(403).json({error:"Admin rank or higher required."});
+  const term=String(req.query.q||"").trim().replace(/^@/,"").toLowerCase().slice(0,80);
+  const users=(db.users||[]).filter(u=>!u.hideMode&&(!term||[u.username,u.displayName,u.rank,String(u.id)].some(v=>String(v||"").toLowerCase().includes(term)))).slice(0,50).map(u=>({id:String(u.id),username:u.username,displayName:u.displayName||u.username,rank:u.rank,online:!!u.online&&!u.invisible,banned:!!u.banned,mutedUntil:u.mutedUntil||null,kickedUntil:u.kickedUntil||null}));
+  res.json({users});
+});
+app.get("/api/staff/system-center",auth,async(req,res)=>{
+  const actor=current(req);
+  if(!hasRank(actor,"ADMIN")) return res.status(403).json({error:"Admin rank or higher required."});
+  let database={ok:false,latencyMs:null};
+  const started=Date.now();
+  try{await pool.query("SELECT 1");database={ok:true,latencyMs:Date.now()-started};}
+  catch(e){database={ok:false,latencyMs:Date.now()-started,error:"Database health check failed"};}
+  const users=db.users||[], now=Date.now();
+  const recent=filterAuditRowsForRank((db.moderationHistory||[]).slice().reverse(),actor);
+  const enabledRules=Object.entries(db.settings?.system_moderation||{}).filter(([,v])=>v?.enabled===true).map(([key,v])=>({key,action:v.action,durationMinutes:v.durationMinutes,reason:v.reason}));
+  res.json({health:{server:"ok",database,uptimeSeconds:Math.floor(process.uptime()),checkedAt:now},stats:{users:users.length,online:users.filter(x=>x.online&&!x.invisible).length,rooms:(db.rooms||[]).length,messages:(db.messages||[]).length,openReports:(db.reports||[]).filter(x=>String(x.status||"OPEN").toUpperCase()==="OPEN").length,activeModerations:users.filter(x=>x.banned||(x.mutedUntil&&x.mutedUntil>now)||(x.kickedUntil&&x.kickedUntil>now)).length},rules:enabledRules,audit:recent});
+});
+function auditVisibilityKey(row){
+  const action=String(row?.action||"").toUpperCase();
+  const source=String(row?.source||"").toUpperCase();
+  if(/FEATURE_ACCESS/.test(action))return "feature_permissions";
+  if(/INVISIBLE_MODE/.test(action))return "invisible_mode";
+  if(/LOGIN|LOGOUT/.test(action))return "login_activity";
+  if(/RANK/.test(action))return "rank_changes";
+  if(/MESSAGE.*DELETE|DELETE.*MESSAGE/.test(action))return "deleted_messages";
+  if(/MESSAGE.*EDIT|EDIT.*MESSAGE/.test(action))return "edited_messages";
+  if(/REPORT/.test(action))return "reports";
+  if(/BAN|UNBAN|MUTE|KICK|WARN|MODERAT/.test(action))return "moderation_actions";
+  if(/ROOM/.test(action))return "room_changes";
+  if(/GOLD|TRANSFER|CURRENCY/.test(action))return "gold_transactions";
+  if(/PRIVATE|\bDM\b/.test(action))return "private_messages";
+  if(/UPLOAD|ATTACHMENT|FILE/.test(action))return "file_uploads";
+  if(/PROFILE|AVATAR|BIO/.test(action))return "profile_changes";
+  if(/SETTING|CONFIG/.test(action))return "site_settings";
+  if(/ACCOUNT|USER_/.test(action))return "account_changes";
+  if(/STAFF/.test(source+" "+action))return "staff_actions";
+  return "staff_actions";
+}
+function filterAuditRowsForRank(rows,user){
+  const settings=db.settings?.audit_log_visibility||{};
+  const rankNames=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+  const viewerRank=String(user?.rank||"MEMBER").toUpperCase(), viewerLevel=rankNames.indexOf(viewerRank);
+  return (rows||[]).filter(row=>{
+    const key=auditVisibilityKey(row), rule=settings[key]||{enabled:true,minimumRank:"ADMIN"};
+    if(rule.enabled===false)return false;
+    const minimum=rankNames.indexOf(String(rule.minimumRank||"ADMIN").toUpperCase());
+    return viewerRank==="DEVELOPER"||viewerRank==="OWNER"||(viewerLevel>=0&&minimum>=0&&viewerLevel>=minimum);
+  });
+}
+app.get("/api/staff/system-center/audit",auth,async(req,res)=>{
+  const actor=current(req);
+  if(!hasRank(actor,"ADMIN")) return res.status(403).json({error:"Admin rank or higher required."});
+  const q=String(req.query.q||"").trim().toLowerCase().slice(0,100);
+  try{
+    const auditRows=await pool.query("SELECT l.id,l.action_type,l.performed_by,l.target_user_id,l.details,l.created_at,performer.username AS performer_username,target.username AS target_username FROM admin_logs l LEFT JOIN users performer ON performer.id=l.performed_by LEFT JOIN users target ON target.id=l.target_user_id ORDER BY l.created_at DESC,l.id DESC LIMIT 5000");
+    const rows=auditRows.rows.map(row=>{
+      let details={};try{details=typeof row.details==="string"?JSON.parse(row.details):(row.details||{});}catch{details={message:String(row.details||"")};}
+      return {id:String(row.id),time:row.created_at?new Date(row.created_at).getTime():Date.now(),actor:row.performer_username||"SYSTEM",actorUsername:row.performer_username||"SYSTEM",action:row.action_type||"ACTION",target:row.target_username||details.target||String(row.target_user_id||""),reason:details.reason||details.message||"",source:details.source||"staff",meta:details};
+    });
+    const visibleRows=filterAuditRowsForRank(rows,actor);
+    res.json({audit:visibleRows.filter(x=>!q||[x.target,x.actor,x.actorUsername,x.action,x.reason,x.source].some(v=>String(v||"").toLowerCase().includes(q)))});
+  }catch(error){console.error("Staff audit history lookup failed:",error);res.status(500).json({error:"Could not load audit history. Please try again."});}
+});
+
+/* Staff applications persist in PostgreSQL so submissions survive redeploys. */
+async function ensureStaffApplicationsTable(){
+  await pool.query(`CREATE TABLE IF NOT EXISTS staff_applications(
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    username TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    requested_rank TEXT NOT NULL,
+    activity TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    experience TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    reviewed_by BIGINT,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+}
+app.get('/api/staff-applications/mine',auth,async(req,res)=>{
+  try{
+    await ensureStaffApplicationsTable();
+    const u=current(req);
+    const q=await pool.query('SELECT id,requested_rank AS "requestedRank",activity,reason,experience,status,created_at AS "createdAt" FROM staff_applications WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1',[Number(u.id)]);
+    const r=q.rows[0];res.json({application:r?{...r,id:String(r.id),createdAt:new Date(r.createdAt).getTime()}:null});
+  }catch(e){console.error('Staff application lookup failed:',e);res.status(500).json({error:'Could not load your staff application.'});}
+});
+app.post('/api/staff-applications',auth,async(req,res)=>{
+  try{
+    await ensureStaffApplicationsTable();
+    const u=current(req),requestedRank=String(req.body.requestedRank||'').toUpperCase();
+    const activity=String(req.body.activity||'').trim().slice(0,180),reason=String(req.body.reason||'').trim().slice(0,2500),experience=String(req.body.experience||'').trim().slice(0,2000);
+    if(!['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','COOWNER'].includes(requestedRank))return res.status(400).json({error:'Choose a rank from Moderator to Co-owner.'});
+    if(!activity||!reason||!experience)return res.status(400).json({error:'Please complete every question before submitting.'});
+    const pending=await pool.query("SELECT id FROM staff_applications WHERE user_id=$1 AND status IN ('PENDING','APPROVED') LIMIT 1",[Number(u.id)]);
+    if(pending.rowCount)return res.status(409).json({error:'You already have a pending or approved staff application.'});
+    const q=await pool.query("INSERT INTO staff_applications(user_id,username,display_name,requested_rank,activity,reason,experience,status) VALUES($1,$2,$3,$4,$5,$6,$7,'PENDING') RETURNING id",[Number(u.id),u.username,u.displayName||u.username,requestedRank,activity,reason,experience]);
+    log(u,'STAFF_APPLICATION_SUBMIT',u.username,{applicationId:String(q.rows[0].id),requestedRank});
+    res.json({ok:true,id:String(q.rows[0].id),status:'PENDING'});
+  }catch(e){console.error('Staff application submission failed:',e);res.status(500).json({error:'Could not submit your application. Please try again.'});}
+});
+app.get('/api/staff/applications',auth,featureAllowed('view_staff_dashboard'),async(req,res)=>{
+  const actor=current(req);if(!['COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
+  try{await ensureStaffApplicationsTable();const q=await pool.query("SELECT a.id,a.user_id AS \"userId\",a.username,a.display_name AS \"displayName\",a.requested_rank AS \"requestedRank\",a.activity,a.reason,a.experience,a.status,a.created_at AS \"createdAt\",a.reviewed_at AS \"reviewedAt\",reviewer.username AS \"reviewedBy\" FROM staff_applications a LEFT JOIN users reviewer ON reviewer.id=a.reviewed_by ORDER BY CASE WHEN a.status='PENDING' THEN 0 ELSE 1 END,a.created_at DESC LIMIT 300");res.json({applications:q.rows.map(x=>({...x,id:String(x.id),userId:String(x.userId),createdAt:new Date(x.createdAt).getTime(),reviewedAt:x.reviewedAt?new Date(x.reviewedAt).getTime():null}))});}
+  catch(e){console.error('Staff application list failed:',e);res.status(500).json({error:'Could not load staff applications.'});}
+});
+app.post('/api/staff/applications/:id/reject',auth,featureAllowed('view_staff_dashboard'),async(req,res)=>{
+  const actor=current(req);if(!['COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
+  try{await ensureStaffApplicationsTable();const q=await pool.query("UPDATE staff_applications SET status='REJECTED',reviewed_by=$2,reviewed_at=NOW() WHERE id=$1 AND status='PENDING' RETURNING username",[req.params.id,Number(actor.id)]);if(!q.rowCount)return res.status(404).json({error:'Pending application not found.'});await log(actor,'STAFF_APPLICATION_REJECT',q.rows[0].username,{applicationId:req.params.id});res.json({ok:true});}
+  catch(e){console.error('Staff application rejection failed:',e);res.status(500).json({error:'Could not reject this application.'});}
+});
+app.delete('/api/staff/applications/:id',auth,async(req,res)=>{
+  const actor=current(req);
+  if(String(actor.rank||'').toUpperCase()!=='DEVELOPER')return res.status(403).json({error:'Developer rank required to delete staff applications.'});
+  try{
+    await ensureStaffApplicationsTable();
+    const q=await pool.query('DELETE FROM staff_applications WHERE id=$1 RETURNING username',[req.params.id]);
+    if(!q.rowCount)return res.status(404).json({error:'Staff application not found.'});
+    await log(actor,'STAFF_APPLICATION_DELETE',q.rows[0].username,{applicationId:String(req.params.id)});
+    res.json({ok:true});
+  }catch(e){console.error('Staff application deletion failed:',e);res.status(500).json({error:'Could not delete this staff application.'});}
+});
+app.post('/api/staff/applications/:id/grant',auth,featureAllowed('view_staff_dashboard'),async(req,res)=>{
+  const actor=current(req);if(!['COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
+  const requested=String(req.body.rank||'').toUpperCase();
+  if(!['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','INSTRUCTOR','COOWNER'].includes(requested))return res.status(400).json({error:'Choose a valid staff rank.'});
+  try{
+    await ensureStaffApplicationsTable();
+    const client=await pool.connect();
+    try{
+      await client.query('BEGIN');
+      const appResult=await client.query("SELECT * FROM staff_applications WHERE id=$1 AND status='PENDING' FOR UPDATE",[req.params.id]);
+      if(!appResult.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'Pending application not found.'});}
+      const application=appResult.rows[0],target=findUser(application.user_id);
+      if(!target){await client.query('ROLLBACK');return res.status(404).json({error:'Applicant account not found.'});}
+      if(target.username==='Maleficent'||String(target.rank).toUpperCase()==='DEVELOPER'){await client.query('ROLLBACK');return res.status(403).json({error:'Protected account cannot be changed.'});}
+      const ownerPower=String(actor.rank).toUpperCase()==='DEVELOPER'||(String(actor.rank).toUpperCase()==='OWNER'&&actor.username==='Maleficent');
+      const actorRankNow=String(actor.rank||"").toUpperCase();
+      if(!ownerPower&&!["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER"].includes(actorRankNow)){await client.query('ROLLBACK');return res.status(403).json({error:'Your current rank does not have staff-rank granting authority.'});}
+
+      if(!ownerPower&&!hasFeature(actor,'staff_rank_assignment')){await client.query('ROLLBACK');return res.status(403).json({error:'You do not have rank-assignment permission.'});}
+      const assignableRanks=Array.isArray(db.settings?.staff_application_grant_ranks)?db.settings.staff_application_grant_ranks:["MOD"];
+      const coownerPower=actorRankNow==="COOWNER";
+      if(!ownerPower&&!coownerPower&&!assignableRanks.includes(requested)){await client.query('ROLLBACK');return res.status(403).json({error:'Your current rank permissions do not allow granting '+requested+'.'});}
+      const hierarchy=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+      const hierarchyIndex=rank=>{const normalized=String(rank||"MEMBER").toUpperCase();return hierarchy.indexOf(normalized)<0?0:hierarchy.indexOf(normalized);};
+      const grantCeiling=coownerPower?"INSTRUCTOR":"MOD";
+      if(!ownerPower&&hierarchyIndex(requested)>hierarchyIndex(grantCeiling)){await client.query('ROLLBACK');return res.status(403).json({error:'Your permissions allow granting '+(coownerPower?'Instructor':'Moderator')+' or below only.'});}
+      if(!ownerPower&&hierarchyIndex(target.rank)>=hierarchyIndex(actor.rank)){await client.query('ROLLBACK');return res.status(403).json({error:'You cannot change an equal or higher rank.'});}
+      await client.query("UPDATE users SET rank=$1 WHERE id=$2",[requested.toLowerCase(),Number(target.id)]);
+      await client.query("UPDATE staff_applications SET status='APPROVED',reviewed_by=$2,reviewed_at=NOW() WHERE id=$1",[req.params.id,Number(actor.id)]);
+      await client.query('COMMIT');
+      // Update the in-memory account only after the database transaction commits.
+      target.rank=requested;
+      save();await log(actor,'STAFF_APPLICATION_GRANT',target.username,{applicationId:req.params.id,rank:requested});
+      // Rank changes are private account notifications, never public room announcements.
+      await notify(target.id,'rank_change','Rank updated',`System has changed your rank to ${requested.replaceAll('_',' ')}.`);
+      res.json({ok:true,rank:requested});
+    }catch(e){try{await client.query('ROLLBACK')}catch{}throw e;}finally{client.release();}
+  }catch(e){console.error('Staff application rank grant failed:',e);res.status(500).json({error:'Could not grant this rank. Check rank-assignment permissions and try again.'});}
+});
+
+app.get("/api/staff/dashboard",auth,featureAllowed("view_staff_dashboard"),async(req,res)=>{
+  const u=current(req);
+  if(!hasRank(u,"MOD"))return res.status(403).json({error:"Staff only"});
+  try{
+    const stored=await pool.query("SELECT r.id,r.reporter_id,r.reported_id,r.conversation_user_id,r.reason,r.data,r.created_at,reporter.username AS reporter_username,target.username AS reported_username,convo.username AS conversation_username FROM reports r LEFT JOIN users reporter ON reporter.id=r.reporter_id LEFT JOIN users target ON target.id=r.reported_id LEFT JOIN users convo ON convo.id=r.conversation_user_id ORDER BY r.created_at DESC LIMIT 500");
+    const pgReports=stored.rows.map(row=>{
+      const d=row.data&&typeof row.data==="object"?row.data:{};
+      return {...d,id:String(row.id),reporter:d.reporter??row.reporter_id,reporterUsername:d.reporterUsername||row.reporter_username||"Unknown",reportedUserId:d.reportedUserId??row.reported_id,reportedUserUsername:d.reportedUserUsername||row.reported_username||"Unknown",conversationUserId:d.conversationUserId??row.conversation_user_id??null,conversationUsername:d.conversationUsername||row.conversation_username||"",reason:d.reason||row.reason||"No reason supplied",time:d.time||new Date(row.created_at).getTime(),kind:d.kind||(row.conversation_user_id?"private_message":d.messageId?"message":"profile"),category:d.category||(row.conversation_user_id?"Private message report":d.messageId?"Message report":"Profile report"),status:d.status||"OPEN"};
+    });
+    const ids=new Set(pgReports.map(r=>String(r.id)));
+    const reports=[...pgReports,...(db.reports||[]).filter(r=>!ids.has(String(r.id)))].sort((a,b)=>Number(b.time||0)-Number(a.time||0));
+     const reportsOpen=reports.filter(r=>String(r.status||"OPEN").toUpperCase()==="OPEN").length;
+     res.json({reports,history:db.moderationHistory.slice(-500).reverse(),activeActions:db.users.filter(x=>(x.banned===true)||(x.kickedUntil&&x.kickedUntil>Date.now())||(x.mutedUntil&&x.mutedUntil>Date.now())).map(x=>({id:x.id,username:x.username,displayName:x.displayName,rank:x.rank,gold:x.gold||0,banned:!!x.banned,kickedUntil:x.kickedUntil||null,mutedUntil:x.mutedUntil||null,reason:x.banReason||x.kickReason||x.muteReason||""})),stats:{users:db.users.length,online:db.users.filter(x=>x.online).length,messages:db.messages.length,reportsOpen}});
+  }catch(e){console.error("Staff dashboard reports failed:",e);res.status(500).json({error:"Could not load staff reports. Please refresh and try again."});}
+});
+
+app.post("/api/staff/reports/:id/assign",auth,async(req,res)=>{
+  const actor=current(req);if(!hasRank(actor,"MOD"))return res.status(403).json({error:"Staff only"});
+  const assignee=findUser(req.body.staffUserId||req.body.username||"");
+  if(!assignee||!hasRank(assignee,"MOD"))return res.status(400).json({error:"Choose an existing site staff member."});
+  try{
+    const data={assignedTo:String(assignee.id),assignedToUsername:assignee.username,assignedBy:String(actor.id),assignedByUsername:actor.username,assignedAt:Date.now()};
+    const pg=await pool.query("UPDATE reports SET data=COALESCE(data,jsonb_build_object())||$2::jsonb WHERE id=$1 RETURNING data",[req.params.id,JSON.stringify(data)]);
+    const report=(db.reports||[]).find(x=>String(x.id)===String(req.params.id));
+    if(report)Object.assign(report,data);
+    if(!pg.rowCount&&!report)return res.status(404).json({error:"Report not found."});
+    save();log(actor,"REPORT_ASSIGN",req.params.id,{assignedTo:assignee.username});
+    res.json({ok:true,...data});
+  }catch(e){console.error("Report assignment failed:",e);res.status(500).json({error:"Could not assign this report."});}
+});
+app.post("/api/staff/reports/:id/resolve",auth,async(req,res)=>{
+  const u=current(req);
+  if(!hasRank(u,"MOD"))return res.status(403).json({error:"Staff only"});
+  const status=String(req.body.status||"RESOLVED").toUpperCase();
+  if(!["RESOLVED","DISMISSED","OPEN"].includes(status))return res.status(400).json({error:"Invalid report status."});
+  try{
+    const pg=await pool.query("UPDATE reports SET data=COALESCE(data,jsonb_build_object())||$2::jsonb WHERE id=$1 RETURNING data",[req.params.id,JSON.stringify({status,resolutionNote:cleanText(req.body.resolutionNote||"").slice(0,1200),resolvedBy:u.id,resolvedByUsername:u.username,resolvedAt:Date.now()})]);
+    const r=(db.reports||[]).find(x=>String(x.id)===String(req.params.id));
+    if(r){r.status=status;r.resolutionNote=cleanText(req.body.resolutionNote||"").slice(0,1200);r.resolvedBy=u.id;r.resolvedByUsername=u.username;r.resolvedAt=Date.now();}
+    if(!pg.rowCount&&!r)return res.status(404).json({error:"Report not found"});
+    save();log(u,"REPORT_RESOLVE",req.params.id,{status});
+    res.json({report:pg.rowCount?{...(pg.rows[0].data||{}),id:req.params.id,status}:r});
+  }catch(e){console.error("Report resolution failed:",e);res.status(500).json({error:"Could not update this report. Please try again."});}
+});
+app.get(
+  "/api/staff/filter-word",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+    if(!hasRank(u,"COMMISSOR")) return res.status(403).json({error:"Commissor rank or higher required"});
+    res.json({words:db.bannedWords||[]});
+  }
+);
+
+app.post(
+  "/api/staff/filter-word",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+
+    if(!hasRank(u,"COMMISSOR")){
+      return res.status(403).json({error:"Commissor rank or higher required"});
+    }
+
+    const w=
+      cleanText(
+        req.body.word
+      ).trim();
+
+    if(
+      w&&
+      !db.bannedWords.includes(w)
+    ){
+      db.bannedWords.push(w);
+    }
+
+    save();
+
+    log(
+      u,
+      "FILTER_ADD",
+      w
+    );
+
+    res.json({
+      words:db.bannedWords
+    });
+  }
+);
+
+app.delete(
+  "/api/staff/filter-word",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+
+    if(!hasRank(u,"COMMISSOR")){
+      return res.status(403).json({error:"Commissor rank or higher required"});
+    }
+
+    db.bannedWords=
+      db.bannedWords.filter(
+        w=>w!==req.body.word
+      );
+
+    save();
+
+    res.json({
+      words:db.bannedWords
+    });
+  }
+);
+
+
+// PostgreSQL-backed structured community features.
+function coownerOrAbove(req,res,next){
+  const u=current(req);
+  if(!u||!hasRank(u,"COOWNER"))return res.status(403).json({error:"Coowner rank or higher is required."});
+  next();
+}
+
+function normalizeAllowedRanks(v, fallback){
+  const list=Array.isArray(v)?v:[];
+  const allowed=["OWNER","ADMIN","STAFF","TRUSTED","PREMIUM","VIP","USER","MEMBER","MOD","SUPER_ADMIN","COMMISSOR","COOWNER"];
+  const out=[...new Set(list.map(x=>String(x||"").toUpperCase()).filter(x=>allowed.includes(x)))];
+  return out.length?out:fallback;
+}
+
+function filterWordsManager(req,res,next){const u=current(req);if(!u||!hasFeature(u,"manage_filter_words"))return res.status(403).json({error:"Your rank does not have Filter Words management access."});next();}
+app.get('/api/filter-words',auth,filterWordsManager,async(req,res)=>{
+  const {rows}=await pool.query(`SELECT id,word,created_at,added_by FROM filter_words ORDER BY word`);
+  res.json({words:rows,total:rows.length});
+});
+app.post('/api/filter-words/bulk',auth,filterWordsManager,async(req,res)=>{
+  const raw=String(req.body.text||"");
+  const words=[...new Set(raw.split('\n').map(w=>w.trim().toLowerCase()).filter(Boolean))];
+  for(const word of words) await pool.query(`INSERT INTO filter_words(word,added_by) VALUES($1,$2) ON CONFLICT(word) DO NOTHING`,[word,Number(current(req).id)]);
+  db.bannedWords=[...new Set([...db.bannedWords,...words])];
+  save();
+  res.json({ok:true,added:words.length});
+});
+app.delete('/api/filter-words/:id',auth,filterWordsManager,async(req,res)=>{
+  await pool.query(`DELETE FROM filter_words WHERE id=$1`,[req.params.id]);
+  const {rows}=await pool.query(`SELECT word FROM filter_words ORDER BY id`);
+  db.bannedWords=rows.map(x=>x.word); save(); res.json({ok:true,words:db.bannedWords});
+});
+
+// Doodle Studio — each member can save and manage their own drawings.
+app.get('/api/doodles',auth,async(req,res)=>{
+  const u=current(req);
+  const {rows}=await pool.query('SELECT id,title,created_at FROM doodles WHERE user_id=$1 ORDER BY created_at DESC LIMIT 40',[Number(u.id)]);
+  res.json({doodles:rows.map(row=>({...row,id:String(row.id),createdAt:row.created_at}))});
+});
+app.get('/api/doodles/:id/image',auth,async(req,res)=>{
+  const u=current(req);
+  const {rows}=await pool.query('SELECT image_data,title FROM doodles WHERE id=$1 AND user_id=$2',[req.params.id,Number(u.id)]);
+  if(!rows.length)return res.status(404).json({error:'Doodle not found.'});
+  res.json({image:rows[0].image_data,title:rows[0].title});
+});
+app.post('/api/doodles',auth,featureAllowed('doodle_studio_save'),async(req,res)=>{
+  const u=current(req),title=cleanText(req.body?.title||'Untitled doodle').trim().slice(0,80)||'Untitled doodle';
+  const image=String(req.body?.image||'');
+  if(!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(image))return res.status(400).json({error:'Upload a valid PNG doodle.'});
+  if(image.length>1750000)return res.status(413).json({error:'This doodle is too large. Please simplify it and save again.'});
+  const imageBuffer=Buffer.from(image.slice(image.indexOf(',')+1),'base64');
+  if(await checkRestrictedMediaBuffer(res,u,imageBuffer))return;
+  const {rows}=await pool.query('INSERT INTO doodles(user_id,title,image_data) VALUES($1,$2,$3) RETURNING id,title,created_at',[Number(u.id),title,image]);
+  res.status(201).json({doodle:{...rows[0],id:String(rows[0].id),createdAt:rows[0].created_at}});
+});
+app.delete('/api/doodles/:id',auth,async(req,res)=>{
+  const u=current(req);
+  const result=await pool.query('DELETE FROM doodles WHERE id=$1 AND user_id=$2 RETURNING id',[req.params.id,Number(u.id)]);
+  if(!result.rowCount)return res.status(404).json({error:'Doodle not found or it does not belong to you.'});
+  res.json({ok:true});
+});
+
+// Friend Wall
+const wallFeedFields = "SELECT w.*,u.username,u.avatar,u.rank,"+
+  "COALESCE((SELECT jsonb_object_agg(r.emoji,r.users) FROM (SELECT emoji,jsonb_agg(user_id::text) AS users FROM wall_post_reactions WHERE post_id=w.id GROUP BY emoji) r),'{}'::jsonb) AS reactions,"+
+  "(SELECT COUNT(*)::int FROM wall_comments wc WHERE wc.post_id=w.id) AS comment_count,";
+const wallFeedFrom = " FROM wall_posts w LEFT JOIN users u ON u.id=w.user_id ";
+const wallFeedOrder = " ORDER BY CASE WHEN w.status='pinned' THEN 0 ELSE 1 END,w.featured DESC,w.created_at DESC LIMIT 100";
+app.get('/api/wall',auth,async(req,res)=>{
+  const u=current(req);
+  const sql=wallFeedFields+"EXISTS(SELECT 1 FROM wall_post_saves s WHERE s.post_id=w.id AND s.user_id=$1) AS saved"+wallFeedFrom+
+    "WHERE w.status IN ('approved','pinned') AND (w.expires_at IS NULL OR w.expires_at>NOW())"+wallFeedOrder;
+  const {rows}=await pool.query(sql,[Number(u.id)]);
+  res.json({posts:rows});
+});
+app.get('/api/wall/saved',auth,async(req,res)=>{
+  const u=current(req);
+  const sql=wallFeedFields+"true AS saved FROM wall_post_saves s JOIN wall_posts w ON w.id=s.post_id LEFT JOIN users u ON u.id=w.user_id "+
+    "WHERE s.user_id=$1 AND w.status IN ('approved','pinned') AND (w.expires_at IS NULL OR w.expires_at>NOW()) ORDER BY s.created_at DESC LIMIT 100";
+  const {rows}=await pool.query(sql,[Number(u.id)]);
+  res.json({posts:rows});
+});
+app.get('/api/wall/friends',auth,async(req,res)=>{
+  const u=current(req),userId=Number(u.id);
+  const friendIds=[...new Set((db.friends||[])
+    .filter(f=>String(f.status||'').toUpperCase()==='ACCEPTED'&&(String(f.a)===String(u.id)||String(f.b)===String(u.id)))
+    .map(f=>Number(String(f.a)===String(u.id)?f.b:f.a))
+    .filter(id=>Number.isSafeInteger(id)&&id>0&&id!==userId))];
+  if(!friendIds.length)return res.json({posts:[]});
+  const sql=wallFeedFields+"EXISTS(SELECT 1 FROM wall_post_saves s WHERE s.post_id=w.id AND s.user_id=$2) AS saved"+wallFeedFrom+
+    "WHERE w.user_id=ANY($1::int[]) AND w.status IN ('approved','pinned') AND (w.expires_at IS NULL OR w.expires_at>NOW())"+wallFeedOrder;
+  const {rows}=await pool.query(sql,[friendIds,userId]);
+  res.json({posts:rows});
+});
+app.post('/api/wall/:id/save',auth,async(req,res)=>{
+  const userId=Number(current(req).id),postId=Number(req.params.id);
+  if(!Number.isSafeInteger(postId)||postId<1)return res.status(400).json({error:'Invalid post id.'});
+  const post=await pool.query('SELECT 1 FROM wall_posts WHERE id=$1 AND status IN (\'approved\',\'pinned\') AND (expires_at IS NULL OR expires_at>NOW())',[postId]);
+  if(!post.rowCount)return res.status(404).json({error:'Post not found or expired.'});
+  const existing=await pool.query('SELECT 1 FROM wall_post_saves WHERE post_id=$1 AND user_id=$2',[postId,userId]);
+  if(existing.rowCount)await pool.query('DELETE FROM wall_post_saves WHERE post_id=$1 AND user_id=$2',[postId,userId]);
+  else await pool.query('INSERT INTO wall_post_saves(post_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[postId,userId]);
+  res.json({ok:true,saved:!existing.rowCount});
+});
+app.post('/api/wall/:id/feature',auth,async(req,res)=>{
+  const u=current(req),rank=String(u.rank||'').toUpperCase();
+  if(!hasFeature(u,'pin_news')&&!['OWNER','DEVELOPER'].includes(rank))return res.status(403).json({error:'Only authorized staff can feature community posts.'});
+  const postId=Number(req.params.id),featured=req.body?.featured===true;
+  if(!Number.isSafeInteger(postId)||postId<1)return res.status(400).json({error:'Invalid post id.'});
+  const result=await pool.query('UPDATE wall_posts SET featured=$2 WHERE id=$1 RETURNING id,featured',[postId,featured]);
+  if(!result.rowCount)return res.status(404).json({error:'Post not found.'});
+  log(u,'WALL_POST_FEATURE',String(postId),{featured});
+  res.json({ok:true,featured});
+});
+app.post('/api/wall/:id/reaction',auth,async(req,res)=>{
+  const emoji=String(req.body?.emoji||'👍'),allowed=['👍','❤️','😂','😮','🔥','👏'];
+  if(!allowed.includes(emoji))return res.status(400).json({error:'Unsupported reaction.'});
+  await pool.query(`CREATE TABLE IF NOT EXISTS wall_post_reactions(post_id BIGINT NOT NULL,user_id BIGINT NOT NULL,emoji TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(post_id,user_id,emoji))`);
+  const post=await pool.query('SELECT id FROM wall_posts WHERE id=$1',[req.params.id]);
+  if(!post.rowCount)return res.status(404).json({error:'Wall post not found.'});
+  const uid=Number(current(req).id),pid=Number(req.params.id);
+  const existing=await pool.query('SELECT 1 FROM wall_post_reactions WHERE post_id=$1 AND user_id=$2 AND emoji=$3',[pid,uid,emoji]);
+  if(existing.rowCount)await pool.query('DELETE FROM wall_post_reactions WHERE post_id=$1 AND user_id=$2 AND emoji=$3',[pid,uid,emoji]);
+  else await pool.query('INSERT INTO wall_post_reactions(post_id,user_id,emoji) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',[pid,uid,emoji]);
+  res.json({ok:true,reacted:!existing.rowCount});
+});
+async function wallPostHandler(req,res){
+  const u=current(req), grants=db.settings?.feature_grants?.wall_post||["OWNER","ADMIN"], rank=String(u.rank||'').toUpperCase();
+  if(await checkRestrictedMediaUpload(req,res,u,req.file))return;
+  if(String(u.rank).toUpperCase()!=="DEVELOPER" && u.username!==DEFAULT_OWNER&&!grants.map(x=>String(x).toUpperCase()).includes(rank))return res.status(403).json({error:"Your rank cannot create wall posts."});
+  const content=cleanText(req.body.content||"").trim().slice(0,5000), media=req.file;
+  if(media&&!/^(image\/(png|jpe?g|gif|webp|avif)|video\/)/i.test(media.mimetype))return res.status(400).json({error:"Only image or video files are allowed."});
+  if(!content&&!media)return res.status(400).json({error:"Post cannot be empty."});
+  const mediaUrl=media?`/uploads/${media.filename}`:null;
+  const expiresInHours=Number(req.body.expiresInHours??0),allowedExpiries=[0,1,6,24,72,168];
+  if(!allowedExpiries.includes(expiresInHours))return res.status(400).json({error:"Choose a supported post duration."});
+  const expiresAt=expiresInHours?new Date(Date.now()+expiresInHours*3600000):null;
+  const {rows}=await pool.query(`INSERT INTO wall_posts(user_id,content,media_url,expires_at) VALUES($1,$2,$3,$4) RETURNING *`,[Number(u.id),content,mediaUrl,expiresAt]);
+  res.json({post:{...rows[0],username:u.username,avatar:u.avatar||"",rank:u.rank}});
+}
+app.post('/api/wall/post',auth,upload.single('file'),wallPostHandler);
+app.post('/api/wall',auth,upload.single('file'),wallPostHandler);
+app.post('/api/wall/:id/like',auth,async(req,res)=>{
+  const r=await pool.query(`UPDATE wall_posts SET likes=likes+1 WHERE id=$1 RETURNING likes`,[req.params.id]);
+  if(!r.rowCount) return res.status(404).json({error:"Post not found"});
+  res.json({likes:r.rows[0].likes});
+});
+app.get('/api/wall/:id/comments',auth,async(req,res)=>{
+  const {rows}=await pool.query(`SELECT c.*,u.username,u.avatar,u.rank FROM wall_comments c LEFT JOIN users u ON u.id=c.user_id WHERE c.post_id=$1 ORDER BY c.created_at ASC`,[req.params.id]);
+  res.json({comments:rows});
+});
+app.post('/api/wall/:id/comments',auth,async(req,res)=>{
+  const text=cleanText(req.body.content||"").trim().slice(0,1000);
+  if(!text) return res.status(400).json({error:"Comment cannot be empty."});
+  const u=current(req);
+  const {rows}=await pool.query(`INSERT INTO wall_comments(post_id,user_id,content) VALUES($1,$2,$3) RETURNING *`,[req.params.id,Number(u.id),text]);
+  res.json({comment:{...rows[0],username:u.username,avatar:u.avatar||"",rank:u.rank}});
+});
+app.delete('/api/wall/:id/comments/:commentId',auth,async(req,res)=>{
+  const u=current(req),postId=String(req.params.id),commentId=String(req.params.commentId);
+  const {rows}=await pool.query(
+    `SELECT c.id,c.user_id,c.content,w.user_id AS post_user_id
+     FROM wall_comments c JOIN wall_posts w ON w.id=c.post_id
+     WHERE c.id=$1 AND c.post_id=$2 LIMIT 1`,
+    [commentId,postId]
+  );
+  if(!rows.length)return res.status(404).json({error:"Comment not found."});
+  const comment=rows[0];
+  const isCommentAuthor=Number(comment.user_id)===Number(u.id);
+  const isPostAuthor=Number(comment.post_user_id)===Number(u.id);
+  if(!isCommentAuthor&&!isPostAuthor)return res.status(403).json({error:"Only the comment author or post author can delete this comment."});
+  await pool.query('DELETE FROM wall_comments WHERE id=$1 AND post_id=$2',[commentId,postId]);
+  log(u,'WALL_COMMENT_DELETE',comment.id,{contentType:'wall_comment',postId:String(postId),commentId:String(comment.id),commentAuthorId:comment.user_id,postAuthorId:comment.post_user_id,content:String(comment.content||''),reason:'WALL_COMMENT_DELETE'});
+  res.json({ok:true});
+});
+app.delete('/api/wall/:id',auth,async(req,res)=>{
+  const u=current(req),postId=req.params.id;
+  const {rows}=await pool.query('SELECT id,user_id,content,media_url FROM wall_posts WHERE id=$1',[postId]);
+  if(!rows.length)return res.status(404).json({error:'Wall post not found.'});
+  const post=rows[0],isAuthor=Number(post.user_id)===Number(u.id),canModerate=hasFeature(u,'delete_news');
+  if(!isAuthor&&!canModerate)return res.status(403).json({error:'You can delete only your own wall posts.'});
+  await pool.query('DELETE FROM wall_comments WHERE post_id=$1',[postId]);
+  await pool.query('DELETE FROM wall_post_reactions WHERE post_id=$1',[postId]);
+  await pool.query('DELETE FROM wall_posts WHERE id=$1',[postId]);
+  log(u,'WALL_POST_DELETE',post.id,{contentType:'wall_post',postId:String(post.id),authorId:post.user_id,content:String(post.content||''),mediaUrl:post.media_url||'',mediaType:post.media_url?(new RegExp('\\.(mp4|webm|mov)(?:[?#]|$)','i').test(String(post.media_url))?'video':new RegExp('\\.(mp3|wav|ogg|m4a)(?:[?#]|$)','i').test(String(post.media_url))?'audio':'image'):'',reason:'WALL_POST_DELETE'});
+  res.json({ok:true});
+});
+app.post('/api/wall/:id/report',auth,async(req,res)=>{
+  await pool.query(`INSERT INTO history(user_id,action,details) VALUES($1,'wall_report',$2::jsonb)`,[Number(current(req).id),JSON.stringify({postId:req.params.id,reason:cleanText(req.body.reason||"Reported wall post")})]);
+  res.json({ok:true});
+});
+app.post('/api/wall/:id/pin',ownerOnly,async(req,res)=>{
+  await pool.query(`UPDATE wall_posts SET status=CASE WHEN id=$1 THEN 'pinned' ELSE 'approved' END`,[req.params.id]);
+  res.json({ok:true});
+});
+
+// History / clear-history permissions.
+app.get('/api/history',auth,async(req,res)=>{
+  const u=current(req), {rows}=await pool.query(
+    `SELECT * FROM history WHERE user_id=$1 AND (is_cleared=false OR $2=true) ORDER BY created_at DESC LIMIT 500`,
+    [Number(u.id),(String(u.rank).toUpperCase()==='DEVELOPER'||u.username===DEFAULT_OWNER)]);
+  const direct=(u.username===DEFAULT_OWNER||String(u.rank).toUpperCase()==='DEVELOPER')?null:userFeatureGrant(u,'can_clear_history');
+  res.json({history:rows,clearAllowed:direct!==null?direct:(String(u.rank).toUpperCase()==='DEVELOPER' || u.username===DEFAULT_OWNER || (db.settings.clear_history_allowed_ranks||[]).map(String).map(x=>x.toUpperCase()).includes(String(u.rank).toUpperCase()))});
+});
+app.post('/api/history/clear',auth,async(req,res)=>{
+  const u=current(req), allowed=db.settings.clear_history_allowed_ranks||["OWNER","ADMIN"];
+  const direct=(u.username===DEFAULT_OWNER||String(u.rank).toUpperCase()==='DEVELOPER')?null:userFeatureGrant(u,'can_clear_history');
+  if(direct===false||!(direct===true||String(u.rank).toUpperCase()==='DEVELOPER' || u.username===DEFAULT_OWNER || allowed.map(String).map(x=>x.toUpperCase()).includes(String(u.rank).toUpperCase()))) return res.status(403).json({error:"You cannot clear history."});
+  if(String(u.rank).toUpperCase()==='DEVELOPER' || u.username===DEFAULT_OWNER) await pool.query(`UPDATE history SET is_cleared=true`);
+  else await pool.query(`UPDATE history SET is_cleared=true WHERE user_id=$1`,[Number(u.id)]);
+  res.json({ok:true});
+});
+
+// Gold economy: purchases are validated and committed in PostgreSQL, not trusted to the browser.
+app.get('/api/economy/catalog',auth,async(req,res)=>{
+  const u=current(req), userId=Number(u.id);
+  const [items,inventory,ledger]=await Promise.all([
+    pool.query(`SELECT id,name,description,category,icon,price FROM cosmetic_items WHERE enabled=true ORDER BY category,price,name`),
+    pool.query(`SELECT c.id,c.name,c.description,c.category,c.icon,c.price,uc.equipped,uc.purchased_at AS "purchasedAt"
+      FROM user_cosmetics uc JOIN cosmetic_items c ON c.id=uc.item_id
+      WHERE uc.user_id=$1 ORDER BY uc.purchased_at DESC`,[userId]),
+    pool.query(`SELECT id,entry_type AS type,amount,balance_after AS "balanceAfter",description,created_at AS time
+      FROM gold_ledger WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100`,[userId])
+  ]);
+  res.json({gold:Number(u.gold||0),items:items.rows,inventory:inventory.rows,transactions:ledger.rows});
+});
+app.post('/api/economy/purchase',auth,async(req,res)=>{
+  const u=current(req), userId=Number(u.id), itemId=String(req.body.itemId||'').trim().slice(0,80);
+  const client=await pool.connect();
+  try{
+    await client.query('BEGIN');
+    const itemQ=await client.query('SELECT id,name,description,category,icon,price FROM cosmetic_items WHERE id=$1 AND enabled=true FOR SHARE',[itemId]);
+    if(!itemQ.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'This cosmetic is no longer available.'});}
+    const item=itemQ.rows[0];
+    const owned=await client.query('SELECT 1 FROM user_cosmetics WHERE user_id=$1 AND item_id=$2',[userId,itemId]);
+    if(owned.rowCount){await client.query('ROLLBACK');return res.status(409).json({error:'You already own this cosmetic.'});}
+    const debit=await client.query('UPDATE users SET gold=gold-$1 WHERE id=$2 AND gold >= $1 RETURNING gold',[Number(item.price),userId]);
+    if(!debit.rowCount){await client.query('ROLLBACK');return res.status(400).json({error:'Not enough Gold for this cosmetic.'});}
+    const balance=Number(debit.rows[0].gold);
+    await client.query('INSERT INTO user_cosmetics(user_id,item_id) VALUES($1,$2)',[userId,itemId]);
+    await client.query(`INSERT INTO gold_ledger(user_id,actor_user_id,entry_type,amount,balance_after,item_id,description)
+      VALUES($1,$1,'COSMETIC_PURCHASE',$2,$3,$4,$5)`,[userId,-Number(item.price),balance,itemId,'Purchased '+item.name]);
+    await client.query('COMMIT');
+    u.gold=balance; save(); io.to('user:'+u.id).emit('gold:update',{gold:balance});
+    log(u,'GOLD_COSMETIC_PURCHASE',item.name,{itemId,price:Number(item.price),balance});
+    res.json({ok:true,gold:balance,item});
+  }catch(err){await client.query('ROLLBACK').catch(()=>{});console.error('Gold cosmetic purchase failed:',err);res.status(500).json({error:'Could not complete the purchase. Your Gold was not charged.'});}
+  finally{client.release();}
+});
+app.post('/api/economy/equip',auth,async(req,res)=>{
+  const u=current(req), userId=Number(u.id), itemId=String(req.body.itemId||'').trim().slice(0,80);
+  const client=await pool.connect();
+  try{
+    await client.query('BEGIN');
+    const owned=await client.query(`SELECT c.id,c.category FROM user_cosmetics uc JOIN cosmetic_items c ON c.id=uc.item_id
+      WHERE uc.user_id=$1 AND uc.item_id=$2 AND c.enabled=true`,[userId,itemId]);
+    if(!owned.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'You do not own this cosmetic.'});}
+    const item=owned.rows[0];
+    await client.query('UPDATE user_cosmetics uc SET equipped=false FROM cosmetic_items c WHERE uc.user_id=$1 AND uc.item_id=c.id AND c.category=$2',[userId,item.category]);
+    await client.query('UPDATE user_cosmetics SET equipped=true WHERE user_id=$1 AND item_id=$2',[userId,itemId]);
+    await client.query('COMMIT');
+    const equipped=await pool.query(`SELECT c.id,c.name,c.category,c.icon,c.description FROM user_cosmetics uc JOIN cosmetic_items c ON c.id=uc.item_id WHERE uc.user_id=$1 AND uc.equipped=true AND c.enabled=true ORDER BY c.category`,[userId]);
+    u.equippedCosmetics=equipped.rows;
+    res.json({ok:true,itemId,category:item.category,equippedCosmetics:u.equippedCosmetics});
+  }catch(err){await client.query('ROLLBACK').catch(()=>{});console.error('Cosmetic equip failed:',err);res.status(500).json({error:'Could not equip this cosmetic.'});}
+  finally{client.release();}
+});
+app.get('/api/economy/history',auth,async(req,res)=>{
+  const q=await pool.query(`SELECT id,entry_type AS type,amount,balance_after AS "balanceAfter",item_id AS "itemId",description,created_at AS time
+    FROM gold_ledger WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100`,[Number(current(req).id)]);
+  res.json({transactions:q.rows});
+});
+
+// Rank shop: premium requests and gold-funded temporary VIP.
+app.get('/api/shop',auth,async(req,res)=>{
+  res.json({
+    premium:{price:6,lifetime:true},
+    vip:[
+      {price:200,label:"7 days",interval:"7 days",days:7},
+      {price:2000,label:"1 month",interval:"1 month",days:30},
+      {price:5000,label:"3 months",interval:"3 months",days:90},
+      {price:10000,label:"1 year",interval:"1 year",days:365}
+    ],
+    user:safeUser(current(req))
+  });
+});
+app.post('/api/shop/premium/buy-diamonds',auth,async(req,res)=>{
+  const actor=current(req),blockedRanks=['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'];
+  if(blockedRanks.includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Your current rank cannot purchase Premium.'});
+  const cost=50000,client=await pool.connect();let updated;
+  try{
+    await client.query('BEGIN');
+    const locked=await client.query('SELECT id,username,rank,diamonds FROM users WHERE id=$1 FOR UPDATE',[Number(actor.id)]);
+    if(!locked.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'Account not found.'});}
+    const account=locked.rows[0];
+    if(blockedRanks.includes(String(account.rank||'').toUpperCase())){await client.query('ROLLBACK');return res.status(403).json({error:'Your current rank cannot purchase Premium.'});}
+    if(Number(account.diamonds||0)<cost){await client.query('ROLLBACK');return res.status(400).json({error:'You need 50,000 Diamonds to purchase lifetime Premium.'});}
+    updated=await client.query("UPDATE users SET diamonds=COALESCE(diamonds,0)-$1,rank='Premium',is_premium=true,vip_expires_at=NULL WHERE id=$2 RETURNING diamonds",[cost,Number(actor.id)]);
+    await client.query("INSERT INTO wallet_transactions(id,sender_id,currency,amount,type,note) VALUES($1,$2,'DIAMONDS',$3,'PREMIUM_PURCHASE',$4)",[id(),Number(actor.id),cost,'Lifetime Premium purchase']);
+    await client.query("UPDATE premium_requests SET status='granted' WHERE user_id=$1 AND status='pending'",[Number(actor.id)]);
+    await client.query('COMMIT');
+    actor.rank='PREMIUM';actor.isPremium=true;actor.is_premium=true;actor.vipExpiresAt=null;actor.diamonds=Number(updated.rows[0].diamonds);
+    save();
+    try{notify(actor.id,'premium','Premium activated','Your lifetime Premium membership is active. 50,000 Diamonds were deducted from your wallet.');}catch(notificationError){console.error('Premium purchase notification failed:',notificationError);}
+    try{log(actor,'PREMIUM_PURCHASED_WITH_DIAMONDS',actor.username,{diamondsSpent:cost,lifetime:true});}catch(logError){console.error('Premium purchase audit log failed:',logError);}
+    res.json({ok:true,rank:'PREMIUM',diamonds:actor.diamonds,diamondsSpent:cost,lifetime:true});
+  }catch(error){
+    await client.query('ROLLBACK').catch(()=>{});
+    console.error('Premium Diamond purchase failed:',error);
+    res.status(500).json({error:'Could not complete the Premium purchase. Your Diamonds were not charged.'});
+  }finally{client.release();}
+});
+app.post('/api/shop/premium/request',auth,async(req,res)=>{
+  const u=current(req);
+  if(['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(String(u.rank).toUpperCase())) return res.status(403).json({error:'Only ranks below Premium may request Premium.'});
+  await pool.query(`INSERT INTO premium_requests(user_id,status) VALUES($1,'pending')`,[Number(u.id)]);
+  const owners=await pool.query(`SELECT id FROM users WHERE LOWER(rank) IN ('owner','developer')`); for(const x of owners.rows)notify(x.id,'staff','Premium requested',`${u.username} requested Premium.`);
+  res.json({ok:true,message:'Premium request sent to owner.'});
+});
+app.get('/api/owner/premium-requests',ownerOnly,async(req,res)=>{const {rows}=await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`);res.json({requests:rows});});
+app.post('/api/owner/premium-requests/:id/grant',ownerOnly,async(req,res)=>{
+  const q=await pool.query(`SELECT user_id FROM premium_requests WHERE id=$1 AND status='pending'`,[req.params.id]); if(!q.rowCount)return res.status(404).json({error:'Request not found'});
+  const userId=Number(q.rows[0].user_id); await pool.query(`UPDATE users SET rank='Premium',is_premium=true,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`UPDATE premium_requests SET status='granted' WHERE user_id=$1 AND status='pending'`,[userId]);
+  const u=db.users.find(x=>Number(x.id)===userId); if(u){u.rank='PREMIUM';u.isPremium=true;u.is_premium=true;u.vipExpiresAt=null;} save(); res.json({ok:true,requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
+});
+app.post('/api/premium/grant',ownerOnly,async(req,res)=>{
+  const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='DEVELOPER')return res.status(403).json({error:'Cannot change Developer'});
+  v.rank='PREMIUM';v.isPremium=true;v.is_premium=true;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='Premium',is_premium=true,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`UPDATE premium_requests SET status='granted' WHERE user_id=$1 AND status='pending'`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
+});
+app.post('/api/premium/cancel',ownerOnly,async(req,res)=>{
+  const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='DEVELOPER')return res.status(403).json({error:'Cannot change Developer'});
+  v.rank='MEMBER';v.isPremium=false;v.is_premium=false;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='member',is_premium=false,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`DELETE FROM premium_requests WHERE user_id=$1`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
+});
+app.post('/api/shop/vip',auth,async(req,res)=>{
+  const u=current(req), options={7:{price:200,interval:"7 days",days:7},30:{price:2000,interval:"1 month",days:30},90:{price:5000,interval:"3 months",days:90},365:{price:10000,interval:"1 year",days:365}};
+  const key=String(req.body.plan||""); const plan=options[key] || Object.values(options).find(x=>x.interval===key);
+  if(!plan) return res.status(400).json({error:"Invalid VIP plan."});
+  if(String(u.rank||'').toUpperCase()!=='MEMBER') return res.status(403).json({error:'Higher ranks cannot buy VIP'});
+  if((u.gold||0)<plan.price) return res.status(400).json({error:"Not enough gold."});
+  u.gold-=plan.price; u.rank="VIP";
+  await pool.query(`UPDATE users SET gold=gold-$2,rank='vip',vip_expires_at=CASE WHEN rank='vip' AND vip_expires_at>NOW() THEN vip_expires_at+($1::interval) ELSE NOW()+($1::interval) END WHERE id=$3`,[plan.interval,plan.price,Number(u.id)]);
+  const row=await pool.query(`SELECT vip_expires_at FROM users WHERE id=$1`,[Number(u.id)]); u.vipExpiresAt=row.rows[0]?.vip_expires_at?new Date(row.rows[0].vip_expires_at).getTime():null;
+  notify(u.id,'vip','VIP purchase',`You bought VIP for ${plan.days} days.`);
+  const staffRows=await pool.query(`SELECT id FROM users WHERE LOWER(rank) IN ('owner','admin')`); for(const x of staffRows.rows)notify(x.id,'vip','VIP purchase',`User ${u.username} bought VIP ${plan.days} days package.`);
+  save(); res.json({ok:true,gold:u.gold,vipExpiresAt:u.vipExpiresAt});
+});
+
+app.get('/api/bots',auth,async(req,res)=>{const rows=(await pool.query(`SELECT * FROM bots ORDER BY id`)).rows;res.json({bots:rows});});
+app.post('/api/bots',ownerOnly,async(req,res)=>{const name=cleanText(req.body.name).trim().slice(0,40);if(!name)return res.status(400).json({error:'Bot name required.'});try{const q=await pool.query(`INSERT INTO bots(name,avatar,auto_reply,is_active) VALUES($1,$2,$3,$4) RETURNING *`,[name,req.body.avatar||'',req.body.auto_reply||'',req.body.is_active!==false]);res.status(201).json({bot:q.rows[0]});}catch(e){if(e.code==='23505')return res.status(409).json({error:'Bot already exists.'});res.status(500).json({error:'Could not create bot.'});}});
+app.put('/api/bots/:id',ownerOnly,async(req,res)=>{const q=await pool.query(`UPDATE bots SET name=COALESCE($1,name),avatar=COALESCE($2,avatar),auto_reply=COALESCE($3,auto_reply),is_active=COALESCE($4,is_active) WHERE id=$5 RETURNING *`,[req.body.name,req.body.avatar,req.body.auto_reply,req.body.is_active,req.params.id]);if(!q.rowCount)return res.status(404).json({error:'Bot not found'});res.json({bot:q.rows[0]});});
+app.delete('/api/bots/:id',ownerOnly,async(req,res)=>{const q=await pool.query(`DELETE FROM bots WHERE id=$1 RETURNING id`,[req.params.id]);if(!q.rowCount)return res.status(404).json({error:'Bot not found'});res.json({ok:true});});
+app.post('/api/bots/:id/toggle',ownerOnly,async(req,res)=>{const q=await pool.query(`UPDATE bots SET is_active=NOT is_active WHERE id=$1 RETURNING *`,[req.params.id]);if(!q.rowCount)return res.status(404).json({error:'Bot not found'});res.json({bot:q.rows[0]});});
+
+app.get('/api/community-rules',auth,(req,res)=>{
+  const rules=Array.isArray(db.settings?.community_rules)?db.settings.community_rules:[];
+  res.json({rules:rules.map((r,i)=>({id:String(r.id||i+1),number:i+1,text:String(r.text||''),updatedAt:r.updatedAt||null,updatedBy:r.updatedBy||''})).filter(r=>r.text.trim())});
+});
+app.put('/api/owner/community-rules',auth,async(req,res)=>{
+  const editor=current(req);
+  if(!editor || !["INSTRUCTOR","COMMISSOR","COOWNER","OWNER","DEVELOPER"].includes(String(editor.rank||"").toUpperCase()))return res.status(403).json({error:'Community rules editing requires Commissor rank or higher.'});
+  const input=Array.isArray(req.body?.rules)?req.body.rules:[];
+  if(input.length>100)return res.status(400).json({error:'You can publish up to 100 rules.'});
+  const rules=[];
+  for(let i=0;i<input.length;i++){
+    const text=String(input[i]?.text||'').trim().slice(0,2000);
+    if(!text)continue;
+    rules.push({id:String(input[i]?.id||id()),text,updatedAt:Date.now(),updatedBy:current(req).username});
+  }
+  db.settings ||= {};db.settings.community_rules=rules;
+  await flushSave();
+  log(current(req),'COMMUNITY_RULES_UPDATE','Community Rules',{count:rules.length});
+  res.json({ok:true,rules:rules.map((r,i)=>({...r,number:i+1}))});
+});
+
+app.get(
+  "/api/owner/overview",
+  ownerOnly,
+  (req,res)=>
+    res.json({
+      users:
+        db.users.map(u=>({...safeUser(u),email:u.email||""})),
+
+      rooms:
+        db.rooms.map(
+          r=>({
+            ...r,
+            passwordHash:undefined
+          })
+        ),
+
+      settings:
+        db.settings,
+
+      featurePermissions:db.featurePermissions,
+      featureControls:FEATURE_CONTROLS,
+
+      privateMessages:
+        db.privateMessages,
+
+      goldTransactions:
+        db.goldTransactions,
+
+    })
+);
+
+
+const COMMAND_SETTING_DEFS=[
+  {key:"clear",label:"/clear",description:"Clear all messages from the current room.",defaultRank:"ADMIN"}
+];
+function commandSettings(){
+  const saved=db.settings?.command_ranks||{},allowed=new Set(ranks),settings={};
+  for(const command of COMMAND_SETTING_DEFS){const candidate=String(saved[command.key]||command.defaultRank).toUpperCase();settings[command.key]=allowed.has(candidate)?candidate:command.defaultRank;}
+  return settings;
+}
+function commandAllowed(u,key){
+  if(!u)return false;
+  if(String(u.rank||"").toUpperCase()==="DEVELOPER")return true;
+  const minimum=commandSettings()[key];
+  return !!minimum&&hasRank(u,minimum);
+}
+app.get("/api/owner/command-settings",ownerOnly,(req,res)=>res.json({settings:commandSettings(),commands:COMMAND_SETTING_DEFS}));
+app.patch("/api/owner/command-settings",ownerOnly,async(req,res)=>{
+  const incoming=req.body?.settings;
+  if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Provide command rank settings."});
+  const allowed=new Set(ranks),definitions=new Set(COMMAND_SETTING_DEFS.map(x=>x.key)),next={...commandSettings()};
+  for(const [key,value] of Object.entries(incoming)){const rank=String(value||"").toUpperCase();if(!definitions.has(key)||!allowed.has(rank))return res.status(400).json({error:"Unknown command or invalid rank."});next[key]=rank;}
+  await pool.query("INSERT INTO settings(key,value) VALUES('command_ranks',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(next)]);
+  db.settings.command_ranks=next;save();res.json({ok:true,settings:next});
+});
+
+
+const GUIDE_RANKS = ["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+function normalizeGuideContent(value){
+  const all=value&&typeof value==="object"&&!Array.isArray(value)?value:{};
+  const out={};
+  for(const rank of GUIDE_RANKS){
+    const entries=Array.isArray(all[rank])?all[rank]:[];
+    out[rank]=entries.slice(0,100).map((item,i)=>({
+      id:String(item?.id||("guide-"+Date.now()+"-"+i)),
+      title:cleanText(item?.title||"").trim().slice(0,100),
+      content:String(item?.content||"").trim().slice(0,12000)
+    })).filter(item=>item.title&&item.content);
+  }
+  return out;
+}
+function guideContentStore(){
+  db.settings ||= {};
+  db.settings.guide_content=normalizeGuideContent(db.settings.guide_content);
+  return db.settings.guide_content;
+}
+app.get("/api/guide",auth,(req,res)=>{
+  const u=current(req);if(!u)return res.status(401).json({error:"Please log in."});
+  const rank=String(u.rank||"MEMBER").toUpperCase();
+  res.json({rank,guides:guideContentStore()[rank]||[]});
+});
+app.get("/api/owner/guide/:rank",auth,coownerOrAbove,(req,res)=>{
+  const rank=String(req.params.rank||"").toUpperCase();
+  if(!GUIDE_RANKS.includes(rank))return res.status(400).json({error:"Choose a valid rank."});
+  res.json({rank,guides:guideContentStore()[rank]||[]});
+});
+app.post("/api/owner/guide",auth,coownerOrAbove,async(req,res)=>{
+  const rank=String(req.body.rank||"").toUpperCase(),title=cleanText(req.body.title||"").trim().slice(0,100),content=String(req.body.content||"").trim().slice(0,12000);
+  if(!GUIDE_RANKS.includes(rank))return res.status(400).json({error:"Choose a valid rank."});
+  if(!title||!content)return res.status(400).json({error:"Guide title and content are required."});
+  const store=guideContentStore();if(store[rank].length>=100)return res.status(400).json({error:"This rank already has the maximum of 100 guide entries."});
+  store[rank].push({id:"guide-"+Date.now()+"-"+crypto.randomBytes(4).toString("hex"),title,content});
+  save();res.status(201).json({ok:true,rank,guides:store[rank]});
+});
+app.put("/api/owner/guide/:rank/:id",auth,coownerOrAbove,(req,res)=>{
+  const rank=String(req.params.rank||"").toUpperCase(),id=String(req.params.id||""),title=cleanText(req.body.title||"").trim().slice(0,100),content=String(req.body.content||"").trim().slice(0,12000);
+  if(!GUIDE_RANKS.includes(rank))return res.status(400).json({error:"Choose a valid rank."});
+  if(!title||!content)return res.status(400).json({error:"Guide title and content are required."});
+  const store=guideContentStore(),item=store[rank].find(g=>g.id===id);if(!item)return res.status(404).json({error:"Guide entry not found."});
+  item.title=title;item.content=content;save();res.json({ok:true,rank,guides:store[rank]});
+});
+app.delete("/api/owner/guide/:rank/:id",auth,coownerOrAbove,(req,res)=>{
+  const rank=String(req.params.rank||"").toUpperCase(),id=String(req.params.id||"");
+  if(!GUIDE_RANKS.includes(rank))return res.status(400).json({error:"Choose a valid rank."});
+  const store=guideContentStore(),before=store[rank].length;store[rank]=store[rank].filter(g=>g.id!==id);
+  if(store[rank].length===before)return res.status(404).json({error:"Guide entry not found."});
+  save();res.json({ok:true,rank,guides:store[rank]});
+});
+
+app.get("/api/owner/command-management",auth,ownerOnly,(req,res)=>{ensureFeatureGrants();res.json({commands:{...Object.fromEntries(Object.entries(REQUESTED_COMMAND_RANKS).map(([key,ranks])=>[key,{name:db.settings?.command_management?.[key]?.name||key,ranks:db.settings?.command_management?.[key]?.ranks||ranks}])),...(db.settings?.command_management||{})}});});
+app.get("/api/owner/mode-management",auth,ownerOnly,(req,res)=>{ensureFeatureGrants();res.json({modes:{...REQUESTED_MODE_RANKS,...(db.settings?.mode_management||{})}});});
+app.patch("/api/owner/settings",ownerOnly,async(req,res)=>{
+  if(req.body.commandManagement!==undefined){
+    const incoming=req.body.commandManagement, commands={...(db.settings.command_management||{})}, allowed=["rose","bread","brain","welcome","ship","bank","steal","roast","aura","anonymous","abrakadabra","clear"], valid=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER"];
+    if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Invalid command settings."});
+    const seen=new Set();
+    for(const key of allowed){const item=incoming[key]||commands[key]||{},name=String(item.name||key).toLowerCase().replaceAll("/","").trim(),allowedRanks=Array.isArray(item.ranks)?item.ranks.map(x=>String(x).toUpperCase()).filter(x=>valid.includes(x)):valid.slice();if(!/^[a-z0-9]{2,24}$/.test(name))return res.status(400).json({error:"Command names must be 2–24 letters or numbers."});if(seen.has(name))return res.status(400).json({error:"Command names must be unique."});seen.add(name);commands[key]={name,ranks:[...new Set(allowedRanks)]};}
+    db.settings.command_management=commands;
+  }
+  if(req.body.modeManagement!==undefined){
+    const incoming=req.body.modeManagement,valid=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+    if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Invalid mode settings."});
+    const next={...(db.settings.mode_management||{})};for(const key of ["ghost","dead","invisible"]){const list=Array.isArray(incoming[key])?incoming[key].map(x=>String(x).toUpperCase()).filter(x=>valid.includes(x)):[];next[key]=[...new Set(list)];}db.settings.mode_management=next;
+  }
+
+  if(req.body.systemModeration!==undefined){
+    const incoming=req.body.systemModeration;
+    const keys=["multi_account","ban_evasion","spam_flood","vpn_proxy"];
+    const actions=new Set(["WARN","MUTE","KICK","BAN"]);
+    if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Invalid System Moderation settings."});
+    const next={...(db.settings.system_moderation||{})};
+    for(const key of keys){
+      const rule=incoming[key];
+      if(!rule||typeof rule!=="object"||!actions.has(String(rule.action||"").toUpperCase()))return res.status(400).json({error:"Each System Moderation rule needs a valid action."});
+      const action=String(rule.action).toUpperCase();
+      const needsDuration=action==="MUTE"||action==="KICK";
+      const duration=needsDuration?Number(rule.durationMinutes):0;
+      const reason=cleanText(rule.reason||"").slice(0,240);
+      if((needsDuration&&(!Number.isFinite(duration)||duration<1||duration>10080))||!reason)return res.status(400).json({error:needsDuration?"Enter a duration from 1 to 10080 minutes and a reason.":"Enter a reason for every System Moderation rule."});
+      next[key]={enabled:rule.enabled===true,action,durationMinutes:needsDuration?Math.floor(duration):0,reason};
+    }
+    db.settings.system_moderation=next;
+  }
+
+  if(req.body.auditLogVisibility!==undefined){
+    const incoming=req.body.auditLogVisibility;
+    const keys=["deleted_messages","edited_messages","rank_changes","account_changes","login_activity","invisible_mode","feature_permissions","moderation_actions","reports","room_changes","gold_transactions","site_settings","private_messages","file_uploads","profile_changes","staff_actions"];
+    const allowedRanks=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+    if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Invalid audit log visibility settings."});
+    const next={...(db.settings.audit_log_visibility||{})};
+    for(const key of keys){
+      if(incoming[key]===undefined)continue;
+      const rule=incoming[key];
+      const minimumRank=String(rule?.minimumRank||"ADMIN").toUpperCase();
+      if(!rule||typeof rule!=="object"||!allowedRanks.includes(minimumRank))return res.status(400).json({error:"Invalid audit visibility rule for "+key+"."});
+      next[key]={enabled:rule.enabled!==false,minimumRank};
+    }
+    db.settings.audit_log_visibility=next;
+    await pool.query("INSERT INTO settings(key,value) VALUES('audit_log_visibility',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(next)]);
+  }
+
+  if(req.body.goldPerMessage!==undefined){db.settings.gold_per_message=Math.max(0,Number(req.body.goldPerMessage)||0);db.settings.goldPerMessage=db.settings.gold_per_message;}
+  if(req.body.xpPerMessage!==undefined){db.settings.xp_per_message=Math.max(0,Number(req.body.xpPerMessage)||0);db.settings.xpPerMessage=db.settings.xp_per_message;}
+  if(req.body.dailyXpLimit!==undefined){db.settings.daily_xp_limit=Math.max(1,Number(req.body.dailyXpLimit)||500);db.settings.dailyXpLimit=db.settings.daily_xp_limit;}
+  if(req.body.filterAffectedRanks!==undefined) db.settings.filter_affected_ranks=GRANT_RANKS.filter(r=>Array.isArray(req.body.filterAffectedRanks)&&req.body.filterAffectedRanks.map(x=>String(x).toUpperCase()).includes(r));
+  if(req.body.filterMuteDuration!==undefined){db.settings.filter_mute_duration=Math.min(10080,Math.max(1,Number(req.body.filterMuteDuration)||5));db.settings.filterMuteDurationMinutes=db.settings.filter_mute_duration;}
+  if(req.body.xpPerLevel!==undefined) db.settings.xpPerLevel=Math.max(10,Number(req.body.xpPerLevel));
+  if(req.body.goldPerMinute!==undefined) db.settings.goldPerMinute=Math.max(0,Number(req.body.goldPerMinute));
+  if(req.body.linkFilter!==undefined) db.settings.linkFilter=!!req.body.linkFilter;
+  if(req.body.filterMuteMinRank!==undefined && ranks.includes(String(req.body.filterMuteMinRank))) db.settings.filterMuteMinRank=String(req.body.filterMuteMinRank);
+  if(req.body.wall_allowed_ranks!==undefined) db.settings.wall_allowed_ranks=normalizeAllowedRanks(req.body.wall_allowed_ranks,["OWNER","ADMIN"]);
+  if(req.body.clear_history_allowed_ranks!==undefined) db.settings.clear_history_allowed_ranks=normalizeAllowedRanks(req.body.clear_history_allowed_ranks,["OWNER","ADMIN"]);
+  if(req.body.filterMuteDurationMinutes!==undefined){db.settings.filterMuteDurationMinutes=Math.min(10080,Math.max(1,Number(req.body.filterMuteDurationMinutes)||5));db.settings.filter_mute_duration=db.settings.filterMuteDurationMinutes;}
+  await pool.query(`INSERT INTO settings(key,value) VALUES
+    ('gold_per_message',$1::jsonb),('xp_per_message',$2::jsonb),('daily_xp_limit',$3::jsonb),('filter_affected_ranks',$4::jsonb),('filter_mute_duration',$5::jsonb)
+    ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,
+    [JSON.stringify(Number(db.settings.gold_per_message||0)),JSON.stringify(Number(db.settings.xp_per_message||5)),JSON.stringify(Number(db.settings.daily_xp_limit||500)),JSON.stringify(db.settings.filter_affected_ranks||GRANT_RANKS),JSON.stringify(Number(db.settings.filter_mute_duration||5))]);
+  save(); res.json({settings:db.settings});
+});
+app.post('/api/settings/save',ownerOnly,async(req,res)=>{
+  const b=req.body||{};
+  const vals={
+    gif_cost:Math.max(0,Math.min(100000,Number(b.gifCost??db.settings.gif_cost??10))),
+    gold_per_message:Math.max(0,Number(b.goldPerMessage??db.settings.gold_per_message??0)),
+    xp_per_message:Math.max(0,Number(b.xpPerMessage??db.settings.xp_per_message??5)),
+    daily_xp_limit:Math.max(1,Number(b.dailyXpLimit??db.settings.daily_xp_limit??500)),
+    filter_affected_ranks:GRANT_RANKS.filter(r=>Array.isArray(b.filterAffectedRanks)?b.filterAffectedRanks.map(x=>String(x).toUpperCase()).includes(r):true),
+    filter_mute_duration:Math.min(10080,Math.max(1,Number(b.filterMuteDuration??db.settings.filter_mute_duration??5))),
+    daily_reward_gold:Math.max(0,Number(b.dailyRewardGold??db.settings.daily_reward_gold??25)),
+    daily_reward_xp:Math.max(0,Number(b.dailyRewardXp??db.settings.daily_reward_xp??15))
+  };
+  for(const [k,v] of Object.entries(vals)) await pool.query(`INSERT INTO settings(key,value) VALUES($1,$2::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,[k,JSON.stringify(v)]);
+  if(b.featureGrants) { ensureFeatureGrants(); for(const [k,v] of Object.entries(b.featureGrants)){if(FEATURE_GRANT_DEFAULTS[k]&&Array.isArray(v))db.settings.feature_grants[k]=[...new Set(v.map(x=>String(x).toUpperCase()).filter(x=>GRANT_RANKS.includes(x)))];} await pool.query(`INSERT INTO settings(key,value) VALUES('feature_grants',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,[JSON.stringify(db.settings.feature_grants)]); }
+  const rows=(await pool.query(`SELECT key,value FROM settings`)).rows; const cache={}; for(const r of rows)cache[r.key]=r.value;
+  db.settings={...db.settings,...cache,goldPerMessage:Number(cache.gold_per_message??vals.gold_per_message),xpPerMessage:Number(cache.xp_per_message??vals.xp_per_message),dailyXpLimit:Number(cache.daily_xp_limit??vals.daily_xp_limit),filter_affected_ranks:cache.filter_affected_ranks??vals.filter_affected_ranks,filterMuteDurationMinutes:Number(cache.filter_mute_duration??vals.filter_mute_duration),daily_reward_gold:Number(cache.daily_reward_gold??vals.daily_reward_gold),daily_reward_xp:Number(cache.daily_reward_xp??vals.daily_reward_xp)};
+  res.json({ok:true,settings:db.settings});
+});
+
+function normalizeFeatureRanks(v,fallback){if(!Array.isArray(v))return [...fallback];const aliases={USER:'MEMBER',STAFF:'MOD',TRUSTED:'PREMIUM'};const allowed=new Set([...GRANT_RANKS,'DEVELOPER']);return [...new Set(v.map(x=>aliases[String(x||'').toUpperCase()]||String(x||'').toUpperCase()).filter(x=>allowed.has(x)))];}
+function featureGrantAllowed(u,key){
+  if(!u)return false;
+  if(isUserFeatureBlocked(u,key))return false;
+  const rankName=String(u.rank||'MEMBER').toUpperCase()==='USER'?'MEMBER':String(u.rank||'MEMBER').toUpperCase();
+  if(rankName==='DEVELOPER'||u.username===DEFAULT_OWNER)return true;
+  const granted=userFeatureGrant(u,key);if(granted!==null)return granted;
+  ensureFeatureGrants();
+  const aliases={wall_post:'wall_post'};
+  const alias=aliases[key]||key;
+  let configured=db.settings?.feature_grants?.[alias];
+  if(!Array.isArray(configured))configured=db.settings?.feature_grants?.[key]||[];
+  return configured.map(x=>String(x).toUpperCase()==='USER'?'MEMBER':String(x).toUpperCase()).includes(rankName);
+}
+app.get('/api/owner/feature-grants',ownerOnly,(req,res)=>{ensureFeatureGrants();res.json({ranks:GRANT_RANKS,features:FEATURE_GRANT_DEFAULTS,grants:db.settings.feature_grants});});
+app.get('/api/owner/user/:id/feature-grants',ownerOnly,async(req,res)=>{
+  const target=findUser(req.params.id);if(!target)return res.status(404).json({error:"User not found."});
+  const {rows}=await pool.query(`SELECT g.feature_name,g.granted,g.granted_by,u.username AS granted_by_username FROM feature_grants g LEFT JOIN users u ON u.id=g.granted_by WHERE g.user_id=$1`,[Number(target.id)]);
+  res.json({user:{id:target.id,username:target.username},permissions:OWNER_USER_PERMISSIONS,grants:Object.fromEntries(rows.map(x=>[x.feature_name,{granted:!!x.granted,grantedBy:x.granted_by?String(x.granted_by):null,grantedByUsername:x.granted_by_username||null}]))});
+});
+app.put('/api/owner/user/:id/feature-grants',ownerOnly,async(req,res)=>{
+  const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:"User not found."});
+  if(target.username===DEFAULT_OWNER||String(target.rank).toUpperCase()==="DEVELOPER")return res.status(403).json({error:"The permanent owner account is protected."});
+  const incoming=req.body?.grants;if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Provide feature grants."});
+  const entries=Object.entries(incoming);if(entries.some(([key,value])=>!OWNER_USER_PERMISSIONS.includes(key)||typeof value!=="boolean"))return res.status(400).json({error:"Unknown permission or invalid grant value."});
+  const client=await pool.connect();
+  try{
+    await client.query("BEGIN");
+    for(const [feature,granted] of entries){
+      await client.query(`INSERT INTO feature_grants(user_id,feature_name,granted,granted_by) VALUES($1,$2,$3,$4) ON CONFLICT(user_id,feature_name) DO UPDATE SET granted=EXCLUDED.granted,granted_by=EXCLUDED.granted_by`,[Number(target.id),feature,granted,Number(actor.id)]);
+    }
+    await client.query("COMMIT");
+    db.userFeatureGrants ||= {};db.userFeatureGrants[String(target.id)] ||= {};
+    for(const [feature,granted] of entries)db.userFeatureGrants[String(target.id)][feature]={granted,grantedBy:String(actor.id)};
+    log(actor,"FEATURE_GRANTS_EDIT",target.username,{permissions:entries.map(([name,granted])=>({name,granted}))});
+    res.json({ok:true});
+  }catch(e){await client.query("ROLLBACK");console.error("Feature grant save failed:",e);return res.status(500).json({error:"Could not save permissions."});}finally{client.release();}
+});
+app.put('/api/owner/feature-grants',ownerOnly,async(req,res)=>{
+  ensureFeatureGrants();
+  const incoming=req.body?.grants;
+  if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Provide feature grants."});
+  for(const [key,value] of Object.entries(incoming)){
+    if(!Object.prototype.hasOwnProperty.call(FEATURE_GRANT_DEFAULTS,key))return res.status(400).json({error:"Unknown feature: "+key});
+    if(Array.isArray(value)){
+      const selected=value.map(x=>String(x).toUpperCase());
+      if(selected.some(rank=>!GRANT_RANKS.includes(rank)))return res.status(400).json({error:"Invalid rank for feature "+key});
+      db.settings.feature_grants[key]=[...new Set(selected)];
+      continue;
+    }
+    const threshold=String(value||"").toUpperCase(),idx=GRANT_RANKS.indexOf(threshold);
+    if(idx>=0) db.settings.feature_grants[key]=GRANT_RANKS.slice(idx);
+    else if(value===null||threshold==="OFF"||threshold==="") db.settings.feature_grants[key]=[];
+    else return res.status(400).json({error:"Invalid rank for feature "+key});
+  }
+  try{
+    await pool.query(`INSERT INTO settings(key,value) VALUES('feature_grants',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,[JSON.stringify(db.settings.feature_grants)]);
+    const actor=current(req);log(actor,'FEATURE_ACCESS_BULK_SAVE','site',{features:Object.keys(incoming).map(key=>({key,allowedRanks:db.settings.feature_grants[key]||[]}))});
+    res.json({ok:true,grants:db.settings.feature_grants});
+  }catch(e){console.error("Feature grant settings save failed:",e);res.status(500).json({error:"Could not save feature grants."});}
+});
+
+app.get('/api/owner/feature-permissions',ownerOnly,(req,res)=>{
+  ensureFeaturePermissions();
+  const controls=[...FEATURE_CONTROLS.map(f=>({...f,implemented:true})),{key:'wall_posting',name:'Friend Wall Posting',category:'Social',specialGrant:true},];
+  save();
+  res.json({controls,permissions:db.featurePermissions,ranks,featureGrants:db.settings?.feature_grants||{wall_post:['OWNER','ADMIN']}});
+});
+
+app.patch('/api/owner/feature-permissions/:key',ownerOnly,async(req,res)=>{
+  ensureFeaturePermissions();
+  const key=String(req.params.key);
+  const f=FEATURE_CONTROLS.find(x=>x.key===key);
+  const r=req.body.rank;
+  if(key==='wall_posting'){const grantKey='wall_post';db.settings.feature_grants ||= {};db.settings.feature_grants[grantKey]=normalizeFeatureRanks(req.body.ranks,[]);await pool.query(`INSERT INTO settings(key,value) VALUES('feature_grants',$1::jsonb) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,[JSON.stringify(db.settings.feature_grants)]);return res.json({ok:true,key,featureGrants:db.settings.feature_grants});}
+  if(!f) return res.status(404).json({error:'Feature control not found'});
+  if(!ranks.includes(r)) return res.status(400).json({error:'Invalid rank'});
+  db.featurePermissions[key]=r;
+  save();
+  log(current(req),'FEATURE_PERMISSION_CHANGE',key,{rank:r});
+  res.json({ok:true,key,rank:r,permissions:db.featurePermissions});
+});
+
+function accountModificationAccess(req,res,next){
+  const actor=current(req),target=findUser(req.params.id);
+  if(!target)return res.status(404).json({error:'User not found.'});
+  if(!featureGrantAllowed(actor,'account_modifications'))return res.status(403).json({error:'Account modifications have not been granted to your rank.'});
+  if(String(target.id)===String(actor.id))return res.status(400).json({error:'Use your own profile settings for your account.'});
+  if(target.username===DEFAULT_OWNER||String(target.rank).toUpperCase()==='DEVELOPER')return res.status(403).json({error:'The permanent Developer account is protected.'});
+  if((rankOrder[target.rank]??999)>=(rankOrder[actor.rank]??-1))return res.status(403).json({error:'You cannot modify an equal or higher rank.'});
+  req.profileActor=actor;req.profileTarget=target;next();
+}
+app.patch('/api/staff/user/:id/profile',auth,accountModificationAccess,async(req,res)=>{
+  const {profileActor:actor,profileTarget:target}=req;
+  const body=req.body||{};
+  const limits={displayName:32,gender:50,mood:80,bio:500,pronouns:60,birthday:40,location:120,website:240,banner:500,country:80,relationship:80};
+  const updates={};
+  for(const [key,max] of Object.entries(limits))if(body[key]!==undefined)updates[key]=cleanText(body[key]).trim().slice(0,max);
+  if(body.interests!==undefined)updates.interests=Array.isArray(body.interests)?body.interests.map(x=>cleanText(x).slice(0,40)).slice(0,20):String(body.interests).split(',').map(x=>cleanText(x).slice(0,40)).filter(Boolean).slice(0,20);
+  if(body.displayName!==undefined&&!updates.displayName)return res.status(400).json({error:'Display name cannot be empty.'});
+  if(body.website!==undefined&&updates.website){try{const url=new URL(updates.website);if(!['http:','https:'].includes(url.protocol))throw new Error();}catch{return res.status(400).json({error:'Website must be a valid http or https URL.'});}}
+  let birthDateUpdate;
+  if(body.birthDate!==undefined){
+    birthDateUpdate=String(body.birthDate||'').trim();
+    if(birthDateUpdate){const parsed=new Date(birthDateUpdate+'T00:00:00Z');if(Number.isNaN(parsed.getTime())||parsed>new Date())return res.status(400).json({error:'Enter a valid date of birth.'});}
+  }
+  let emailUpdate;
+  if(body.email!==undefined){
+    if(!featureGrantAllowed(actor,'edit_email'))return res.status(403).json({error:'Email editing has not been granted to your account.'});
+    emailUpdate=String(body.email||'').trim().toLowerCase();
+    if(emailUpdate&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailUpdate))return res.status(400).json({error:'Enter a valid email address.'});
+    if(emailUpdate){const duplicate=await pool.query('SELECT id FROM users WHERE LOWER(email)=LOWER($1) AND id<>$2 LIMIT 1',[emailUpdate,Number(target.id)]);if(duplicate.rowCount)return res.status(409).json({error:'Email is already registered.'});}
+  }
+  Object.assign(target,updates);
+  if(birthDateUpdate!==undefined){
+    target.birthDate=birthDateUpdate;target.dateOfBirth=birthDateUpdate;
+  }
+  if(emailUpdate!==undefined){target.email=emailUpdate;await pool.query('UPDATE users SET email=$1 WHERE id=$2',[emailUpdate||null,Number(target.id)]);}
+  save();log(actor,'ACCOUNT_PROFILE_MODIFY',target.username,{fields:Object.keys(body).filter(k=>k!=='email')});
+  res.json({ok:true,user:safeUser(target)});
+});
+app.post('/api/staff/user/:id/avatar',auth,accountModificationAccess,upload.single('file'),async(req,res)=>{
+  const file=req.file;
+  if(!file)return res.status(400).json({error:'Choose an image to upload.'});
+  if(await checkRestrictedMediaUpload(req,res,current(req),file))return;
+  if(!/^image\/(png|jpe?g|gif|webp|avif)$/i.test(file.mimetype||'')){await fs.promises.unlink(file.path).catch(()=>{});return res.status(400).json({error:'Profile pictures must be PNG, JPG, GIF, WebP or AVIF images.'});}
+  const target=req.profileTarget;target.avatar='/uploads/'+file.filename;save();log(req.profileActor,'ACCOUNT_AVATAR_MODIFY',target.username,{operation:'upload'});
+  res.json({ok:true,user:safeUser(target)});
+});
+app.delete('/api/staff/user/:id/avatar',auth,accountModificationAccess,(req,res)=>{
+  const target=req.profileTarget;target.avatar='';save();log(req.profileActor,'ACCOUNT_AVATAR_MODIFY',target.username,{operation:'remove'});res.json({ok:true,user:safeUser(target)});
+});
+app.post('/api/staff/user/:id/banner',auth,accountModificationAccess,upload.single('file'),async(req,res)=>{
+  const file=req.file;
+  if(!file)return res.status(400).json({error:'Choose an image to upload.'});
+  if(await checkRestrictedMediaUpload(req,res,current(req),file))return;
+  if(!/^image\/(png|jpe?g|gif|webp|avif)$/i.test(file.mimetype||'')){await fs.promises.unlink(file.path).catch(()=>{});return res.status(400).json({error:'Profile backgrounds must be PNG, JPG, GIF, WebP or AVIF images.'});}
+  const target=req.profileTarget;target.banner='/uploads/'+file.filename;save();log(req.profileActor,'ACCOUNT_BANNER_MODIFY',target.username,{operation:'upload'});
+  res.json({ok:true,user:safeUser(target)});
+});
+
+
+app.patch('/api/staff/user/:id/account',auth,(req,res)=>{
+  const actor=current(req), target=findUser(req.params.id);
+  if(!target) return res.status(404).json({error:'User not found'});
+  if(!hasFeature(actor,'manage_staff_accounts')) return res.status(403).json({error:`Staff account management requires ${featureRank('manage_staff_accounts')} or higher.`});
+  if(target.id===actor.id) return res.status(400).json({error:'Use your own account settings for your account.'});
+  if(rankOrder[target.rank] >= rankOrder[actor.rank] && target.id!==actor.id) return res.status(403).json({error:'You cannot manage an equal or higher rank.'});
+  if(req.body.username!==undefined){
+    const nu=String(req.body.username).trim();
+    if(!/^[A-Za-z0-9_]{3,24}$/.test(nu)) return res.status(400).json({error:'Invalid username.'});
+    if(db.users.some(x=>x.id!==target.id && x.username.toLowerCase()===nu.toLowerCase())) return res.status(409).json({error:'Username already exists.'});
+    if(String(target.rank).toUpperCase()==='DEVELOPER' || target.username==='Maleficent') return res.status(403).json({error:'Developer account is protected.'});
+    const previousUsername=target.username;
+    target.usernameHistory ||= []; target.usernameHistory.push({from:previousUsername,to:nu,time:Date.now(),changedBy:actor.username}); target.username=nu;
+    systemNotice(`@${previousUsername} has changed name to @${nu}.`);
+  }
+  if(req.body.email!==undefined){if(!featureGrantAllowed(actor,'edit_email'))return res.status(403).json({error:'Email edit permission has not been granted.'});target.email=String(req.body.email||'').trim().slice(0,160);pool.query('UPDATE users SET email=$1 WHERE id=$2',[target.email,Number(target.id)]).catch(e=>console.error('Staff email update failed',e));}
+  save();
+  res.json({user:safeUser(target),email:target.email||''});
+});
+
+app.get('/api/staff/user/:id/feature-blocks',auth,async(req,res)=>{
+  const actor=current(req),target=findUser(req.params.id);
+  if(!target)return res.status(404).json({error:'User not found'});
+  if(String(target.rank).toUpperCase()==='DEVELOPER'||target.username===DEFAULT_OWNER)return res.status(403).json({error:'The owner account is protected.'});
+  if(!featureGrantAllowed(actor,'profile_note')||rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot manage feature blocks for this account.'});
+  db.settings ||= {};db.settings.user_feature_blocks ||= {};
+  res.json({user:{id:target.id,username:target.username},features:USER_BLOCKABLE_FEATURES,blocked:db.settings.user_feature_blocks[String(target.id)]||{}});
+});
+app.put('/api/staff/user/:id/feature-blocks',auth,async(req,res)=>{
+  const actor=current(req),target=findUser(req.params.id);
+  if(!target)return res.status(404).json({error:'User not found'});
+  if(String(target.rank).toUpperCase()==='DEVELOPER'||target.username===DEFAULT_OWNER)return res.status(403).json({error:'The owner account is protected.'});
+  if(!featureGrantAllowed(actor,'profile_note')||rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot manage feature blocks for this account.'});
+  const incoming=req.body?.blocked;
+  if(!incoming||typeof incoming!=='object'||Array.isArray(incoming))return res.status(400).json({error:'Provide a feature block list.'});
+  const allowed=new Set(USER_BLOCKABLE_FEATURES.map(f=>f.key));
+  if(Object.entries(incoming).some(([key,value])=>!allowed.has(key)||typeof value!=='boolean'))return res.status(400).json({error:'Unknown feature or invalid block value.'});
+  db.settings ||= {};db.settings.user_feature_blocks ||= {};
+  const cleaned={};
+  for(const f of USER_BLOCKABLE_FEATURES)if(incoming[f.key]===true)cleaned[f.key]=true;
+  if(Object.keys(cleaned).length)db.settings.user_feature_blocks[String(target.id)]=cleaned;
+  else delete db.settings.user_feature_blocks[String(target.id)];
+  save();await flushSave();
+  log(actor,'USER_FEATURE_BLOCKS_UPDATE',target.username,{blocked:Object.keys(cleaned)});
+  res.json({ok:true,blocked:cleaned});
+});
+app.get('/api/staff/user/:id/note',auth,async(req,res)=>{const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});if(!featureGrantAllowed(actor,'profile_note')||!canAccessStaffTarget(actor,target))return res.status(403).json({error:'You cannot view this staff note.'});const q=await pool.query(`SELECT n.note,n.created_at,u.username AS author FROM profile_notes n LEFT JOIN users u ON u.id=n.added_by WHERE n.user_id=$1 ORDER BY n.created_at DESC,n.id DESC LIMIT 1`,[Number(target.id)]);const row=q.rows[0];res.json({note:row?.note||'',updatedAt:row?.created_at||null,updatedBy:row?.author||null,hasNote:!!row});});
+app.patch('/api/staff/user/:id/note',auth,async(req,res)=>{
+  const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});
+  if(String(target.rank).toUpperCase()==='DEVELOPER'||target.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+  if(!featureGrantAllowed(actor,'profile_note'))return res.status(403).json({error:'Profile notes require the granted staff rank.'});
+  if(!canAccessStaffTarget(actor,target))return res.status(403).json({error:'You cannot modify an equal or higher rank.'});
+  const note=String(req.body.note||'').trim().slice(0,4000);if(!note)return res.status(400).json({error:'A note is required.'});
+  await pool.query(`INSERT INTO profile_notes(user_id,added_by,note) VALUES($1,$2,$3)`,[Number(target.id),Number(actor.id),note]);
+  log(actor,'PROFILE_NOTE_ADD',target.username,{note});res.json({ok:true,note});
+});
+app.patch('/api/staff/user/:id/password',auth,async(req,res)=>{
+  const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});
+  if(String(target.rank).toUpperCase()==='DEVELOPER'||target.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+  if(!featureGrantAllowed(actor,'change_password'))return res.status(403).json({error:'Password change permission has not been granted.'});
+  if(rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot modify an equal or higher rank.'});
+  const password=String(req.body.password||'');if(password.length<8)return res.status(400).json({error:'New password must be at least 8 characters.'});
+  target.password=await bcrypt.hash(password,10);target.passwordHash=target.password;await pool.query('UPDATE users SET password=$1 WHERE id=$2',[target.password,Number(target.id)]);save();res.json({ok:true});
+});
+app.get('/api/staff/user/:id/email-history',auth,(req,res)=>{const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});if(!featureGrantAllowed(actor,'edit_email')||rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'Email history permission required.'});res.json({email:target.email||'',history:target.emailHistory||[]});});
+app.patch('/api/staff/user/:id/email',auth,async(req,res)=>{
+  const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});
+  if(String(target.rank).toUpperCase()==='DEVELOPER'||target.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+  if(!featureGrantAllowed(actor,'edit_email'))return res.status(403).json({error:'Email edit permission has not been granted.'});
+  if(rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot modify an equal or higher rank.'});
+  const email=String(req.body.email||'').trim().slice(0,160);if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({error:'Enter a valid email address.'});
+  target.emailHistory ||= [];target.emailHistory.push({email:target.email||'',changedAt:Date.now(),changedBy:actor.username});target.email=email;await pool.query('UPDATE users SET email=$1 WHERE id=$2',[email,Number(target.id)]);save();res.json({ok:true,email:target.email,emailHistory:target.emailHistory});
+});
+
+app.patch('/api/staff/user/:id/rank',auth,async(req,res)=>{
+  const actor=current(req), target=findUser(req.params.id), nr=String(req.body.rank||'');
+  if(!target) return res.status(404).json({error:'User not found'});
+  if(!hasFeature(actor,'staff_rank_assignment')) return res.status(403).json({error:`Rank assignment requires ${featureRank('staff_rank_assignment')} or higher.`});
+  if(String(target.rank).toUpperCase()==='DEVELOPER' || target.username==='Maleficent') return res.status(403).json({error:'Developer account is protected.'});
+  if(!ranks.includes(nr)) return res.status(400).json({error:'Invalid rank.'});
+  const actorRank=String(actor.rank||'MEMBER').toUpperCase();
+  const coownerPower=actorRank==='COOWNER';
+  const ownerPower=actorRank==='OWNER'&&actor.username===DEFAULT_OWNER;
+  const grantCeiling=ownerPower?'COOWNER':(coownerPower?'INSTRUCTOR':'MOD');
+  if(!ownerPower&&rankOrder[String(nr).toUpperCase()]>rankOrder[grantCeiling]) return res.status(403).json({error:'Your rank can assign '+grantCeiling+' or below only.'});
+  if(rankOrder[String(target.rank||'MEMBER').toUpperCase()]>=rankOrder[actorRank]) return res.status(403).json({error:'You cannot change an equal or higher rank.'});
+  const previousRank=String(target.rank||'MEMBER').toUpperCase();
+  target.rank=nr; save(); log(actor,'RANK_CHANGE',target.username,{rank:nr,previousRank,via:'STAFF'});
+  try{await sendRankChangeBotDM(target,nr);}catch(err){console.error("Rank-change private message failed:",err.message);}
+  res.json({user:safeUser(target)});
+});
+
+app.patch(
+  "/api/owner/user/:id/rank",
+  ownerOnly,
+  async(req,res)=>{
+    const v=findUser(
+      req.params.id
+    );
+
+    if(
+      !v||
+      !ranks.includes(req.body.rank)||
+      String(req.body.rank).toUpperCase()==="DEVELOPER"
+    ){
+      return res.status(400).json({
+        error:"Invalid"
+      });
+    }
+
+    if(
+      v.username===DEFAULT_OWNER
+    ){
+      return res.status(400).json({
+        error:
+          "Developer rank cannot be changed."
+      });
+    }
+
+    const previousRank=String(v.rank||'MEMBER').toUpperCase();
+    v.rank=req.body.rank;
+
+    save();
+
+    log(
+      current(req),
+      "RANK_CHANGE",
+      v.username,
+      {
+        rank:v.rank,
+        previousRank
+      }
+    );
+    try{await sendRankChangeBotDM(v,v.rank);}catch(err){console.error("Rank-change private message failed:",err.message);}
+
+    res.json({
+      user:safeUser(v)
+    });
+  }
+);
+
+app.patch(
+  "/api/owner/user/:id/gold",
+  ownerOnly,
+  (req,res)=>{
+    const v=findUser(
+      req.params.id
+    );
+
+    if(!v){
+      return res.status(404).json({
+        error:"User not found"
+      });
+    }
+    if(String(v.rank).toUpperCase()==="DEVELOPER") return res.status(403).json({error:"Cannot act on Developer"});
+
+    const amount=
+      Number(req.body.amount);
+
+    if(!Number.isFinite(amount)){
+      return res.status(400).json({
+        error:"Invalid amount"
+      });
+    }
+
+    const before=v.gold||0;
+
+    v.gold=
+      Math.max(
+        0,
+        Math.floor(amount)
+      );
+
+    db.goldTransactions.push({
+      id:id(),
+      time:Date.now(),
+      actor:current(req).id,
+      userId:v.id,
+      type:"OWNER_EDIT",
+      before,
+      after:v.gold,
+      delta:v.gold-before
+    });
+
+    save();
+    io.to("user:"+v.id).emit("gold:update",{gold:v.gold});
+
+    log(
+      current(req),
+      "GOLD_EDIT",
+      v.username,
+      {
+        before,
+        after:v.gold
+      }
+    );
+
+    res.json({
+      user:safeUser(v)
+    });
+  }
+);
+
+app.patch('/api/owner/user/:id/diamonds',ownerOnly,async(req,res)=>{
+ const v=findUser(req.params.id);if(!v)return res.status(404).json({error:'User not found'});if(String(v.rank).toUpperCase()==='DEVELOPER'||v.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+ const amount=Number(req.body?.amount);if(!Number.isSafeInteger(amount)||amount<0||amount>2147483647)return res.status(400).json({error:'Enter a valid non-negative Diamond balance.'});
+ try{const updated=await pool.query('UPDATE users SET diamonds=$1 WHERE id=$2 RETURNING diamonds,gold',[amount,Number(v.id)]);if(!updated.rowCount)return res.status(404).json({error:'User not found'});v.diamonds=Number(updated.rows[0].diamonds||0);v.gold=Number(updated.rows[0].gold||0);io.to('user:'+v.id).emit('wallet:update',{userId:v.id,diamonds:v.diamonds,gold:v.gold});log(current(req),'DIAMONDS_EDIT',v.username,{after:v.diamonds});save();return res.json({ok:true,user:safeUser(v)});}catch(error){console.error('Owner Diamond edit failed:',error);return res.status(500).json({error:'Could not update Diamonds.'});}
+});
+app.patch('/api/owner/user/:id/progress',ownerOnly,async(req,res)=>{
+ const v=findUser(req.params.id);if(!v)return res.status(404).json({error:'User not found'});if(String(v.rank).toUpperCase()==='DEVELOPER'||v.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+ const xp=Number(req.body.xp),level=Number(req.body.level);if(!Number.isFinite(xp)||!Number.isFinite(level)||xp<0||level<1||xp>2147483647||level>1000000)return res.status(400).json({error:'Enter valid XP and level values.'});v.xp=Math.floor(xp);v.level=Math.floor(level);await pool.query('UPDATE users SET xp=$1 WHERE id=$2',[v.xp,Number(v.id)]);save();res.json({ok:true,user:safeUser(v)});
+});
+
+app.delete(
+  "/api/owner/user/:id",
+  ownerOnly,
+  async (req,res)=>{
+    const v=findUser(req.params.id);
+
+    if(!v || v.username===DEFAULT_OWNER || String(v.rank).toUpperCase()==="DEVELOPER"){
+      return res.status(400).json({error:"Cannot delete permanent owner"});
+    }
+
+    try{
+      const deleted=await permanentlyDeleteAccountRecord(v.id);
+      if(!deleted)return res.status(404).json({error:"Account not found in the database; no changes were made."});
+      removeDeletedAccountFromMemory(v);
+      log(current(req),"ACCOUNT_DELETE",v.username,{userId:String(v.id)});
+      await flushSave();
+      io.emit("presence");
+      res.json({ok:true});
+    }catch(error){
+      console.error("Owner account deletion failed:",error);
+      res.status(500).json({error:"The account could not be permanently deleted. No account-list changes were made."});
+    }
+  }
+);
+
+app.get("/api/owner/dms",ownerOnly,async(req,res)=>{
+  const u1=String(req.query.username1||"").trim(),u2=String(req.query.username2||"").trim();
+  let sql=`SELECT data FROM private_messages`; let params=[]; let where="";
+  const x=u1?findUser(u1):null, y=u2?findUser(u2):null;
+  if(u1 && !x)return res.status(404).json({error:"Username 1 not found"});
+  if(u2 && !y)return res.status(404).json({error:"Username 2 not found"});
+  if(x&&y){where=` WHERE (sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1)`;params=[Number(x.id),Number(y.id)];}
+  else if(x){where=` WHERE sender_id=$1 OR receiver_id=$1`;params=[Number(x.id)];}
+  const q=await pool.query(sql+where+` ORDER BY created_at DESC LIMIT 2000`,params);
+  const usersById=new Map(db.users.map(u=>[String(u.id),u]));
+  res.json({privateMessages:q.rows.map(r=>{const m=r.data||{};const fu=usersById.get(String(m.from)),tu=usersById.get(String(m.to));return {...m,fromUsername:fu?.username||m.from,toUsername:tu?.username||m.to,fromDisplayName:fu?.displayName||'',toDisplayName:tu?.displayName||''};})});
+});
+
+app.get("/api/dm/unread-count",auth,featureAllowed("private_messages"),async(req,res)=>{
+  const u=current(req);
+  try{
+    // PostgreSQL is authoritative. The in-memory legacy cache can be stale
+    // across restarts and does not reliably contain read-receipt updates.
+    const result=await pool.query(
+      "SELECT COUNT(*)::int AS count FROM private_messages WHERE receiver_id=$1 AND data->>'read' IS DISTINCT FROM 'true'",
+      [Number(u.id)]
+    );
+    res.set("Cache-Control","no-store");
+    res.json({count:Number(result.rows[0]?.count||0)});
+  }catch(error){
+    console.error("Private-message unread count failed:",error?.message||error);
+    res.status(500).json({error:"Could not load unread private-message count."});
+  }
+});
+
+app.post('/api/reports',auth,async(req,res)=>{
+  const reporter=current(req),targetId=String(req.body.target||req.body.targetId||"").trim();
+  const target=findUser(targetId),reason=cleanText(req.body.reason||"").trim().slice(0,500);
+  if(!target)return res.status(404).json({error:"Reported user not found."});
+  if(String(target.id)===String(reporter.id))return res.status(400).json({error:"You cannot report your own account."});
+  if(!reason)return res.status(400).json({error:"Please provide a reason for this report."});
+  const reportId=id(),data={id:reportId,reporter:reporter.id,reportedUserId:target.id,reason,status:"OPEN",time:Date.now(),kind:"profile"};
+  try{
+    await pool.query('INSERT INTO reports(id,reporter_id,reported_id,conversation_user_id,reason,data,created_at) VALUES($1,$2,$3,NULL,$4,$5::jsonb,NOW())',[reportId,Number(reporter.id),Number(target.id),reason,JSON.stringify(data)]);
+    db.reports ||= [];db.reports.push(data);
+    notifyStaff("report","New profile report",`@${reporter.username} reported @${target.username}.`);
+    res.json({ok:true,report:data});
+  }catch(e){console.error("Profile report failed:",e);res.status(500).json({error:"Could not submit this report."});}
+});
+
+app.post("/api/report",auth,async(req,res)=>{
+  const reporter=current(req), reported=findUser(req.body.reportedUserId), convo=findUser(req.body.conversationWithId);
+  if(!reported||!convo)return res.status(400).json({error:"Reported user and conversation user are required."});
+  const reportId=id(), reason=cleanText(req.body.reason).slice(0,500)||"Private message report";
+  const q=await pool.query(`SELECT data FROM private_messages WHERE (sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1) ORDER BY created_at DESC LIMIT 200`,[Number(reported.id),Number(convo.id)]);
+  const data={id:reportId,reporter:reporter.id,reportedUserId:reported.id,conversationUserId:convo.id,reason,status:"OPEN",time:Date.now(),kind:"private_message"};
+  await pool.query(`INSERT INTO reports(id,reporter_id,reported_id,conversation_user_id,reason,data,created_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,NOW())`,
+    [reportId,Number(reporter.id),Number(reported.id),Number(convo.id),reason,JSON.stringify({...data,privateMessages:q.rows.map(x=>x.data)})]);
+  db.reports.push({...data,privateMessages:q.rows.map(x=>x.data)}); notifyStaff("report","New private-message report",`@${reporter.username} reported @${reported.username}.`); res.json({ok:true,report:data});
+});
+app.get("/api/staff/reports/:id/private-messages",auth,featureAllowed("view_staff_dashboard"),async(req,res)=>{
+  const u=current(req);if(!hasRank(u,"MOD"))return res.status(403).json({error:"Staff only"});
+  try{
+    const q=await pool.query("SELECT r.data,reporter.username AS reporter_username,target.username AS reported_username,convo.username AS conversation_username FROM reports r LEFT JOIN users reporter ON reporter.id=r.reporter_id LEFT JOIN users target ON target.id=r.reported_id LEFT JOIN users convo ON convo.id=r.conversation_user_id WHERE r.id=$1",[req.params.id]);
+    const cached=(db.reports||[]).find(r=>String(r.id)===String(req.params.id));
+    if(!q.rowCount&&!cached)return res.status(404).json({error:"Report not found"});
+    const row=q.rows[0]||{},d=row.data&&typeof row.data==="object"?row.data:cached||{};
+    if(!d.conversationUserId)return res.status(400).json({error:"This is not a private-message report."});
+    let messages=Array.isArray(d.privateMessages)?d.privateMessages:[];
+    if(!messages.length){const p=await pool.query("SELECT m.id,m.sender_id,m.receiver_id,m.message,m.data,m.created_at,s.username AS sender_username,r.username AS receiver_username FROM private_messages m LEFT JOIN users s ON s.id=m.sender_id LEFT JOIN users r ON r.id=m.receiver_id WHERE (m.sender_id=$1 AND m.receiver_id=$2) OR (m.sender_id=$2 AND m.receiver_id=$1) ORDER BY m.created_at ASC LIMIT 200",[Number(d.reportedUserId),Number(d.conversationUserId)]);messages=p.rows;}messages=messages.map(item=>{const data=item?.data&&typeof item.data==="object"?item.data:item||{};const senderId=item?.sender_id??data.from??data.senderId,receiverId=item?.receiver_id??data.to??data.receiverId;const sender=db.users.find(user=>String(user.id)===String(senderId)),receiver=db.users.find(user=>String(user.id)===String(receiverId));return {...data,id:item?.id??data.id,from:senderId,to:receiverId,senderId,receiverId,senderUsername:item?.sender_username||sender?.username||data.fromUsername||data.senderUsername||"Unknown",receiverUsername:item?.receiver_username||receiver?.username||data.toUsername||data.receiverUsername||"Unknown",text:data.text??item?.message??data.message??data.content??"",message:data.message??item?.message??data.text??data.content??"",time:data.time??(item?.created_at?new Date(item.created_at).getTime():Date.now())};});
+    res.json({messages,report:{id:req.params.id,reason:d.reason||"No reason supplied",reporterUsername:d.reporterUsername||row.reporter_username||"",reportedUserUsername:d.reportedUserUsername||row.reported_username||"",conversationUsername:d.conversationUsername||row.conversation_username||"",reportedUserId:d.reportedUserId,conversationUserId:d.conversationUserId}});
+  }catch(e){console.error("Private-message report evidence failed:",e);res.status(500).json({error:"Could not load the reported private-message evidence."});}
+});
+
+app.get("/api/staff/unread-count",auth,async(req,res)=>{
+  const u=current(req);
+  if(!staff(u.rank)) return res.status(403).json({reports:0,staffNotifications:0,total:0});
+  const reports=db.reports.filter(r=>r.status==="OPEN").length;
+  const nq=await pool.query(`SELECT COUNT(*)::int AS count FROM notifications WHERE user_id=$1 AND is_read=false AND type IN ('report','moderation','staff')`,[Number(u.id)]);
+  const staffNotifications=Number(nq.rows[0]?.count||0);
+  res.json({reports,staffNotifications,total:reports+staffNotifications});
+});
+
+app.get(
+  "/api/news",
+  auth,
+  (req,res)=>
+    res.json({
+      news:db.news||[]
+    })
+);
+
+// Official Brand News is stored independently from community News.
+app.get("/api/brand-news",auth,(req,res)=>{
+  db.brandNews??=[];
+  res.json({items:db.brandNews});
+});
+app.post("/api/brand-news",auth,upload.single("file"),async(req,res)=>{
+  const u=current(req);
+  if(!u)return res.status(401).json({error:"Login required"});
+  if(isUserFeatureBlocked(u,"publish_news"))return res.status(403).json({error:"Brand News publishing is blocked for your account."});
+  if(!hasRank(u,"ADMIN"))return res.status(403).json({error:"Brand News publishing requires Admin rank or higher."});
+  if(await checkRestrictedMediaUpload(req,res,u,req.file))return;
+  const categories=["Product update","Community","Events","Service notice","Behind the scenes"];
+  const category=String(req.body.category||"").trim();
+  const headline=cleanText(req.body.headline||"").trim().slice(0,120);
+  const summary=cleanText(req.body.summary||"").trim().slice(0,260);
+  const body=cleanText(req.body.body||"").trim().slice(0,5000);
+  const linkLabel=cleanText(req.body.linkLabel||"").trim().slice(0,32);
+  const linkUrl=String(req.body.linkUrl||"").trim().slice(0,500);
+  if(!categories.includes(category))return res.status(400).json({error:"Choose a valid Brand News category."});
+  if(!headline||!summary||!body)return res.status(400).json({error:"Headline, introduction and announcement are required."});
+  if(linkUrl){try{const parsed=new URL(linkUrl);if(!["http:","https:"].includes(parsed.protocol))throw new Error();}catch{return res.status(400).json({error:"Destination must be an http or https URL."});}}
+  if(linkLabel&&!linkUrl)return res.status(400).json({error:"Add a destination URL for the button label."});
+  db.brandNews??=[];
+  const item={id:id(),category,headline,summary,body,linkLabel,linkUrl,createdAt:Date.now(),author:u.displayName||u.username,avatar:u.avatar||"",image:req.file?{url:"/uploads/"+req.file.filename,type:req.file.mimetype,name:req.file.originalname}:null};
+  db.brandNews.unshift(item);
+  save();io.emit("brand-news");
+  res.status(201).json({item});
+});
+app.delete("/api/brand-news/:id",auth,(req,res)=>{
+  const u=current(req);
+  if(!u||!hasRank(u,"ADMIN"))return res.status(403).json({error:"Removing Brand News requires Admin rank or higher."});
+  db.brandNews??=[];
+  const index=db.brandNews.findIndex(item=>String(item.id)===String(req.params.id));
+  if(index<0)return res.status(404).json({error:"Brand News update not found."});
+  const [removed]=db.brandNews.splice(index,1);
+  save();io.emit("brand-news");
+  res.json({ok:true,id:removed.id});
+});
+
+app.post("/api/news",auth,upload.single("file"),featureAllowed("publish_news"),async(req,res)=>{
+    const u=current(req);
+    if(await checkRestrictedMediaUpload(req,res,u,req.file))return;
+
+    db.news??=[];
+
+    const n={
+      id:id(),
+
+      title:
+        cleanText(
+          req.body.title
+        ).slice(0,120),
+
+      body:
+        cleanText(
+          req.body.body
+        ).slice(0,3000),
+
+      time:Date.now(),
+      author:u.displayName||u.username,
+      avatar:u.avatar||"",
+      comments:[],
+      attachment:req.file?{url:"/uploads/"+req.file.filename,type:req.file.mimetype,name:req.file.originalname}:null
+    };
+
+    db.news.unshift(n);
+
+    save();
+
+    io.emit("news");
+
+    res.json({
+      news:n
+    });
+  }
+);
+
+app.post('/api/news/:id/reaction',auth,(req,res)=>{
+  const u=current(req),emoji=String(req.body?.emoji||'👍'),allowed=['👍','👎','💗','😆'];
+  if(!allowed.includes(emoji))return res.status(400).json({error:'Unsupported reaction.'});
+  const n=(db.news||[]).find(x=>String(x.id)===String(req.params.id));
+  if(!n)return res.status(404).json({error:'News item not found.'});
+  n.reactions=n.reactions&&typeof n.reactions==='object'?n.reactions:{};
+  const old=n.reactions[emoji],users=Array.isArray(old)?old.map(String):(Number(old)>0?Array.from({length:Math.min(Number(old),100)},(_,i)=>'legacy-'+i):[]);
+  const userId=String(u.id),reacted=users.includes(userId);
+  n.reactions[emoji]=reacted?users.filter(x=>x!==userId):[...users,userId];
+  save();io.emit('news');res.json({ok:true,reactions:n.reactions,reacted:!reacted});
+});
+
+app.delete(
+  "/api/news/:id",
+  auth,
+  (req,res)=>{
+    const u=current(req);
+    if(!hasFeature(u,"delete_news")) return res.status(403).json({error:`Delete news requires ${featureRank("delete_news")} or higher.`});
+    db.news??=[];
+    const index=db.news.findIndex(n=>n.id===req.params.id);
+    if(index<0) return res.status(404).json({error:"News item not found"});
+    const removed=db.news[index];
+    db.news.splice(index,1);
+    save();
+    log(u,"NEWS_DELETE",removed.id,{contentType:"news",newsId:String(removed.id),title:removed.title||"",body:removed.body||"",author:removed.author||"",time:removed.time||null,comments:Array.isArray(removed.comments)?removed.comments:[],attachment:removed.attachment||null,reason:"NEWS_DELETE"});
+    io.emit("news");
+    res.json({ok:true,news:removed});
+  }
+);
+
+app.get('/api/news/:id/comments',auth,(req,res)=>{
+  const n=(db.news||[]).find(x=>x.id===req.params.id);
+  if(!n) return res.status(404).json({error:'News item not found'});
+  n.comments ||= [];
+  res.json({comments:n.comments});
+});
+
+app.post('/api/news/:id/comments',auth,(req,res)=>{
+  const u=current(req);
+  const n=(db.news||[]).find(x=>x.id===req.params.id);
+  if(!n) return res.status(404).json({error:'News item not found'});
+  const text=cleanText(req.body.text||'').trim().slice(0,1000);
+  if(!text) return res.status(400).json({error:'Comment cannot be empty.'});
+  n.comments ||= [];
+  const comment={id:id(),userId:u.id,username:u.username,displayName:u.displayName,avatar:u.avatar||'',rank:u.rank,text,time:Date.now()};
+  n.comments.push(comment);
+  save();
+  io.emit('news');
+  res.json({comment});
+});
+
+app.delete('/api/news/:newsId/comments/:commentId',auth,(req,res)=>{
+  const u=current(req);
+  const n=(db.news||[]).find(x=>x.id===req.params.newsId);
+  if(!n) return res.status(404).json({error:'News item not found'});
+  const i=(n.comments||[]).findIndex(c=>c.id===req.params.commentId);
+  if(i<0) return res.status(404).json({error:'Comment not found'});
+  const c=n.comments[i];
+  if(c.userId!==u.id && !hasRank(u,'MOD')) return res.status(403).json({error:'No permission'});
+  n.comments.splice(i,1);
+  save();
+  io.emit('news');
+  res.json({ok:true});
+});
+
+
+app.get(
+  "/api/leaderboard",
+  auth,
+  (req,res)=>
+    res.json({
+      users:
+        [...db.users]
+          .filter(user=>!user.hideMode)
+          .sort(
+            (a,b)=>
+              (b.xp-a.xp)||
+              (b.gold-a.gold)
+          )
+          .slice(0,50)
+          .map(safeUser)
+    })
+);
+
+app.get(
+  "/api/gold/history",
+  auth,
+  (req,res)=>{
+    res.json({
+      transactions:
+        db.goldTransactions
+          .filter(
+            t=>
+              t.userId===
+                current(req).id||
+              t.actor===
+                current(req).id
+          )
+          .slice(-300)
+          .reverse()
+    });
+  }
+);
+
+app.post(
+  "/api/gold/gift",
+  auth,
+  async(req,res)=>{
+    const u=current(req);
+    const v=findUser(req.body.userId);
+    const amount=Math.floor(Number(req.body.amount));
+    if(!v||String(v.id)===String(u.id)||!Number.isSafeInteger(amount)||amount<1||amount>1000000){
+      return res.status(400).json({error:"Choose another user and a valid gold amount."});
+    }
+    const client=await pool.connect();
+    let fromGold,toGold;
+    try{
+      await client.query("BEGIN");
+      const debit=await client.query(
+        "UPDATE users SET gold=gold-$1 WHERE id=$2 AND gold >= $1 RETURNING gold",
+        [amount,Number(u.id)]
+      );
+      if(!debit.rowCount){
+        await client.query("ROLLBACK");
+        return res.status(400).json({error:"You do not have enough gold for this transfer."});
+      }
+      const credit=await client.query(
+        "UPDATE users SET gold=COALESCE(gold,0)+$1 WHERE id=$2 RETURNING gold",
+        [amount,Number(v.id)]
+      );
+      if(!credit.rowCount){
+        await client.query("ROLLBACK");
+        return res.status(404).json({error:"Recipient account no longer exists."});
+      }
+      await client.query("COMMIT");
+      fromGold=Number(debit.rows[0].gold);
+      toGold=Number(credit.rows[0].gold);
+    }catch(err){
+      await client.query("ROLLBACK").catch(()=>{});
+      console.error("Gold transfer failed:",err);
+      return res.status(500).json({error:"Could not transfer gold. Please try again."});
+    }finally{client.release();}
+    u.gold=fromGold;
+    v.gold=toGold;
+    db.goldTransactions ||= [];
+    db.goldTransactions.push(
+      {id:id(),time:Date.now(),actor:u.id,userId:u.id,type:"GOLD_SENT",delta:-amount,to:v.id},
+      {id:id(),time:Date.now(),actor:u.id,userId:v.id,type:"GOLD_RECEIVED",delta:amount,from:u.id}
+    );
+    save();
+    io.to("user:"+u.id).emit("gold:update",{gold:u.gold});
+    io.to("user:"+v.id).emit("gold:update",{gold:v.gold});
+    notify(v.id,"gold","Gold received",`@${u.username} gifted you ${amount} gold.`);
+    res.json({ok:true,from:safeUser(u),to:safeUser(v),amount});
+  }
+);
+
+// Passive gold collection: online users receive configured gold every minute.
+setInterval(()=>{
+  const amount=Math.max(0,Math.floor(Number(db.settings.goldPerMinute||0)));
+  if(!amount) return;
+  let changed=false;
+  for(const u of db.users){
+    if(!u.online || u.rank==="OWNER") continue;
+    u.gold=(u.gold||0)+amount;
+    db.goldTransactions.push({id:id(),time:Date.now(),actor:"SYSTEM",userId:u.id,type:"ONLINE_TIME",delta:amount});
+    changed=true;
+    io.to("user:"+u.id).emit("gold:update",{gold:u.gold});
+  }
+  if(changed) save();
+},60000);
+
+const gravityMatches = new Map();
+
+io.on(
+  "connection",
+  socket=>{
+    socket.on("gravity:invite", data=>{
+      const u=findUser(socket.data.userId);
+      if(!u)return socket.emit("gravity:error",{error:"Please log in before starting a game."});
+      const activeRoomId=String(socket.data.roomId||"");
+      const activeRoom=db.rooms.find(r=>String(r.id)===activeRoomId);
+      if(!activeRoom||!socket.rooms.has("room:"+activeRoomId)||!verifyRoomJoinToken(socket.data.roomJoinToken,u.id,activeRoom)){
+        return socket.emit("gravity:error",{error:"Join a chat room before inviting someone to Gravity Run."});
+      }
+      const gameId=id();
+      const difficulty=Math.max(0,Math.min(100,Number(data&&data.difficulty)||25));
+      const match={id:gameId,hostId:String(u.id),hostName:u.displayName||u.username,players:[{userId:String(u.id),username:u.username,displayName:u.displayName||u.username,side:0}],status:"waiting",difficulty,createdAt:Date.now(),state:null};
+      gravityMatches.set(gameId,match);
+      socket.join("gravity:"+gameId);
+      const invite={gameId:gameId,hostId:String(u.id),hostName:match.hostName,roomId:activeRoomId,gameName:"Maleficent's Gravity Run",difficulty:difficulty};
+      io.to("room:"+activeRoomId).emit("system-message",{id:id(),roomId:activeRoomId,system:true,bot:"Aurora",text:match.hostName+" has started Maleficent's Gravity Run",time:Date.now(),gameInvite:invite});
+      io.to("room:"+activeRoomId).emit("gravity:invite",invite);
+      socket.emit("gravity:created",{gameId:gameId,hostId:String(u.id),hostName:match.hostName,difficulty:difficulty});
+    });
+
+    socket.on("gravity:join", data=>{
+      const u=findUser(socket.data.userId);
+      const match=gravityMatches.get(String(data&&data.gameId||""));
+      if(!u)return socket.emit("gravity:error",{error:"Please log in before joining a game."});
+      if(!match||match.status!=="waiting")return socket.emit("gravity:error",{error:"This game is no longer waiting for a player."});
+      if(String(match.hostId)===String(u.id))return socket.emit("gravity:error",{error:"Invite another player to join your game."});
+      if(match.players.length>=2)return socket.emit("gravity:error",{error:"This game already has two players."});
+      match.players.push({userId:String(u.id),username:u.username,displayName:u.displayName||u.username,side:1});
+      match.status="started";
+      socket.join("gravity:"+match.id);
+      const payload={gameId:match.id,hostId:match.hostId,hostName:match.hostName,players:match.players,difficulty:match.difficulty};
+      const matchSockets=io.sockets.adapter.rooms.get("gravity:"+match.id)||new Set();
+      for(const socketId of matchSockets){const peer=io.sockets.sockets.get(socketId);if(peer)peer.emit("gravity:joined",{...payload,myUserId:String(peer.data.userId||"")});}
+    });
+
+    socket.on("gravity:cancel", data=>{
+      const u=findUser(socket.data.userId);
+      const match=gravityMatches.get(String(data&&data.gameId||""));
+      if(!u||!match||String(match.hostId)!==String(u.id))return;
+      socket.to("gravity:"+match.id).emit("gravity:ended",{gameId:match.id,winnerId:"",reason:"cancelled"});
+      gravityMatches.delete(match.id);
+    });
+
+    socket.on("gravity:input", data=>{
+      const u=findUser(socket.data.userId);
+      const match=gravityMatches.get(String(data&&data.gameId||""));
+      if(!u||!match||match.status!=="started"||!match.players.some(p=>String(p.userId)===String(u.id)))return;
+      socket.to("gravity:"+match.id).emit("gravity:input",{gameId:match.id,playerId:String(u.id),action:String(data.action||"flip")});
+    });
+
+    socket.on("gravity:state", data=>{
+      const u=findUser(socket.data.userId);
+      const match=gravityMatches.get(String(data&&data.gameId||""));
+      if(!u||!match||String(match.hostId)!==String(u.id)||match.status!=="started")return;
+      match.state=data.state||null;
+      socket.to("gravity:"+match.id).emit("gravity:state",{gameId:match.id,state:match.state});
+    });
+
+    socket.on("gravity:end", data=>{
+      const u=findUser(socket.data.userId);
+      const match=gravityMatches.get(String(data&&data.gameId||""));
+      if(!u||!match||String(match.hostId)!==String(u.id))return;
+      socket.to("gravity:"+match.id).emit("gravity:ended",{gameId:match.id,winnerId:String(data.winnerId||u.id),reason:String(data.reason||"finished")});
+      gravityMatches.delete(match.id);
+    });
+
+    socket.on("gravity:leave", data=>{
+      const gameId=String(data&&data.gameId||"");
+      socket.leave("gravity:"+gameId);
+    });
+
+
+    socket.on(
+      "auth",
+      (credentials, acknowledge)=>{
+        const ack=typeof acknowledge==="function"?acknowledge:()=>{};
+        const claims=verifyToken(typeof credentials==="string"?credentials:credentials?.token);
+        if(!claims){ack({ok:false,error:"Authentication failed"});return socket.disconnect(true);}
+        const userId=String(claims.sub);
+        const u=findUser(userId);
+        if(!u){ack({ok:false,error:"User not found"});return;}
+
+        const previousUserId=String(socket.data.userId||"");
+        if(previousUserId&&previousUserId!==userId){
+          for(const channel of socket.rooms){
+            if(channel!==socket.id&&(channel.startsWith("user:")||channel.startsWith("room:")||channel.startsWith("gravity:")))socket.leave(channel);
+          }
+          socket.data.roomId=null;
+          socket.data.roomJoinToken=null;
+          const previousUser=findUser(previousUserId);
+          if(previousUser&&!io.sockets.adapter.rooms.get("user:"+previousUserId)?.size){previousUser.online=false;previousUser.roomId=null;previousUser.lastSeen=Date.now();}
+        }
+
+        socket.data.userId=u.id;
+        socket.join("user:"+u.id);
+        u.online=true;
+        u.lastSeen=Date.now();
+        save();
+        io.emit("presence");
+        ack({ok:true,userId:String(u.id)});
+      }
+    );
+
+    socket.on("join-room", async (joinRequest, acknowledge)=>{
+      const ack=typeof acknowledge==="function"?acknowledge:()=>{};
+      const roomId=typeof joinRequest==="string"?joinRequest:joinRequest?.roomId;
+      const u=findUser(socket.data.userId);
+      const r=db.rooms.find(x=>String(x.id)===String(roomId));
+      if(!u||!r){ack({ok:false,error:"Please log in and select a valid room."});return;}
+      const networkDecision=await networkAccessDecision(socket.request,u);
+      if(!networkDecision.allowed){ack({ok:false,error:networkDecision.reason});socket.emit("room-error",{error:networkDecision.reason});socket.disconnect(true);return;}
+      if(!verifyRoomJoinToken(joinRequest?.joinToken,u.id,r)){ack({ok:false,error:"Join this room through the room access flow first."});socket.emit("room-error",{error:"Join this room through the room access flow first."});return;}
+      if(!roomRankCanEnter(u,r)){ack({ok:false,error:"Your rank cannot enter this room."});socket.emit("room-error",{error:"Your rank cannot enter this room."});return;}
+      if(!roomCapacityAvailable(u,r)){ack({ok:false,error:"This room has reached its member limit."});socket.emit("room-error",{roomId:String(roomId),error:"This room has reached its member limit."});return;}
+      if(u.banned===true){ack({ok:false,error:"This account cannot join rooms."});return;}
+      if(u.kickedUntil&&u.kickedUntil>Date.now()){ack({ok:false,error:"You are temporarily blocked from joining rooms."});return;}
+      for(const room of socket.rooms){
+        if(room.startsWith("room:") && room!=="room:"+roomId) socket.leave(room);
+      }
+      const previousRoomId = socket.data.roomId || null;
+      socket.join("room:"+roomId);
+      socket.data.roomId=roomId;
+      socket.data.roomJoinToken=String(joinRequest?.joinToken||"");
+      u.roomId=roomId;
+      u.lastSeen=Date.now();
+      save();
+      io.emit("presence");
+      // Aurora room-presence announcement: every successful room switch is announced
+      // to the destination room when Aurora is enabled.
+      if(db.aurora?.enabled !== false && !u.hideMode && !u.invisible){
+        io.to("room:"+roomId).emit("system-message", {
+          id:id(),
+          roomId,
+          system:true,
+          username:"Aurora",
+          displayName:"Aurora",
+          rank:"BOT",
+          bot:"Aurora",
+          text:`${u.displayName || u.username} has joined room`,
+          time:Date.now()
+        });
+      }
+      // Confirm only after socket.join has completed.
+      ack({ok:true,roomId:String(roomId)});
+    });
+
+    socket.on("leave-room", roomId=>{
+      socket.leave("room:"+roomId);
+      if(String(socket.data.roomId||"")===String(roomId)){socket.data.roomId=null;socket.data.roomJoinToken=null;}
+      io.emit("presence");
+    });
+
+    socket.on("typing", d=>{
+      const u=findUser(socket.data.userId);
+      const roomId=String(socket.data.roomId||"");
+      const room=db.rooms.find(item=>String(item.id)===roomId);
+      if(!u||!room||!roomId||!socket.rooms.has("room:"+roomId)||String(d?.roomId||"")!==roomId||!verifyRoomJoinToken(socket.data.roomJoinToken,u.id,room))return;
+      socket.to("room:"+roomId).emit("typing",{
+        roomId,user:u.displayName||u.username,userId:String(u.id),typing:!!d.typing
+      });
+    });
+
+    socket.on("dm-typing", d=>{
+      const u=findUser(socket.data.userId);
+      const recipientId=String(d?.userId||"");
+      const recipient=findUser(recipientId);
+      if(!u||!recipientId||recipientId===String(u.id)||!recipient||privateMessagesBlocked(u,recipient))return;
+      socket.to("user:"+recipientId).emit("dm-typing",{
+        userId:String(u.id),recipientId,user:u.displayName||u.username,typing:!!d.typing
+      });
+    });
+
+    socket.on(
+      "disconnect",
+      ()=>{
+        const u=findUser(socket.data.userId);
+        if(!u)return;
+        setTimeout(()=>{
+          if(io.sockets.adapter.rooms.get("user:"+u.id)?.size)return;
+          u.online=false;u.lastSeen=Date.now();u.roomId=null;save();io.emit("presence");
+        },0);
+      }
+    );
+  }
+);
+
+setInterval(
+  ()=>{
+    let changed=false;
+
+    for(
+      const u of db.users
+    ){
+      if(
+        u.online&&
+        Date.now()-u.lastSeen>
+        120000
+      ){
+        u.online=false;
+        changed=true;
+      }
+
+      if(
+        u.mutedUntil&&
+        u.mutedUntil<Date.now()
+      ){
+        u.mutedUntil=null;
+        u.muteReason="";
+        changed=true;
+      }
+    }
+
+    if(changed){
+      save();
+      io.emit("presence");
+    }
+  },
+  30000
+);
+
+
+/* ==================== MALEFICENT CHAT V3 FEATURE LAYER ==================== */
+
+// Backwards-compatible defaults for the expanded account/profile system.
+function ensureUserSchema(u){
+  u.settings ||= {};
+  u.settings.notificationPrefs ||= {messages:true,mentions:true,replies:true,security:true,staff:true,gamification:true,other:true};
+  u.displayNameHistory ||= [];
+  u.mutedUsers ||= [];
+  u.warnings ||= 0;
+  if(u.banned===undefined) u.banned=false;
+  u.kickedUntil ||= null;
+  u.kickReason ||= "";
+  u.banReason ||= "";
+
+  if(!u) return;
+  u.settings ||= {};
+  Object.assign(u.settings, {
+    rememberLogin:true,
+    theme:u.settings.theme||u.theme||"obsidian",
+    accentColor:u.settings.accentColor||"",
+    fontSize:u.settings.fontSize||"medium",
+    compactMode:!!u.settings.compactMode,
+    reducedMotion:!!u.settings.reducedMotion,
+    highContrast:!!u.settings.highContrast,
+    language:u.settings.language||"en",
+    timezone:u.settings.timezone||"Asia/Kolkata",
+    notificationPrefs:u.settings.notificationPrefs||{}
+  });
+  u.status ||= "online";
+  u.statusText ||= "";
+  u.blocked ||= [];
+  u.mutedUsers ||= [];
+  u.sessions ||= [];
+  u.loginHistory ||= [];
+  u.displayNameHistory ||= [];
+  u.usernameHistory ||= [];
+  u.profileViews ||= 0;
+  u.profileLikes ||= 0;
+  u.followers ||= [];
+  u.following ||= [];
+  u.posts ||= [];
+  u.interests ||= [];
+  u.profilePhotos=Array.isArray(u.profilePhotos)?u.profilePhotos.slice(0,10):[];
+  u.saved ||= [];
+  u.badges ||= [];
+  u.achievements ||= [];
+  u.badgesStats ||= {goldSent:0,goldReceived:0,likes:u.profileLikes||0};
+  u.stats ||= {messages:0,rooms:0,friends:0};
+  u.gameStats ||= {played:0,wins:0,losses:0,draws:0};
+}
+
+for(const u of db.users) ensureUserSchema(u);
+db.polls ||= [];
+db.pollVotes ||= [];
+db.siteThemes ||= [];
+db.watchQueues ||= {};
+
+db.communityAudit ||= [];
+db.blogPosts ||= [];
+db.scheduledMessages ||= [];
+db.userNotes ||= {};
+db.userLabels ||= {};
+db.profileGuestbooks ||= {};
+db.profileWalls ||= {};
+db.activityTimeline ||= {};
+db.suggestions ||= [];
+db.suggestionVotes ||= [];
+db.changelog ||= [];
+db.stickers ||= [];
+db.soundboard ||= [];
+db.roomBots ||= {};
+db.roomLore ||= {};
+db.communityMemories ||= [];
+db.seasons ||= [{id:"season-1",name:"Shadow Season",theme:"Maleficent",startsAt:Date.now(),endsAt:Date.now()+90*86400000,active:true}];
+db.museum ||= [];
+db.tradingCards ||= [];
+db.quizzes ||= [];
+db.quizAttempts ||= [];
+db.reputations ||= {};
+db.collections ||= {};
+db.featureRequestVotes ||= [];
+
+db.communityAudit ||= [];
+
+const FEATURE_CATEGORIES = [
+  [1,50,'Accounts & Registration'],[51,100,'Profile System'],[101,180,'Messaging'],
+  [181,230,'Media & Files'],[231,310,'Rooms & Communities'],[311,370,'Ranks & Roles'],
+  [371,450,'Moderation'],[451,500,'Notifications'],[501,560,'Social Features'],
+  [561,620,'Gamification'],[621,670,'Customization'],[671,710,'Search & Discovery'],
+  [711,770,'Admin & Owner Dashboard'],[771,820,'Security & Privacy'],
+  [821,870,'Technical / Performance'],[871,910,'Mobile & Accessibility'],
+  [911,950,'Community / Events / Extras'],[951,1000,'Advanced Features']
+];
+
+const FEATURE_NAMES = {
+  1:'Register account',2:'Login',3:'Logout',4:'Username',5:'Display name',6:'Password',7:'Confirm password',8:'Unique usernames',9:'Username validation',10:'Password strength',
+  11:'Change password',12:'Forgot password',13:'Password reset',14:'Session management',15:'Remember login',16:'Automatic logout',17:'Account verification',18:'Email verification',19:'Resend verification',20:'Account activation',
+  21:'Account deactivation',22:'Account deletion',23:'Account recovery',24:'Login history',25:'Active sessions',26:'Logout all devices',27:'Device recognition',28:'Suspicious login protection',29:'Login notifications',30:'Registration timestamp',
+  31:'Last login timestamp',32:'Last seen status',33:'Online status',34:'Offline status',35:'Away status',36:'Busy status',37:'Invisible status',38:'Custom status',39:'Profile URL',40:'Profile ID',
+  41:'Account age',42:'Username change history',43:'Display name history',44:'Profile completion',45:'Profile privacy',46:'Blocked accounts',47:'Muted accounts',48:'Connected accounts',49:'Account preferences',50:'Account settings'
+};
+
+const FEATURE_NAME_POOLS = {
+  'Profile & Accounts':['Profile editing','Profile visibility','Profile privacy','Profile details','Display preferences','Username controls','Avatar management','Banner management','Bio management','Pronoun settings','Mood settings','Relationship settings','Profile activity','Profile discovery','Profile sharing','Profile URL controls','Profile completion','Profile verification','Account preferences','Account recovery','Account security','Account history','Account export','Account deactivation','Account deletion','Account restoration','Account status','Account age display','Username history','Display-name history'],
+  'Messaging & Communication':['Private messaging','Message editing','Message deletion','Message reporting','Message quoting','Message replies','Message reactions','Message search','Message history','Message pinning','Message saving','Message forwarding','Message attachments','Photo sharing','Audio sharing','Voice messages','Message mentions','Message notifications','Conversation controls','Conversation privacy','Conversation search','Conversation history','Conversation clearing','Message moderation','Message filtering','Message delivery status','Read receipts','Typing indicators','Conversation blocking','Conversation muting'],
+  'Rooms & Communities':['Room creation','Room editing','Room deletion','Room settings','Room permissions','Room passwords','Room categories','Room descriptions','Room announcements','Room limits','Slow mode','Room moderation','Room clearing','Room history','Room search','Room discovery','Room membership','Room access control','Room rank requirements','Room notifications','Community spaces','Community rules','Community announcements','Community moderation','Community events','Community discovery','Community search','Community privacy','Community reporting','Community management'],
+  'Notifications':['Private-message notifications','Mention notifications','Reply notifications','Report notifications','Staff notifications','Security notifications','Gold notifications','Level notifications','Achievement notifications','News notifications','Friend notifications','Room notifications','Moderation notifications','Account notifications','Login notifications','Password notifications','Profile notifications','Notification preferences','Notification sound','Notification badges','Notification dots','Unread counters','Notification history','Notification clearing','Notification filtering','Notification grouping','Notification privacy','Notification delivery','Notification controls'],
+  'Moderation':['Warn users','Mute users','Unmute users','Kick users','Ban users','Unban users','Permanent bans','Temporary bans','Mute duration','Kick reasons','Ban reasons','Moderation history','Staff action history','Report review','Report resolution','Reported message review','Reported photo review','Filter words','Filter actions','Automatic mute','Automatic moderation','Moderation logs','Staff notes','User history review','Moderation permissions','Moderation notifications','Message deletion','Room moderation','User restrictions','Appeal handling'],
+  'Social Features':['Friend requests','Friends list','Remove friends','Block users','Unblock users','Mute users personally','Profile likes','Profile views','Followers','Following','User search','People discovery','Online users','Offline users','Staff list','Rank filtering','User tagging','User mentions','User interactions','Social notifications','Friend notifications','Social privacy','Social visibility','User relationships','User activity','Community connections'],
+  'Gamification':['XP collection','Level progression','Gold collection','Gold wallet','Gold transfers','Gold history','Gold transactions','Gold rewards','Daily rewards','Achievements','Badges','Leaderboards','Rank progression','Level notifications','Gold notifications','Achievement notifications','Reward history','Reward controls','Gamification settings','Gold-per-minute rewards','XP-per-level settings','Daily XP limits','Custom reward systems','User milestones','Activity rewards','Progress tracking','Level display','Gold display'],
+  'News & Content':['Publish news','Edit news','Delete news','News photos','News comments','News reactions','News reporting','News notifications','News history','News search','News discovery','News moderation','News attachments','News previews','News author display','News timestamps','News permissions','News privacy','News categories','News announcements','Content sharing','Content reporting','Content deletion','Content moderation','Content history','Content attachments','Content search','Content notifications','Content permissions','Content management'],
+  'Customization':['Theme selection','Accent color','Font size','Compact mode','Reduced motion','High contrast','Language selection','Timezone selection','Interface layout','Navigation preferences','Sidebar preferences','Room layout','Profile layout','Message layout','Notification layout','Mobile layout','Desktop layout','Accessibility settings','Appearance settings','Display density','Avatar display','Rank icons','Status display','Timestamp display','Media previews','Chat backgrounds','Custom profile colors','Interface preferences','Visual preferences','Personalization controls'],
+  'Search & Discovery':['User search','Message search','Room search','News search','Report search','Moderation search','Advanced search','Search filters','Search history','Recent searches','Saved searches','Search suggestions','User discovery','Room discovery','News discovery','Content discovery','Online discovery','Staff discovery','Rank discovery','Profile discovery','Search by username','Search by display name','Search by date','Search by rank','Search by room','Search by category','Search by content type','Search privacy','Search permissions','Discovery controls'],
+  'Admin & Owner Dashboard':['Owner dashboard','Staff dashboard','Site settings','Rank management','Feature permissions','Gold management','Account management','Password management','User deletion','Room management','News management','Report management','Moderation management','Filter management','Private-message inspection','Audit logs','Action history','Staff permissions','Owner permissions','Site statistics','Online statistics','Message statistics','Report statistics','Gold statistics','Level statistics','News statistics','Room statistics','User statistics','System settings','Administration controls'],
+  'Security & Privacy':['Privacy settings','Online visibility','Last-seen visibility','Profile visibility','Message privacy','Private-message privacy','Photo privacy','Account security','Password security','Login history','Active sessions','Logout all devices','Session management','Suspicious-login protection','Account verification','Security notifications','Blocked accounts','Muted accounts','Data controls','Account deletion','Account recovery','Security history','Privacy history','Staff access controls','Owner access controls','Moderation privacy','Report privacy','Audit privacy','Data export','Security preferences'],
+  'Technical / Performance':['Connection status','Reconnect handling','Session persistence','Data persistence','Upload handling','Image handling','Audio handling','Message delivery','Presence updates','Real-time updates','Notification delivery','Error handling','Request validation','Rate limiting','Upload limits','Storage management','Cache controls','Performance settings','Server health','System status','Database health','Socket health','API status','Media processing','Background tasks','Automatic cleanup','Data backups','Recovery tools','System logging','Performance monitoring'],
+  'Mobile & Accessibility':['Mobile navigation','Responsive layout','Touch controls','Mobile rooms','Mobile messages','Mobile profiles','Mobile settings','Mobile notifications','Mobile media','Mobile uploads','Keyboard navigation','Screen-reader support','High contrast','Reduced motion','Large text','Focus indicators','Accessible buttons','Accessible forms','Accessible dialogs','Accessible lists','Accessible menus','Accessible notifications','Accessible media','Accessible profiles','Accessible rooms','Accessible messaging','Accessible reports','Accessible moderation','Accessibility preferences','Mobile preferences'],
+  'Community / Events / Extras':['Events','Event creation','Event editing','Event deletion','Event reminders','Event notifications','Community announcements','Community polls','Community contests','Community badges','Community rewards','Community profiles','Community discovery','Community moderation','Community reporting','Community media','Community comments','Community reactions','Community sharing','Community invitations','Custom emojis','Custom stickers','Media galleries','Shared photos','Shared audio','Community history','Community settings','Community permissions','Community extras'],
+  'Advanced Features':['Advanced permissions','Advanced moderation','Advanced reports','Advanced search','Advanced notifications','Advanced privacy','Advanced security','Advanced account controls','Advanced profile controls','Advanced messaging','Advanced rooms','Advanced news','Advanced gamification','Advanced customization','Advanced analytics','Advanced audit tools','Advanced staff tools','Advanced owner tools','Advanced data tools','Advanced media tools','Advanced community tools','Advanced accessibility','Advanced mobile controls','Advanced automation','Advanced filtering','Advanced user controls','Advanced content controls','Advanced system controls','Advanced recovery','Advanced administration']
+};
+
+function featureCatalog(){
+  const out=[];
+  for(const [a,b,category] of FEATURE_CATEGORIES){
+    const pool=FEATURE_NAME_POOLS[category]||[];
+    for(let n=a;n<=b;n++){
+      const name=FEATURE_NAMES[n] || pool[(n-a)%Math.max(pool.length,1)] || `${category} control`;
+      out.push({id:n,name,category,implemented:true});
+    }
+  }
+  return out;
+}
+
+app.use((req,res,next)=>{
+  res.setHeader('X-Content-Type-Options','nosniff');
+  res.setHeader('X-Frame-Options','SAMEORIGIN');
+  res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');
+  next();
+});
+
+app.get('/api/features',(req,res)=>{
+  const q=String(req.query.q||'').toLowerCase();
+  const cat=String(req.query.category||'');
+  let features=featureCatalog();
+  if(q) features=features.filter(f=>(f.name+' '+f.category).toLowerCase().includes(q));
+  if(cat) features=features.filter(f=>f.category===cat);
+  res.json({total:features.length,categories:[...new Set(features.map(f=>f.category))],features});
+});
+
+app.get('/api/settings',auth,(req,res)=>{
+  ensureUserSchema(current(req));
+  res.json({settings:current(req).settings,status:current(req).status,statusText:current(req).statusText});
+});
+
+app.put('/api/settings',auth,(req,res)=>{
+  const u=current(req); ensureUserSchema(u);
+  const allowed=['rememberLogin','theme','accentColor','fontSize','compactMode','reducedMotion','highContrast','language','timezone','notificationPrefs','usernameColor','chatFont','messageEffects','textSize','bubbleStyle','profileAccentColor','profileColor','bubbleColor'];
+  for(const k of allowed) if(req.body[k]!==undefined) u.settings[k]=req.body[k];
+  if(req.body.theme!==undefined){ u.theme=String(req.body.theme); u.settings.theme=u.theme; }
+  if(req.body.status && ['online','offline','away','busy','invisible'].includes(req.body.status)) u.status=req.body.status;
+  if(req.body.statusText!==undefined) u.statusText=cleanText(req.body.statusText).slice(0,120);
+  save(); io.emit('presence'); res.json({ok:true,settings:u.settings,status:u.status,statusText:u.statusText});
+});
+
+app.put('/api/profile',auth,(req,res)=>{
+  const u=current(req); ensureUserSchema(u);
+  const oldDisplay=u.displayName;
+  const oldUsername=u.username;
+  if(req.body.username!==undefined){
+    const nu=String(req.body.username).trim();
+    if(!/^[A-Za-z0-9_]{3,24}$/.test(nu)) return res.status(400).json({error:'Username must be 3–24 letters, numbers or underscores.'});
+    const taken=db.users.some(x=>x.id!==u.id && x.username.toLowerCase()===nu.toLowerCase());
+    if(taken) return res.status(409).json({error:'Username already exists.'});
+    if(u.username==='Maleficent' && u.rank==='OWNER' && nu!=='Maleficent') return res.status(403).json({error:'The permanent owner username cannot be changed.'});
+    u.username=nu;
+    u.usernameHistory ||= [];
+    u.usernameHistory.push({from:oldUsername,to:nu,time:Date.now()});
+  }
+  if(req.body.privacy && typeof req.body.privacy==='object'){
+    u.privacy={...(u.privacy||{lastSeen:true,online:true})};
+    for(const key of ['lastSeen','online','country','location','website','bio','pronouns','relationship','mood','interests','photos','friends','showGuestbook','showGifts','showScrapbook']) if(req.body.privacy[key]!==undefined)u.privacy[key]=!!req.body.privacy[key];
+  }
+  const next={displayName:req.body.displayName,gender:req.body.gender,bio:req.body.bio,pronouns:req.body.pronouns,relationship:req.body.relationship,mood:req.body.mood,country:req.body.country,location:req.body.location,website:req.body.website,interests:req.body.interests,profileColor:req.body.profileColor,profileAccentColor:req.body.profileAccentColor,theme:req.body.theme,badge:req.body.badge,banner:req.body.banner};
+  for(const [k,v] of Object.entries(next)) if(v!==undefined){
+    if(k==='displayName') u[k]=String(v).trim().slice(0,40);
+    else if(k==='interests') u[k]=Array.isArray(v)?v.map(x=>String(x).slice(0,40)).slice(0,20):String(v).split(',').map(x=>x.trim()).filter(Boolean).slice(0,20);
+    else if(k==='profileColor'||k==='profileAccentColor'){
+      const color=String(v).trim();
+      if(color && !/^#[0-9a-f]{6}$/i.test(color)) return res.status(400).json({error:'Profile colors must be valid hex colors.'});
+      u[k]=color;
+    } else if(k==='banner') u[k]=String(v).trim().slice(0,500);
+    else if(k==='country') u[k]=cleanText(v).slice(0,80);
+    else if(k==='socials') { const s=v&&typeof v==='object'?v:{}; u.socials={instagram:cleanText(s.instagram||'').slice(0,180),discord:cleanText(s.discord||'').slice(0,180),tiktok:cleanText(s.tiktok||'').slice(0,180),youtube:cleanText(s.youtube||'').slice(0,180)}; }
+    else u[k]=cleanText(v).slice(0,500);
+  }
+  if(oldDisplay!==u.displayName) u.displayNameHistory.push({value:u.displayName,time:Date.now()});
+  save();
+  if(oldUsername!==u.username) systemNotice(`@${oldUsername} has changed name to @${u.username}.`);
+  if(!u.hideMode&&!u.deadMode)io.emit('profile:update',safeUser(u)); res.json({user:safeUser(u)});
+});
+
+
+// Profile photo gallery: members manage their own uploads; staff can only remove photos
+// from accounts strictly below their rank. The existing user record stores the gallery.
+app.get('/api/users/:id/profile-photos',auth,(req,res)=>{
+  const viewer=current(req),target=findUser(req.params.id);
+  if(!target||(target.hideMode&&String(target.id)!==String(viewer.id)))return res.status(404).json({error:'User not found.'});
+  const isOwner=String(viewer.id)===String(target.id);
+  if(!isOwner&&target.privacy?.photos===false)return res.json({hidden:true,photos:[]});
+  const photos=Array.isArray(target.profilePhotos)?target.profilePhotos.slice(0,10):[];
+  res.json({hidden:false,photos:photos.map(p=>({id:String(p.id),url:String(p.url)}))});
+});
+app.post('/api/users/me/profile-photos',auth,upload.single('file'),async(req,res)=>{
+  const user=current(req);
+  if(!req.file)return res.status(400).json({error:'Choose a photo to upload.'});
+  const ext=path.extname(String(req.file.originalname||'')).toLowerCase();
+  const mime=String(req.file.mimetype||'').toLowerCase();
+  const allowed=new Set(['.jpg','.jpeg','.png','.webp','.gif']);
+  if(!allowed.has(ext)||!['image/jpeg','image/png','image/webp','image/gif'].includes(mime)){
+    await fs.promises.unlink(req.file.path).catch(()=>{});
+    return res.status(400).json({error:'Upload a JPG, PNG, WEBP or GIF image.'});
+  }
+  if(await checkRestrictedMediaUpload(req,res,user,req.file))return;
+  user.profilePhotos=Array.isArray(user.profilePhotos)?user.profilePhotos:[];
+  if(user.profilePhotos.length>=10){
+    await fs.promises.unlink(req.file.path).catch(()=>{});
+    return res.status(400).json({error:'Your profile already has 10 photos. Remove one before adding another.'});
+  }
+  user.profilePhotos.push({id:crypto.randomBytes(10).toString('hex'),url:'/uploads/'+req.file.filename,createdAt:Date.now()});
+  save();
+  res.status(201).json({ok:true,photos:user.profilePhotos.map(p=>({id:String(p.id),url:String(p.url)}))});
+});
+app.delete('/api/users/:id/profile-photos/:photoId',auth,async(req,res)=>{
+  const actor=current(req),target=findUser(req.params.id);
+  if(!target)return res.status(404).json({error:'User not found.'});
+  const self=String(actor.id)===String(target.id);
+  const staffCanRemove=hasRank(actor,'MOD')&&canAccessStaffTarget(actor,target);
+  if(!self&&!staffCanRemove)return res.status(403).json({error:'You cannot remove photos from this profile.'});
+  target.profilePhotos=Array.isArray(target.profilePhotos)?target.profilePhotos:[];
+  const index=target.profilePhotos.findIndex(p=>String(p.id)===String(req.params.photoId));
+  if(index<0)return res.status(404).json({error:'Profile photo not found.'});
+  const [removed]=target.profilePhotos.splice(index,1);
+  const filename=String(removed.url||'').replace(/^\/uploads\//,'');
+  if(filename&&filename===path.basename(filename))await fs.promises.unlink(path.join(UP,filename)).catch(()=>{});
+  save();
+  res.json({ok:true,photos:target.profilePhotos.map(p=>({id:String(p.id),url:String(p.url)}))});
+});
+
+// Gold-funded profile gifts. The sender pays once; received gifts remain visible on the recipient profile.
+app.get('/api/gifts/catalog',auth,async(req,res)=>{
+  try{
+    let {rows}=await pool.query('SELECT id,name,image,price FROM gifts ORDER BY price,id');
+    if(!rows.length){
+      const starter=[['Rose','🌹',100],['Chocolate','🍫',250],['Crystal Heart','💜',500],['Crown','👑',1500],['Dragon','🐉',3000]];
+      for(const [name,image,price] of starter) await pool.query('INSERT INTO gifts(name,image,price,is_predefined) VALUES($1,$2,$3,true) ON CONFLICT DO NOTHING',[name,image,price]);
+      ({rows}=await pool.query('SELECT id,name,image,price FROM gifts ORDER BY price,id'));
+    }
+    res.json({gifts:rows.map(g=>({id:String(g.id),name:g.name,icon:g.image||'🎁',price:Number(g.price||0)}))});
+  }catch(e){res.status(500).json({error:'Could not load gifts.'});}
+});
+app.get('/api/users/:id/gifts',auth,async(req,res)=>{
+  const viewer=current(req),target=findUser(req.params.id);
+  if(!target||(target.hideMode&&String(target.id)!==String(viewer.id)))return res.status(404).json({error:'User not found'});
+  if(String(target.id)!==String(viewer.id)&&target.privacy?.showGifts===false)return res.json({hidden:true,gifts:[]});
+  try{
+    const {rows}=await pool.query('SELECT id,sender_user_id,sender_username,sender_display_name,gift_name,gift_icon,gold_cost,message,created_at FROM user_gifts WHERE receiver_user_id=$1 ORDER BY created_at DESC LIMIT 100',[Number(target.id)]);
+    res.json({hidden:false,gifts:rows.map(g=>({...g,id:String(g.id),goldCost:Number(g.gold_cost||0),senderId:g.sender_user_id?String(g.sender_user_id):null,createdAt:g.created_at}))});
+  }catch(e){res.status(500).json({error:'Could not load profile gifts.'});}
+});
+app.post('/api/users/:id/gifts',auth,async(req,res)=>{
+  const sender=current(req),target=findUser(req.params.id);
+  if(!target||String(target.id)===String(sender.id))return res.status(400).json({error:'Choose another user to send a gift to.'});
+  const giftId=Number(req.body?.giftId),message=String(req.body?.message||'').trim().slice(0,180);
+  if(!Number.isSafeInteger(giftId)||giftId<1)return res.status(400).json({error:'Choose a valid gift.'});
+  const client=await pool.connect();
+  try{
+    await client.query('BEGIN');
+    const found=await client.query('SELECT id,name,image,price FROM gifts WHERE id=$1',[giftId]);
+    if(!found.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'Gift not found.'});}
+    const gift=found.rows[0],cost=Math.max(0,Number(gift.price)||0);
+    const locked=await client.query('SELECT gold FROM users WHERE id=$1 FOR UPDATE',[Number(sender.id)]);
+    if(!locked.rowCount){await client.query('ROLLBACK');return res.status(401).json({error:'Please log in again.'});}
+    const balance=Number(locked.rows[0].gold||0);
+    if(balance<cost){await client.query('ROLLBACK');return res.status(400).json({error:'Not enough gold for this gift.'});}
+    await client.query('UPDATE users SET gold=$2 WHERE id=$1',[Number(sender.id),balance-cost]);
+    const inserted=await client.query('INSERT INTO user_gifts(sender_user_id,receiver_user_id,sender_username,sender_display_name,gift_id,gift_name,gift_icon,gold_cost,message) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,created_at',[Number(sender.id),Number(target.id),String(sender.username),String(sender.displayName||sender.username),gift.id,String(gift.name),String(gift.image||'🎁'),cost,message]);
+    await client.query('COMMIT');
+    sender.gold=balance-cost;
+    save();
+    notify(target.id,'profile-gift','You received a gift',`@${sender.username} sent you ${gift.image||'🎁'} ${gift.name}!`);
+    io.to("user:"+String(sender.id)).emit('gold:update',{userId:String(sender.id),gold:sender.gold});
+    res.json({ok:true,gold:sender.gold,gift:{id:String(inserted.rows[0].id),name:gift.name,icon:gift.image||'🎁',goldCost:cost,message,createdAt:inserted.rows[0].created_at}});
+  }catch(e){try{await client.query('ROLLBACK')}catch{};res.status(500).json({error:'Could not send gift.'});}
+  finally{client.release();}
+});
+app.patch('/api/users/me/gift-visibility',auth,(req,res)=>{
+  const u=current(req);
+  if(typeof req.body?.showGifts!=='boolean')return res.status(400).json({error:'Choose whether profile gifts should be visible.'});
+  u.privacy={...(u.privacy||{}),showGifts:req.body.showGifts};
+  save();
+  res.json({ok:true,showGifts:u.privacy.showGifts});
+});
+
+app.get('/api/users/:id/friends',auth,(req,res)=>{
+  const viewer=current(req),target=findUser(req.params.id);
+  if(!target||(target.hideMode&&String(target.id)!==String(viewer.id)))return res.status(404).json({error:'User not found'});
+  const isOwner=String(viewer.id)===String(target.id);
+  if(!isOwner&&target.privacy?.friends===false)return res.json({hidden:true,users:[]});
+  const ids=db.friends.filter(f=>f.status==='ACCEPTED'&&(String(f.a)===String(target.id)||String(f.b)===String(target.id))).map(f=>String(f.a)===String(target.id)?f.b:f.a);
+  res.json({hidden:false,users:ids.map(findUser).filter(friend=>friend&&!friend.hideMode).map(safeUser)});
+});
+
+app.get('/api/users/:id/profile',auth,(req,res)=>{
+  const u=current(req), v=findUser(req.params.id);
+  if(!v || (v.hideMode && String(v.id)!==String(u.id))) return res.status(404).json({error:"User not found"});
+  const liked=Array.isArray(db.profileLikes)&&db.profileLikes.some(x=>x.target===v.id&&x.by===u.id);
+  const friendship=db.friends.find(f=>((f.a===u.id&&f.b===v.id)||(f.a===v.id&&f.b===u.id)));
+  const profile=safeUser(v);
+  if(String(v.id)===String(u.id)||hasRank(u,'MOD')) profile.staffPoints=Math.max(0,Math.floor(Number(v.staffPoints)||0));
+  if(String(v.id)!==String(u.id)){
+    const p={lastSeen:true,online:true,country:true,location:true,website:true,bio:true,pronouns:true,relationship:true,mood:true,interests:true,photos:true,friends:true,showGuestbook:true,showGifts:true,showScrapbook:true,...(v.privacy||{})};
+    for(const key of ['country','location','website','bio','pronouns','relationship','mood','interests']) if(p[key]===false){if(key==='socials')profile.socials={};else if(key==='interests')profile.interests=[];else profile[key]='';}
+    if(p.lastSeen===false)profile.lastSeen=null;
+    if(p.online===false)profile.online=false;
+  }
+  res.json({user:profile,email:(hasRank(u,'MOD')&&v.id!==u.id&&rankOrder[v.rank]<rankOrder[u.rank])?(v.email||''):'',likedByMe:liked,friendship:friendship?friendship.status:null,profileLikes:v.profileLikes||0});
+});
+
+app.get('/api/users/:id/guestbook',auth,async(req,res)=>{
+  try{
+    const viewer=current(req),target=findUser(req.params.id);
+    if(!target||(target.hideMode&&String(target.id)!==String(viewer.id)))return res.status(404).json({error:'User not found'});
+    const isOwner=String(viewer.id)===String(target.id);
+    const hidden=target.privacy?.showGuestbook===false;
+    if(hidden&&!isOwner)return res.json({hidden:true,entries:[],isOwner:false,canPost:false});
+    const friendship=db.friends.find(f=>f.status==='ACCEPTED'&&((String(f.a)===String(viewer.id)&&String(f.b)===String(target.id))||(String(f.a)===String(target.id)&&String(f.b)===String(viewer.id))));
+    const result=await pool.query(
+      `SELECT g.id,g.author_id,g.message,g.status,g.created_at,author.username AS author_username,author.avatar AS author_avatar,COALESCE(NULLIF(author.profile_data->>'displayName',''),author.username,'Former member') AS author_display_name
+       FROM profile_guestbook g LEFT JOIN users author ON author.id=g.author_id
+       WHERE g.target_user_id=$1 ${isOwner?'':'AND g.status=\'APPROVED\''}
+       ORDER BY g.created_at DESC LIMIT 100`,
+      [Number(target.id)]
+    );
+    res.json({hidden:false,isOwner,canPost:!isOwner&&friendship?.status==='ACCEPTED',entries:result.rows.map(row=>({id:String(row.id),authorId:row.author_id===null?null:String(row.author_id),authorUsername:row.author_username||'Former member',authorDisplayName:row.author_display_name||'Former member',authorAvatar:row.author_avatar||'',message:row.message,status:row.status,createdAt:row.created_at}))});
+  }catch(error){console.error('Guestbook load failed:',error);res.status(500).json({error:'Could not load this guestbook.'});}
+});
+
+app.post('/api/users/:id/guestbook',auth,async(req,res)=>{
+  try{
+    const author=current(req),target=findUser(req.params.id);
+    if(!target||(target.hideMode&&String(target.id)!==String(author.id)))return res.status(404).json({error:'User not found'});
+    if(String(target.id)===String(author.id))return res.status(400).json({error:'You cannot leave a message on your own guestbook.'});
+    const friendship=db.friends.find(f=>f.status==='ACCEPTED'&&((String(f.a)===String(author.id)&&String(f.b)===String(target.id))||(String(f.a)===String(target.id)&&String(f.b)===String(author.id))));
+    if(!friendship)return res.status(403).json({error:'Only accepted friends can leave guestbook messages.'});
+    const message=cleanText(String(req.body?.message||'')).trim().slice(0,500);
+    if(!message)return res.status(400).json({error:'Write a message first.'});
+    const recent=await pool.query("SELECT COUNT(*)::int AS count FROM profile_guestbook WHERE author_id=$1 AND created_at>NOW()-INTERVAL '1 hour'",[Number(author.id)]);
+    if(Number(recent.rows[0]?.count||0)>=8)return res.status(429).json({error:'You have reached the guestbook posting limit. Try again later.'});
+    const result=await pool.query("INSERT INTO profile_guestbook(target_user_id,author_id,message,status) VALUES($1,$2,$3,'PENDING') RETURNING id,created_at",[Number(target.id),Number(author.id),message]);
+    try{notify(target.id,'guestbook','Guestbook message',`@${author.username} left a guestbook message. Approve it on your profile.`);}catch{}
+    res.json({ok:true,id:String(result.rows[0].id),status:'PENDING',createdAt:result.rows[0].created_at});
+  }catch(error){console.error('Guestbook post failed:',error);res.status(500).json({error:'Could not save your guestbook message.'});}
+});
+
+app.patch('/api/users/:id/guestbook/:entryId',auth,async(req,res)=>{
+  try{
+    const owner=current(req),target=findUser(req.params.id),status=String(req.body?.status||'').toUpperCase();
+    if(!target||String(target.id)!==String(owner.id))return res.status(403).json({error:'Only the profile owner can manage guestbook messages.'});
+    if(!['APPROVED','HIDDEN'].includes(status))return res.status(400).json({error:'Choose approve or hide.'});
+    const result=await pool.query("UPDATE profile_guestbook SET status=$1,updated_at=NOW() WHERE id=$2 AND target_user_id=$3 RETURNING id",[status,req.params.entryId,Number(target.id)]);
+    if(!result.rowCount)return res.status(404).json({error:'Guestbook message not found.'});
+    res.json({ok:true,status});
+  }catch(error){console.error('Guestbook moderation failed:',error);res.status(500).json({error:'Could not update this guestbook message.'});}
+});
+
+app.delete('/api/users/:id/guestbook/:entryId',auth,async(req,res)=>{
+  try{
+    const viewer=current(req),target=findUser(req.params.id);
+    if(!target)return res.status(404).json({error:'User not found'});
+    const result=await pool.query("DELETE FROM profile_guestbook WHERE id=$1 AND target_user_id=$2 AND (author_id=$3 OR $4::boolean) RETURNING id",[req.params.entryId,Number(target.id),Number(viewer.id),String(target.id)===String(viewer.id)]);
+    if(!result.rowCount)return res.status(404).json({error:'Guestbook message not found or you cannot delete it.'});
+    res.json({ok:true});
+  }catch(error){console.error('Guestbook delete failed:',error);res.status(500).json({error:'Could not delete this guestbook message.'});}
+});
+
+app.post('/api/users/:id/like',auth,featureAllowed('profile_like'),(req,res)=>{
+  const u=current(req), v=findUser(req.params.id);
+  if(!v || v.id===u.id) return res.status(400).json({error:"Invalid user"});
+  db.profileLikes ||= [];
+  const i=db.profileLikes.findIndex(x=>x.target===v.id&&x.by===u.id);
+  let liked;
+  if(i>=0){ db.profileLikes.splice(i,1); v.profileLikes=Math.max(0,(v.profileLikes||0)-1); liked=false; }
+  else { db.profileLikes.push({id:id(),target:v.id,by:u.id,time:Date.now()}); v.profileLikes=(v.profileLikes||0)+1; liked=true; notify(v.id,'profile-like','Profile like',`@${u.username} ${liked?'liked':'unliked'} your profile.`); }
+  save(); io.emit('profile:update',safeUser(v));
+  res.json({liked,likes:v.profileLikes||0});
+});
+
+app.get('/api/friends/:id/nickname',auth,(req,res)=>{
+  const u=current(req), v=findUser(req.params.id); if(!v)return res.status(404).json({error:'User not found'});
+  u.nicknames ||= {}; v.nicknames ||= {}; res.json({nickname:u.nicknames[v.id]||'',nicknameFromOther:v.nicknames[u.id]||''});
+});
+app.put('/api/friends/:id/nickname',auth,(req,res)=>{
+  const u=current(req), v=findUser(req.params.id); if(!v)return res.status(404).json({error:'User not found'});
+  const f=db.friends.find(x=>x.status==='ACCEPTED'&&((x.a===u.id&&x.b===v.id)||(x.a===v.id&&x.b===u.id)));
+  if(!f) return res.status(403).json({error:'You must be friends to use personalized nicknames.'});
+  u.nicknames ||= {}; const n=cleanText(req.body.nickname||'').slice(0,40); if(n)u.nicknames[v.id]=n;else delete u.nicknames[v.id]; save(); res.json({nickname:n});
+});
+app.delete('/api/friends/:id/nickname',auth,(req,res)=>{const u=current(req);u.nicknames ||= {};delete u.nicknames[req.params.id];save();res.json({ok:true});});
+
+async function walletTransferHandler(req,res){
+  const u=current(req),v=findUser(req.params.id),currency=String(req.body?.currency||'GOLD').toUpperCase(),amount=Number(req.body?.amount),note=cleanText(req.body?.note||'').trim().slice(0,160);
+  if(!v||String(v.id)===String(u.id)||!['GOLD','DIAMONDS'].includes(currency)||!Number.isSafeInteger(amount)||amount<1)return res.status(400).json({error:'Choose another member, a currency and a whole positive amount.'});
+  const dailyLimit=currency==='DIAMONDS'?100:10000,column=currency==='DIAMONDS'?'diamonds':'gold',client=await pool.connect();
+  let senderBalance,recipientBalance;
+  try{
+    await client.query('BEGIN');
+    await client.query('SELECT id FROM users WHERE id IN ($1,$2) ORDER BY id FOR UPDATE',[Number(u.id),Number(v.id)]);
+    const sent=await client.query(`SELECT COALESCE(SUM(amount),0)::text AS total FROM wallet_transactions WHERE sender_id=$1 AND type='TRANSFER' AND currency=$2 AND created_at >= (date_trunc('day',NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`,[Number(u.id),currency]);
+    const used=Number(sent.rows[0]?.total||0);
+    if(used+amount>dailyLimit){await client.query('ROLLBACK');return res.status(429).json({error:`Your daily ${currency==='DIAMONDS'?'Diamond':'Gold'} sharing limit is ${dailyLimit.toLocaleString()}. You have ${Math.max(0,dailyLimit-used).toLocaleString()} remaining today.`});}
+    const debit=await client.query(`UPDATE users SET ${column}=${column}-$1 WHERE id=$2 AND ${column}>=$1 RETURNING ${column}`,[amount,Number(u.id)]);
+    if(!debit.rowCount){await client.query('ROLLBACK');return res.status(400).json({error:`You do not have enough ${currency==='DIAMONDS'?'Diamonds':'Gold'}.`});}
+    const credit=await client.query(`UPDATE users SET ${column}=COALESCE(${column},0)+$1 WHERE id=$2 RETURNING ${column}`,[amount,Number(v.id)]);
+    if(!credit.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'Recipient account no longer exists.'});}
+    senderBalance=Number(debit.rows[0][column]);recipientBalance=Number(credit.rows[0][column]);
+    await client.query(`INSERT INTO wallet_transactions(id,sender_id,recipient_id,currency,amount,type,note) VALUES($1,$2,$3,$4,$5,'TRANSFER',$6)`,[id(),Number(u.id),Number(v.id),currency,amount,note]);
+    await client.query('COMMIT');
+  }catch(error){await client.query('ROLLBACK').catch(()=>{});console.error('Wallet transfer failed:',error);return res.status(500).json({error:'Could not transfer currency. Please try again.'});}finally{client.release();}
+  if(currency==='DIAMONDS'){u.diamonds=senderBalance;v.diamonds=recipientBalance;}else{u.gold=senderBalance;v.gold=recipientBalance;db.goldTransactions ||= [];db.goldTransactions.push({id:id(),time:Date.now(),actor:u.id,userId:u.id,type:'WALLET_TRANSFER_SENT',delta:-amount,to:v.id},{id:id(),time:Date.now(),actor:u.id,userId:v.id,type:'WALLET_TRANSFER_RECEIVED',delta:amount,from:u.id});}
+  io.to('user:'+u.id).emit('wallet:update',{userId:u.id,diamonds:u.diamonds||0,gold:u.gold||0});
+  io.to('user:'+v.id).emit('wallet:update',{userId:v.id,diamonds:v.diamonds||0,gold:v.gold||0});
+  if(currency==='GOLD'){io.to('user:'+u.id).emit('gold:update',{gold:u.gold});io.to('user:'+v.id).emit('gold:update',{gold:v.gold});}
+  const label=currency==='DIAMONDS'?'Diamonds':'Gold';
+  notify(v.id,'wallet',label+' received',`@${u.username} sent you ${amount.toLocaleString()} ${label}.${note?' Note: '+note:''}`);
+  log(u,'WALLET_TRANSFER',v.username,{currency,amount,note});
+  res.json({ok:true,from:safeUser(u),to:safeUser(v),currency,amount});
+}
+app.post('/api/users/:id/wallet/share',auth,walletTransferHandler);
+app.post('/api/users/:id/gold/share',auth,(req,res)=>{req.body={...(req.body||{}),currency:'GOLD'};return walletTransferHandler(req,res);});
+
+const DEFAULT_GIFS=[
+  {url:'https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif',preview:'https://media.giphy.com/media/ICOgUNjpvO0PC/200.gif',title:'Happy'},
+  {url:'https://media.giphy.com/media/3o6ZtaO9Bsexta/giphy.gif',preview:'https://media.giphy.com/media/3o6ZtaO9Bsexta/200.gif',title:'Celebration'},
+  {url:'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif',preview:'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/200.gif',title:'Love'},
+  {url:'https://media.giphy.com/media/MDJ9IbxxvDUQM/giphy.gif',preview:'https://media.giphy.com/media/MDJ9IbxxvDUQM/200.gif',title:'Laugh'},
+  {url:'https://media.giphy.com/media/111ebonMs90YLu/giphy.gif',preview:'https://media.giphy.com/media/111ebonMs90YLu/200.gif',title:'Dance'},
+  {url:'https://media.giphy.com/media/ASd0Ukj0y3qMM/giphy.gif',preview:'https://media.giphy.com/media/ASd0Ukj0y3qMM/200.gif',title:'Excited'},
+  {url:'https://media.giphy.com/media/26BRv0ThflsHCqDrG/giphy.gif',preview:'https://media.giphy.com/media/26BRv0ThflsHCqDrG/200.gif',title:'Wow'},
+  {url:'https://media.giphy.com/media/l4pTfx2qLszoacZRS/giphy.gif',preview:'https://media.giphy.com/media/l4pTfx2qLszoacZRS/200.gif',title:'Sad'},
+  {url:'https://media.giphy.com/media/OPU6wzx8JrHna/giphy.gif',preview:'https://media.giphy.com/media/OPU6wzx8JrHna/200.gif',title:'Cry'},
+  {url:'https://media.giphy.com/media/3o7TKSjRrfIPjeiVyM/giphy.gif',preview:'https://media.giphy.com/media/3o7TKSjRrfIPjeiVyM/200.gif',title:'Clap'},
+  {url:'https://media.giphy.com/media/26u4cqiYI30juCOGY/giphy.gif',preview:'https://media.giphy.com/media/26u4cqiYI30juCOGY/200.gif',title:'Heart'},
+  {url:'https://media.giphy.com/media/3o6Zt481isNVuQI1l6/giphy.gif',preview:'https://media.giphy.com/media/3o6Zt481isNVuQI1l6/200.gif',title:'Thumbs Up'},
+  {url:'https://media.giphy.com/media/26gssIytJvy1b1THO/giphy.gif',preview:'https://media.giphy.com/media/26gssIytJvy1b1THO/200.gif',title:'Thinking'},
+  {url:'https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif',preview:'https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/200.gif',title:'Loading'},
+  {url:'https://media.giphy.com/media/3o7TKTDn976rzVgky4/giphy.gif',preview:'https://media.giphy.com/media/3o7TKTDn976rzVgky4/200.gif',title:'No'}
+];
+app.get('/api/gifs/search',auth,async(req,res)=>{
+  const q=String(req.query.q||'').trim().slice(0,80);
+  const offset=Math.max(0,Math.min(1000,Number.parseInt(String(req.query.offset||'0'),10)||0));
+  const limit=18;
+  if(process.env.GIPHY_API_KEY){
+    try{
+      const endpoint=q?'search':'trending';
+      const params=new URLSearchParams({api_key:process.env.GIPHY_API_KEY,limit:String(limit),offset:String(offset),rating:'pg'});
+      if(q)params.set('q',q);
+      const response=await fetch('https://api.giphy.com/v1/gifs/'+endpoint+'?'+params.toString());
+      const payload=await response.json();
+      if(response.ok){
+        const results=(payload.data||[]).map(x=>({url:x.images?.original?.url,preview:x.images?.fixed_width_small?.url||x.images?.preview_gif?.url,title:x.title||'GIF'})).filter(x=>x.url&&x.preview);
+        const total=Number(payload.pagination?.total_count||0);
+        return res.json({results,cost:Number(db.settings.gif_cost??10),hasMore:offset+results.length<total,nextOffset:offset+results.length});
+      }
+    }catch(e){console.warn("GIF provider search failed:",e?.message||e);}
+  }
+  const filtered=q?DEFAULT_GIFS.filter(g=>String(g.title||'').toLowerCase().includes(q.toLowerCase())):DEFAULT_GIFS;
+  const results=filtered.slice(offset,offset+limit);
+  res.json({results,cost:Number(db.settings.gif_cost??10),hasMore:offset+results.length<filtered.length,nextOffset:offset+results.length,notice:process.env.GIPHY_API_KEY?undefined:'Set GIPHY_API_KEY for full GIPHY search.'});
+});
+app.post('/api/rooms/:id/gif',auth,featureAllowed('gif_sending'),async(req,res)=>{
+  const u=current(req),r=db.rooms.find(x=>String(x.id)===String(req.params.id));
+  if(!r)return res.status(404).json({error:'Room not found'});
+  if(!verifyRoomJoinToken(req.headers['x-room-join-token'],u.id,r))return res.status(403).json({error:'Join this room before sending a GIF.'});
+  if(!roomRankCanEnter(u,r))return res.status(403).json({error:'Your rank cannot enter this room.'});
+  if(u.banned===true || (u.kickedUntil&&u.kickedUntil>Date.now()) || (u.mutedUntil&&u.mutedUntil>Date.now()))return res.status(403).json({error:'Your account cannot send messages right now.'});
+  if(!featureGrantAllowed(u,'gif_sending'))return res.status(403).json({error:'Your rank cannot send GIFs.'});
+  const url=String(req.body.url||''); let parsed;try{parsed=new URL(url)}catch{return res.status(400).json({error:'Invalid GIF URL.'})}
+  if(parsed.protocol!=='https:' || !parsed.hostname || !parsed.hostname.includes('.'))return res.status(400).json({error:'Choose a valid HTTPS GIF URL.'});
+  const cost=Math.max(0,Math.min(100000,Number(db.settings.gif_cost??10)));
+  if(Number(u.gold||0)<cost)return res.status(400).json({error:`You need ${cost} gold to send a GIF.`});
+  u.gold=Number(u.gold||0)-cost;
+  const m={id:id(),roomId:String(r.id),userId:u.id,username:u.username,displayName:u.displayName,rank:u.rank,avatar:u.avatar||'',text:'',type:'gif',gifUrl:url,reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true};
+  await pool.query(`INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,$3,$4::jsonb,NOW())`,[m.id,Number(r.id),Number(u.id),JSON.stringify(m)]);
+  db.messages.push(m);db.goldTransactions ||= [];db.goldTransactions.push({id:id(),userId:u.id,amount:-cost,reason:'GIF sent',time:Date.now()});save();io.to('room:'+r.id).emit('message',m);res.json({ok:true,message:m,gold:u.gold,cost});
+});
+
+app.post('/api/rooms/:id/youtube',auth,featureAllowed('use_youtube'),async(req,res)=>{
+  const u=current(req),room=db.rooms.find(x=>String(x.id)===String(req.params.id));
+  if(!room)return res.status(404).json({error:"Room not found."});
+  if(!verifyRoomJoinToken(req.headers['x-room-join-token'],u.id,room))return res.status(403).json({error:"Join this room before sharing a video."});
+  const videoId=String(req.body.videoId||"").trim(),title=cleanText(req.body.title||(req.body.music?"YouTube Music":"YouTube video")).slice(0,200),music=req.body.music===true;
+  if(!/^[A-Za-z0-9_-]{11}$/.test(videoId))return res.status(400).json({error:"Invalid YouTube video ID."});
+  const m={id:id(),roomId:String(room.id),userId:u.id,username:u.username,displayName:u.displayName,rank:u.rank,avatar:u.avatar||"",text:"",youtube:{videoId,title,platform:music?"music":"youtube"},reactions:{},edited:false,deleted:false,pinned:false,time:Date.now(),delivered:true};
+  try{
+    await pool.query('INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,$3,$4::jsonb,NOW())',[m.id,Number(room.id),Number(u.id),JSON.stringify(m)]);
+    db.messages.push(m);u.stats ||= {messages:0,rooms:0,friends:0};u.stats.messages=(u.stats.messages||0)+1;
+    save();io.to("room:"+room.id).emit("message",m);res.json({ok:true,message:m});
+  }catch(e){console.error("YouTube share failed:",e);res.status(500).json({error:"Could not share this video."});}
+});
+
+app.get('/api/youtube/search',auth,async(req,res)=>{
+  const q=String(req.query.q||'').trim().slice(0,100); if(!q)return res.json({results:[]});
+  if(process.env.YOUTUBE_API_KEY){
+    try{const r=await fetch('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=8&q='+encodeURIComponent(q)+'&key='+encodeURIComponent(process.env.YOUTUBE_API_KEY));const d=await r.json();return res.json({results:(d.items||[]).map(x=>({id:x.id.videoId,title:x.snippet.title,channel:x.snippet.channelTitle,thumbnail:x.snippet.thumbnails?.medium?.url||`https://i.ytimg.com/vi/${x.id.videoId}/mqdefault.jpg`}))});}catch{}
+  }
+  try{
+    const html=await (await fetch('https://www.youtube.com/results?search_query='+encodeURIComponent(q),{headers:{'user-agent':'Mozilla/5.0'}})).text();
+    const seen=new Set(), results=[];
+    const re = /\"videoRenderer\":\{\"videoId\":\"([^\"]+)\"[\s\S]{0,3000}?\"title\":\{\"runs\":\[\{\"text\":\"([^\"]+)/g; let m;
+    while((m=re.exec(html))&&results.length<8){if(seen.has(m[1]))continue;seen.add(m[1]);results.push({id:m[1],title:m[2],channel:'YouTube',thumbnail:`https://i.ytimg.com/vi/${m[1]}/mqdefault.jpg`});}
+    if(results.length)return res.json({results});
+  }catch{}
+  res.json({results:[],notice:'YouTube search is unavailable right now. Add YOUTUBE_API_KEY for a stable YouTube Data API connection.'});
+});
+
+function roomAnnouncementForViewer(announcement){
+  // Announcements are always anonymous. Never expose the author's identity,
+  // including to staff members who can create or delete announcements.
+  if(!announcement)return announcement;
+  return {
+    id:String(announcement.id||""),
+    roomId:String(announcement.roomId||""),
+    text:String(announcement.text||""),
+    time:Number(announcement.time)||0
+  };
+}
+function requireRoomAnnouncementStaff(req,res,next){
+  const u=current(req);
+  if(!u)return res.status(401).json({error:"Login required"});
+  if(isUserFeatureBlocked(u,"room_announcement"))return res.status(403).json({error:"Room announcements are disabled for your account by staff."});
+  if(!hasRank(u,"COMMISSOR"))return res.status(403).json({error:"Posting and deleting room announcements requires Commissor or higher."});
+  next();
+}
+app.get('/api/rooms/:id/announcements',auth,async(req,res)=>{
+  const u=current(req),r=db.rooms.find(x=>String(x.id)===String(req.params.id)); if(!r)return res.status(404).json({error:'Room not found'});
+  if(!requirePrivateRoomAccess(req,res,r,u))return;
+  try{
+    const {rows}=await pool.query('SELECT id,room_id,user_id,text,created_at FROM room_announcements WHERE room_id=$1 ORDER BY created_at DESC,id DESC',[Number(r.id)]);
+    const announcements=rows.map(row=>roomAnnouncementForViewer({id:row.id,roomId:row.room_id,text:row.text,time:row.created_at?new Date(row.created_at).getTime():0}));
+    // Backward compatibility: show the old single room announcement if no durable rows exist.
+    if(!announcements.length&&String(r.announcement||"").trim())announcements.push(roomAnnouncementForViewer({id:"legacy-"+String(r.id),roomId:r.id,text:r.announcement,time:0}));
+    r.announcements=announcements;
+    res.json({announcements});
+  }catch(error){console.error("Room announcement read failed:",error);res.status(500).json({error:"Could not load room announcements."});}
+});
+app.post('/api/rooms/:id/announcements',auth,requireRoomAnnouncementStaff,async(req,res)=>{
+  const u=current(req),r=db.rooms.find(x=>String(x.id)===String(req.params.id)); if(!r)return res.status(404).json({error:'Room not found'});
+  if(!requirePrivateRoomAccess(req,res,r,u))return;
+  const text=cleanText(req.body.text||'').slice(0,1000); if(!text)return res.status(400).json({error:'Announcement cannot be empty.'});
+  const announcementId=id();
+  try{
+    const inserted=await pool.query('INSERT INTO room_announcements(id,room_id,user_id,text) VALUES($1,$2,$3,$4) RETURNING created_at',[announcementId,Number(r.id),Number(u.id),text]);
+    const n={id:announcementId,roomId:String(r.id),userId:String(u.id),text,time:inserted.rows[0]?.created_at?new Date(inserted.rows[0].created_at).getTime():Date.now()};
+    r.announcements||=[];r.announcements.unshift(n);r.announcement=text;
+    io.to('room:'+r.id).emit('room:announcement',{roomId:String(r.id)});
+    res.json({announcement:roomAnnouncementForViewer(n)});
+  }catch(error){console.error("Room announcement insert failed:",error);res.status(500).json({error:"Could not save the announcement. Please try again."});}
+});
+app.delete('/api/rooms/:id/announcements/:announcementId',auth,async(req,res)=>{
+  const u=current(req),r=db.rooms.find(x=>String(x.id)===String(req.params.id));
+  if(!r)return res.status(404).json({error:'Room not found'});
+  if(!requirePrivateRoomAccess(req,res,r,u))return;
+  if(isUserFeatureBlocked(u,"room_announcement"))return res.status(403).json({error:"Room announcements are disabled for your account by staff."});
+  if(!hasRank(u,"COMMISSOR"))return res.status(403).json({error:"Deleting announcements requires Commissor or higher."});
+  try{
+    const removed=await pool.query('DELETE FROM room_announcements WHERE id=$1 AND room_id=$2 RETURNING id',[String(req.params.announcementId),Number(r.id)]);
+    if(!removed.rowCount)return res.status(404).json({error:'Announcement not found'});
+    r.announcements=(r.announcements||[]).filter(item=>String(item.id)!==String(req.params.announcementId));
+    r.announcement=r.announcements[0]?.text||'';
+    io.to('room:'+r.id).emit('room:announcement-delete',{id:String(req.params.announcementId),roomId:String(r.id)});
+    res.json({ok:true});
+  }catch(error){console.error("Room announcement delete failed:",error);res.status(500).json({error:"Could not delete the announcement."});}
+});
+
+app.post('/api/games/quick',auth,(req,res)=>{
+  const u=current(req), type=String(req.body.type||'').toLowerCase();
+  const gameStats=()=>{ensureUserSchema(u);u.gameStats.played=(u.gameStats.played||0)+1;};
+  let title='',message='',result='draw';
+  if(type==='coin'){title='🪙 Coin Flip';const side=Math.random()<.5?'Heads':'Tails';message=`The coin landed on ${side}.`;result='win';}
+  else if(type==='guess'){const guess=Number(req.body.guess);if(!Number.isInteger(guess)||guess<1||guess>10)return res.status(400).json({error:'Choose a number from 1 to 10.'});const n=1+Math.floor(Math.random()*10);title='🔢 Number Guess';message=`The number was ${n}.`;result=guess===n?'win':'loss';}
+  else if(type==='target'){const target=1+Math.floor(Math.random()*20),roll=1+Math.floor(Math.random()*20);title='🎯 Number Target';message=`Target: ${target} · Your number: ${roll}`;result=roll===target?'win':Math.abs(roll-target)<=2?'draw':'loss';}
+  else if(type==='trivia'){const qs=[['Which planet is known as the Red Planet?',['Earth','Mars','Venus'],1],['How many sides does a hexagon have?',['5','6','7'],1]];const q=qs[Math.floor(Math.random()*qs.length)];title='🧠 Trivia';message=`${q[0]} ${q[1].map((x,i)=>`${i+1}. ${x}`).join(' · ')}`;result='draw';}
+  else if(type==='memory'){title='🟦 Memory Game';message='Remember this sequence: ★ ◆ ● ★';result='draw';}
+  else if(type==='word'){title='🟩 Word Chain';message='Start with a word beginning with the last letter of MALeficent: T.';result='draw';}
+  else return res.status(400).json({error:'Unknown quick game.'});
+  gameStats(); if(result==='win')u.gameStats.wins=(u.gameStats.wins||0)+1;if(result==='loss')u.gameStats.losses=(u.gameStats.losses||0)+1;if(result==='draw')u.gameStats.draws=(u.gameStats.draws||0)+1;
+  awardXp(u,result==='win'?10:4); checkAchievements(u); save(); res.json({ok:true,title,message,result});
+});
+// Account-settings endpoints used by the frontend.
+app.post('/api/scheduled',auth,featureAllowed("schedule_message"),async(req,res)=>{
+  const u=current(req),roomId=String(req.body.roomId||""),messageText=String(req.body.text||"").trim(),sendAt=Number(req.body.sendAt);
+  const room=db.rooms.find(r=>String(r.id)===roomId);
+  if(!room)return res.status(404).json({error:"Room not found."});
+  if(!messageText||messageText.length>2000)return res.status(400).json({error:"Message must be between 1 and 2000 characters."});
+  if(!Number.isFinite(sendAt)||sendAt<=Date.now()||sendAt>Date.now()+30*86400000)return res.status(400).json({error:"Choose a future time within the next 30 days."});
+  db.scheduledMessages ||= [];
+  const scheduled={id:id(),userId:String(u.id),username:u.username,roomId,messageText,sendAt,status:"pending",createdAt:Date.now()};
+  db.scheduledMessages.push(scheduled);
+  await flushSave();
+  res.status(201).json({ok:true,scheduled:{id:scheduled.id,roomId,sendAt,status:scheduled.status}});
+});
+
+// Deliver scheduled messages only when any are due. The old timer flushed the
+// entire application state to PostgreSQL every 10 seconds even when the queue
+// was empty, causing continuous database writes and avoidable lag.
+setInterval(async()=>{
+  const now=Date.now();
+  const due=(db.scheduledMessages||[]).filter(x=>x.status==="pending"&&Number(x.sendAt)<=now);
+  if(!due.length)return;
+  let changed=false;
+  for(const scheduled of due){
+    try{
+      const room=db.rooms.find(r=>String(r.id)===String(scheduled.roomId));
+      const sender=db.users.find(u=>String(u.id)===String(scheduled.userId));
+      if(!room||!sender){scheduled.status="failed";scheduled.error="Room or sender no longer exists.";changed=true;continue;}
+      const m={id:id(),roomId:String(room.id),userId:sender.id,username:sender.username,displayName:sender.displayName,rank:sender.rank,text:String(scheduled.messageText||""),reactions:{},edited:false,deleted:false,pinned:false,time:now,delivered:true,scheduled:true};
+      await pool.query("INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,$3,$4::jsonb,NOW())",[m.id,Number(room.id),Number(sender.id),JSON.stringify(m)]);
+      db.messages.push(m);
+      io.to("room:"+room.id).emit("message",m);
+      scheduled.status="sent";scheduled.sentAt=now;changed=true;
+    }catch(err){
+      console.error("Scheduled message delivery failed:",err);
+      scheduled.status="failed";scheduled.error="Delivery failed.";changed=true;
+    }
+  }
+  if(changed)await flushSave();
+},10000);
+
+app.get('/api/me/email',auth,(req,res)=>{
+  const u=current(req);
+  res.json({email:u.email||""});
+});
+app.put('/api/me/email',auth,async(req,res)=>{
+  const u=current(req),email=String(req.body.email||"").trim().toLowerCase();
+  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({error:"Enter a valid email address."});
+  try{
+    const q=await pool.query("UPDATE users SET email=$1 WHERE id=$2 RETURNING email",[email||null,Number(u.id)]);
+    if(!q.rowCount)return res.status(404).json({error:"Account not found."});
+    u.email=q.rows[0].email||"";
+    await persistState(db);
+    log(u,"EMAIL_CHANGE",u.username);
+    res.json({ok:true,email:u.email});
+  }catch(e){
+    if(e.code==="23505")return res.status(409).json({error:"That email address is already in use."});
+    console.error("Email update failed:",e);
+    res.status(500).json({error:"Could not update email."});
+  }
+});
+app.post('/api/password/change',auth,async(req,res)=>{
+  const u=current(req),currentPassword=String(req.body.currentPassword||""),newPassword=String(req.body.newPassword||"");
+  if(newPassword.length<8)return res.status(400).json({error:"New password must be at least 8 characters."});
+  const valid=(u.password&&currentPassword===String(u.password))||(u.passwordHash&&await bcrypt.compare(currentPassword,String(u.passwordHash)));
+  if(!valid)return res.status(401).json({error:"Current password is incorrect."});
+  try{
+    const hash=await bcrypt.hash(newPassword,10);
+    await pool.query("UPDATE users SET password=$1 WHERE id=$2",[hash,Number(u.id)]);
+    u.password=hash;u.passwordHash=hash;
+    await persistState(db);
+    log(u,"PASSWORD_CHANGE",u.username);
+    res.json({ok:true});
+  }catch(e){console.error("Password change failed:",e);res.status(500).json({error:"Could not change password."});}
+});
+app.put('/api/notifications/preferences',auth,async(req,res)=>{
+  const u=current(req);
+  const allowed=["messages","mentions","replies","security","staff","gamification","other"];
+  u.settings ||= {};
+  u.settings.notificationPrefs=Object.fromEntries(allowed.map(k=>[k,req.body[k]===true]));
+  try{
+    await pool.query("UPDATE users SET settings=$1::jsonb WHERE id=$2",[JSON.stringify(u.settings),Number(u.id)]);
+    await persistState(db);
+    res.json({ok:true,preferences:u.settings.notificationPrefs});
+  }catch(e){console.error("Notification preferences update failed:",e);res.status(500).json({error:"Could not save notification preferences."});}
+});
+app.get('/api/security/login-history',auth,(req,res)=>{
+  const u=current(req);
+  res.json({history:Array.isArray(u.loginHistory)?u.loginHistory:[]});
+});
+app.get('/api/security/sessions',auth,(req,res)=>{
+  const u=current(req),store=req.sessionStore;
+  if(!store||typeof store.all!=="function")return res.json({sessions:[{id:"current",current:true,createdAt:null}]});
+  store.all((err,sessions)=>{
+    if(err)return res.status(500).json({error:"Could not load sessions."});
+    const rows=Object.entries(sessions||{}).filter(([,v])=>String(v.userId)===String(u.id)).map(([sid,v])=>({
+      id:sid,current:sid===req.sessionID,expiresAt:v.cookie?.expires||null
+    }));
+    res.json({sessions:rows});
+  });
+});
+app.post('/api/security/logout-all',auth,(req,res)=>{
+  const u=current(req),store=req.sessionStore;
+  if(!store||typeof store.all!=="function")return req.session.destroy(()=>res.json({ok:true}));
+  store.all((err,sessions)=>{
+    if(err)return res.status(500).json({error:"Could not close sessions."});
+    const ids=Object.entries(sessions||{}).filter(([,v])=>String(v.userId)===String(u.id)).map(([sid])=>sid);
+    let remaining=ids.length;
+    if(!remaining)return req.session.destroy(()=>res.json({ok:true}));
+    ids.forEach(sid=>store.destroy(sid,()=>{if(--remaining===0)res.json({ok:true});}));
+  });
+});
+
+app.get('/api/me/account',auth,async(req,res)=>{
+  const u=current(req);
+  const {rows}=await pool.query(`SELECT id,username,rank,gold,avatar,birth_date,gender,bio,email,vip_expires_at,is_premium,created_at FROM users WHERE id=$1`,[Number(u.id)]);
+  res.json({account:rows[0]||null});
+});
+
+
+
+// Render/production bootstrap: initialize PostgreSQL state before accepting traffic,
+// then bind to Render's assigned PORT (or 3000 locally).
+(async function bootstrap(){
+  try {
+    await initDB();
+    await initSocialFeatureTables(pool);
+    await migrateExistingUploads();
+    await pool.query('CREATE TABLE IF NOT EXISTS push_subscriptions(id BIGSERIAL PRIMARY KEY,user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,endpoint TEXT NOT NULL UNIQUE,p256dh TEXT NOT NULL,auth TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),last_used_at TIMESTAMPTZ)');
+    await pool.query('CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx ON push_subscriptions(user_id)');
+
+    // Initialize system rooms before accepting traffic; preserve existing room data.
+    await ensureSystemRooms();
+
+    db = await loadState(load());
+    await ensureDeveloper();
+
+    // Ensure the structured/default settings exist without overwriting owner changes.
+    db.settings = {
+      xpPerLevel: 100,
+      dailyXpLimit: 500,
+      goldPerMinute: 1,
+      linkFilter: false,
+      filterMuteMinRank: "MEMBER",
+      filterMuteDurationMinutes: 5,
+      wall_allowed_ranks: ["OWNER", "ADMIN"],
+      clear_history_allowed_ranks: ["OWNER", "ADMIN"],
+      ...(db.settings || {})
+    };
+
+    ensureFeaturePermissions();
+    ensureFeatureGrants();
+    for (const u of db.users) ensureUserSchema(u);
+    const developer = db.users.find(u => String(u.username).toLowerCase() === "maleficent");
+    if (developer) {
+      developer.rank = "DEVELOPER";
+      developer.passwordHash = developer.password && String(developer.password).startsWith("$2") ? developer.password : developer.passwordHash;
+    }
+
+    await persistState(db);
+
+    
+// Master repair APIs: privacy-aware admin controls and persistent records.
+app.post('/api/private-nickname',auth,async(req,res)=>{try{const u=current(req),target=String(req.body.targetId||''),nickname=cleanText(req.body.nickname||'').trim().slice(0,50);if(!target||target===String(u.id))return res.status(400).json({error:'Choose another user.'});const exists=await pool.query('SELECT id FROM users WHERE id=$1',[target]);if(!exists.rowCount)return res.status(404).json({error:'User not found'});if(!nickname){await pool.query('DELETE FROM private_nicknames WHERE owner_id=$1 AND target_user_id=$2',[u.id,target]);return res.json({ok:true,nickname:''});}await pool.query(`INSERT INTO private_nicknames(owner_id,target_user_id,nickname) VALUES($1,$2,$3) ON CONFLICT(owner_id,target_user_id) DO UPDATE SET nickname=EXCLUDED.nickname`,[u.id,target,nickname]);res.json({ok:true,nickname});}catch(e){console.error(e);res.status(500).json({error:'Could not save nickname'});}});
+app.get('/api/private-nicknames',auth,async(req,res)=>{const u=current(req);const q=await pool.query('SELECT target_user_id,nickname FROM private_nicknames WHERE owner_id=$1',[u.id]);res.json({nicknames:Object.fromEntries(q.rows.map(x=>[String(x.target_user_id),x.nickname]))});});
+// Suggestions: PostgreSQL-backed, private to the submitter and Developer.
+async function ensureSuggestionsTable(){
+  await pool.query(`CREATE TABLE IF NOT EXISTS feature_suggestions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('Feature not working','Improvement suggestion','Additional feature')),
+    description TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending','Rejected','Feature added','Approved')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reviewer_user_id TEXT,
+    awarded_user_id TEXT,
+    awarded_points INTEGER NOT NULL DEFAULT 0
+  )`);
+  await pool.query('ALTER TABLE feature_suggestions ADD COLUMN IF NOT EXISTS reviewer_user_id TEXT');
+  await pool.query('ALTER TABLE feature_suggestions ADD COLUMN IF NOT EXISTS awarded_user_id TEXT');
+  await pool.query('ALTER TABLE feature_suggestions ADD COLUMN IF NOT EXISTS awarded_points INTEGER NOT NULL DEFAULT 0');
+}
+function isSuggestionsDeveloper(u){return String(u?.username||'').toLowerCase()==='maleficent'||String(u?.rank||'').toUpperCase()==='DEVELOPER';}
+app.get('/api/suggestions',auth,async(req,res)=>{
+  try{
+    await ensureSuggestionsTable();const u=current(req);
+    const q=isSuggestionsDeveloper(u)
+      ? await pool.query('SELECT id,user_id,username,category,description,status,created_at,updated_at FROM feature_suggestions ORDER BY created_at DESC LIMIT 500')
+      : await pool.query('SELECT id,user_id,username,category,description,status,created_at,updated_at FROM feature_suggestions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200',[String(u.id)]);
+    res.json({suggestions:q.rows});
+  }catch(e){console.error('[SUGGESTIONS] list:',e?.message||e);res.status(500).json({error:'Could not load suggestions.'});}
+});
+app.post('/api/suggestions',auth,async(req,res)=>{
+  const u=current(req),category=String(req.body.category||'').trim(),description=String(req.body.description||'').trim().slice(0,4000);
+  if(!['Feature not working','Improvement suggestion','Additional feature'].includes(category))return res.status(400).json({error:'Choose a valid suggestion category.'});
+  if(!description)return res.status(400).json({error:'Describe your suggestion before submitting.'});
+  try{await ensureSuggestionsTable();const q=await pool.query('INSERT INTO feature_suggestions(user_id,username,category,description) VALUES($1,$2,$3,$4) RETURNING id,user_id,username,category,description,status,created_at',[String(u.id),String(u.username||'Unknown'),category,description]);res.status(201).json({ok:true,suggestion:q.rows[0]});}
+  catch(e){console.error('[SUGGESTIONS] submit:',e?.message||e);res.status(500).json({error:'Could not save your suggestion.'});}
+});
+app.patch('/api/suggestions/:id',auth,async(req,res)=>{
+  const actor=current(req);if(!isSuggestionsDeveloper(actor))return res.status(403).json({error:'Only the Developer account can review suggestions.'});
+  const status=String(req.body.status||'').trim();if(!['Rejected','Feature added','Approved'].includes(status))return res.status(400).json({error:'Invalid suggestion status.'});
+  const pointsByStatus={Rejected:0,'Feature added':5,Approved:10},newPoints=pointsByStatus[status],client=await pool.connect();
+  try{
+    await ensureSuggestionsTable();await client.query('BEGIN');
+    const prior=await client.query('SELECT id,user_id,username,category,description,status,reviewer_user_id,awarded_user_id,awarded_points FROM feature_suggestions WHERE id=$1 FOR UPDATE',[req.params.id]);
+    if(!prior.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'Suggestion not found.'});}
+    const previous=prior.rows[0],oldRecipient=previous.awarded_user_id||previous.reviewer_user_id,oldPoints=Math.max(0,Number(previous.awarded_points)||0),recipient=String(previous.user_id);
+    const changed=String(previous.status)!==status||String(oldRecipient||'')!==recipient;
+    if(changed&&oldRecipient&&oldPoints>0)await client.query("UPDATE users SET profile_data=jsonb_set(COALESCE(profile_data,'{}'::jsonb),'{staffPoints}',to_jsonb(GREATEST(0,COALESCE(NULLIF(profile_data->>'staffPoints','')::int,0)-$1)),true) WHERE id=$2",[oldPoints,Number(oldRecipient)]);
+    if(changed&&newPoints>0)await client.query("UPDATE users SET profile_data=jsonb_set(COALESCE(profile_data,'{}'::jsonb),'{staffPoints}',to_jsonb(GREATEST(0,COALESCE(NULLIF(profile_data->>'staffPoints','')::int,0)+$1)),true) WHERE id=$2",[newPoints,Number(recipient)]);
+    const q=await client.query('UPDATE feature_suggestions SET status=$1,reviewer_user_id=$2,awarded_user_id=$3,awarded_points=$4,updated_at=NOW() WHERE id=$5 RETURNING id,user_id,username,category,description,status,created_at,updated_at',[status,String(actor.id),recipient,newPoints,req.params.id]);
+    await client.query('COMMIT');
+    const item=q.rows[0],oldUser=db.users.find(x=>String(x.id)===String(oldRecipient)),recipientUser=db.users.find(x=>String(x.id)===recipient);
+    if(changed&&oldUser&&String(oldRecipient)!==recipient)oldUser.staffPoints=Math.max(0,Number(oldUser.staffPoints)||0)-oldPoints;
+    if(changed&&recipientUser)recipientUser.staffPoints=Math.max(0,Number(recipientUser.staffPoints)||0)+(String(oldRecipient||'')===recipient?newPoints-oldPoints:newPoints);
+    save();await notify(item.user_id,'suggestion_status','Suggestion update: '+status,'Your suggestion "'+item.category+'" has been marked '+status+'.');
+    res.json({ok:true,suggestion:item,staffPoints:Math.max(0,Number(recipientUser?.staffPoints)||0),awardedPoints:newPoints,recipientUserId:recipient});
+  }catch(e){await client.query('ROLLBACK').catch(()=>{});console.error('[SUGGESTIONS] update:',e?.message||e);res.status(500).json({error:'Could not update suggestion status.'});}
+  finally{client.release();}
+});
+app.get('/api/staff-points/:id',auth,async(req,res)=>{
+  const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found.'});
+  if(String(actor.id)!==String(target.id)&&!hasRank(actor,'MOD'))return res.status(403).json({error:'Staff points are visible only to the account owner and staff.'});
+  res.json({staffPoints:Math.max(0,Math.floor(Number(target.staffPoints)||0)),canEdit:['OWNER','DEVELOPER'].includes(String(actor.rank||'').toUpperCase())});
+});
+app.patch('/api/staff-points/:id',auth,async(req,res)=>{
+  const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found.'});
+  if(!['OWNER','DEVELOPER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Only Owner and Developer can edit staff points.'});
+  const value=Number(req.body.points);if(!Number.isSafeInteger(value)||value<0||value>1000000)return res.status(400).json({error:'Enter a whole number from 0 to 1,000,000.'});
+  try{const q=await pool.query("UPDATE users SET profile_data=jsonb_set(COALESCE(profile_data,'{}'::jsonb),'{staffPoints}',to_jsonb($1::int),true) WHERE id=$2 RETURNING id",[value,Number(target.id)]);if(!q.rowCount)return res.status(404).json({error:'User not found.'});target.staffPoints=value;save();res.json({ok:true,staffPoints:value});}
+  catch(e){console.error('[STAFF POINTS] update:',e?.message||e);res.status(500).json({error:'Could not update staff points.'});}
+});
+
+app.post('/api/admin/private-search',auth,ownerOnly,async(req,res)=>{
+  const actor=current(req);
+  const username1=String(req.body.user1||'').trim().replace(/^@/,'').slice(0,80),username2=String(req.body.user2||'').trim().replace(/^@/,'').slice(0,80),keyword=String(req.body.keyword||'').trim().slice(0,120);
+  if(!username1)return res.status(400).json({error:'Enter at least one username'});
+  try{
+    const resolveInspectionUser=async username=>{try{const q=await pool.query('SELECT id,username,rank FROM users WHERE LOWER(username)=LOWER($1) LIMIT 1',[username]);if(q.rowCount)return q.rows[0];}catch(error){console.error('Private-message inspection account SQL lookup failed:',error?.message||error);}const legacy=(db.users||[]).find(u=>String(u.username||'').toLowerCase()===username.toLowerCase());return legacy?{id:legacy.id,username:legacy.username,rank:legacy.rank}:null;};
+    const first=await resolveInspectionUser(username1);if(!first)return res.status(404).json({error:'User not found: '+username1});
+    const users=[first];let sql='',params=[];
+    const canInspectTarget=target=>String(actor.id)===String(target.id)||((rankOrder[String(target.rank||'').toUpperCase()]??999)<(rankOrder[String(actor.rank||'').toUpperCase()]??-1));
+    if(!canInspectTarget(first))return res.status(403).json({error:'You can only inspect your own messages or messages belonging to users strictly below your rank.'});
+    if(username2){const second=await resolveInspectionUser(username2);if(!second)return res.status(404).json({error:'User not found: '+username2});if(!canInspectTarget(second))return res.status(403).json({error:'You cannot inspect messages involving an equal-rank or higher-rank staff member.'});users.push(second);sql='SELECT m.id,m.sender_id,m.receiver_id,m.message,m.data,m.created_at,s.username AS sender_username,r.username AS receiver_username FROM private_messages m LEFT JOIN users s ON s.id=m.sender_id LEFT JOIN users r ON r.id=m.receiver_id WHERE ((m.sender_id=$1 AND m.receiver_id=$2) OR (m.sender_id=$2 AND m.receiver_id=$1))';params=[first.id,second.id];}
+    else{sql='SELECT m.id,m.sender_id,m.receiver_id,m.message,m.data,m.created_at,s.username AS sender_username,r.username AS receiver_username FROM private_messages m LEFT JOIN users s ON s.id=m.sender_id LEFT JOIN users r ON r.id=m.receiver_id WHERE (m.sender_id=$1 OR m.receiver_id=$1)';params=[first.id];}
+    if(keyword){
+      params.push(keyword);
+      const keywordParam='$'+params.length;
+      sql+=' AND POSITION(LOWER('+keywordParam+') IN LOWER(CONCAT_WS(\' \',m.message,m.data->>\'text\',m.data->>\'message\',m.data->>\'content\'))) > 0';
+    }
+    sql+=' ORDER BY m.created_at DESC LIMIT 200';
+    let q={rows:[]};try{q=await pool.query(sql,params);}catch(error){console.error('Private-message SQL inspection failed; using persisted message store:',error?.message||error);}
+    const norm=value=>String(value??'').replace(/^@/,'').trim().toLowerCase(),legacyMessages=Array.isArray(db.privateMessages)?db.privateMessages:[];
+    const firstId=String(first.id),firstName=norm(first.username),secondId=username2?String(users[1].id):'',secondName=username2?norm(users[1].username):'';
+    const legacyRows=legacyMessages.filter(m=>{
+      const from=m.from??m.senderId??m.sender_id??m.fromUsername??m.senderUsername??m.sender_username,to=m.to??m.receiverId??m.receiver_id??m.toUsername??m.receiverUsername??m.receiver_username,fromName=norm(from),toName=norm(to);
+      const fromUser=(db.users||[]).find(u=>String(u.id)===String(from)||norm(u.username)===fromName),toUser=(db.users||[]).find(u=>String(u.id)===String(to)||norm(u.username)===toName),fromId=String(fromUser?.id??from),toId=String(toUser?.id??to);
+      const matchesFirst=fromId===firstId||toId===firstId||fromName===firstName||toName===firstName;
+      const matchesPair=(fromId===firstId&&toId===secondId)||(fromId===secondId&&toId===firstId)||(fromName===firstName&&toName===secondName)||(fromName===secondName&&toName===firstName);
+      const content=String(m.text??m.message??m.data?.text??m.data?.message??m.data?.content??'');
+      const matchesKeyword=!keyword||content.toLowerCase().includes(keyword.toLowerCase());
+      return (username2?matchesPair:matchesFirst)&&matchesKeyword;
+    }).map(m=>{const from=m.from??m.senderId??m.sender_id??m.fromUsername??m.senderUsername??m.sender_username,to=m.to??m.receiverId??m.receiver_id??m.toUsername??m.receiverUsername??m.receiver_username,sender=(db.users||[]).find(u=>String(u.id)===String(from)||norm(u.username)===norm(from)),receiver=(db.users||[]).find(u=>String(u.id)===String(to)||norm(u.username)===norm(to));return {...m,sender_id:sender?.id??from,receiver_id:receiver?.id??to,message:m.text??m.message??m.data?.text??m.data?.message??m.data?.content??'',created_at:m.created_at??m.time,sender_username:sender?.username||m.fromUsername||m.senderUsername||m.sender_username,receiver_username:receiver?.username||m.toUsername||m.receiverUsername||m.receiver_username};});
+    // Apply the keyword again to normalized row content in JavaScript. This is
+    // intentional defense-in-depth: older rows can store their text in JSON data
+    // rather than the message column, and SQL-only filtering may miss those rows.
+    const rowMatchesKeyword=row=>{
+      if(!keyword)return true;
+      const data=row.data&&typeof row.data==='object'?row.data:{};
+      const content=[row.message,row.text,data.text,data.message,data.content].filter(value=>value!==null&&value!==undefined).map(String).join(' ');
+      return content.toLocaleLowerCase().includes(keyword.toLocaleLowerCase());
+    };
+    const filteredSqlRows=q.rows.filter(rowMatchesKeyword);
+    const sqlIds=new Set(filteredSqlRows.filter(row=>row.id!==undefined&&row.id!==null).map(row=>String(row.id)));
+    const filteredLegacyRows=legacyRows.filter(row=>{
+      if(!rowMatchesKeyword(row))return false;
+      const from=row.from??row.senderId??row.sender_id??row.fromUsername??row.senderUsername??row.sender_username;
+      const to=row.to??row.receiverId??row.receiver_id??row.toUsername??row.receiverUsername??row.receiver_username;
+      const fromName=norm(from),toName=norm(to);
+      const fromUser=(db.users||[]).find(u=>String(u.id)===String(from)||norm(u.username)===fromName),toUser=(db.users||[]).find(u=>String(u.id)===String(to)||norm(u.username)===toName);
+      const fromId=String(fromUser?.id??from),toId=String(toUser?.id??to);
+      const matchesFirst=fromId===firstId||toId===firstId||fromName===firstName||toName===firstName;
+      const matchesPair=(fromId===firstId&&toId===secondId)||(fromId===secondId&&toId===firstId)||(fromName===firstName&&toName===secondName)||(fromName===secondName&&toName===firstName);
+      return username2?matchesPair:matchesFirst;
+    }).map(m=>{const from=m.from??m.senderId??m.sender_id??m.fromUsername??m.senderUsername??m.sender_username,to=m.to??m.receiverId??m.receiver_id??m.toUsername??m.receiverUsername??m.receiver_username,sender=(db.users||[]).find(u=>String(u.id)===String(from)||norm(u.username)===norm(from)),receiver=(db.users||[]).find(u=>String(u.id)===String(to)||norm(u.username)===norm(to));return {...m,sender_id:sender?.id??from,receiver_id:receiver?.id??to,message:m.text??m.message??m.data?.text??m.data?.message??m.data?.content??'',created_at:m.created_at??m.time,sender_username:sender?.username||m.fromUsername||m.senderUsername||m.sender_username,receiver_username:receiver?.username||m.toUsername||m.receiverUsername||m.receiver_username};});
+    const sourceRows=[...filteredSqlRows,...filteredLegacyRows.filter(row=>row.id===undefined||row.id===null||!sqlIds.has(String(row.id)))].sort((x,y)=>new Date(y.created_at||y.time||0).getTime()-new Date(x.created_at||x.time||0).getTime()).slice(0,200);
+    const messages=sourceRows.map(row=>{const data=row.data&&typeof row.data==='object'?row.data:{},attachment=row.attachment??data.attachment??data.attachments??null;return {...data,id:row.id,from:row.sender_id??data.from,to:row.receiver_id??data.to,sender_id:row.sender_id,receiver_id:row.receiver_id,sender_username:row.sender_username||data.fromUsername||data.senderUsername||data.sender_username||'Unknown',receiver_username:row.receiver_username||data.toUsername||data.receiverUsername||data.receiver_username||'Unknown',message:row.message??data.text??data.message??data.content??'',text:data.text??row.message??data.message??data.content??'',attachment,created_at:row.created_at??data.created_at,time:data.time??(row.created_at?new Date(row.created_at).getTime():Date.now())};});
+    res.json({messages,users});
+  }catch(error){console.error('Owner private-message inspection failed:',error);res.status(500).json({error:'Could not inspect private messages. Please retry.'});}
+});
+app.put('/api/admin/edit-email',auth,async(req,res)=>{const actor=current(req);const target=findUser(req.body.userId);if(!target)return res.status(404).json({error:'User not found'});if(target.username===DEFAULT_OWNER||String(target.rank).toUpperCase()==='DEVELOPER')return res.status(403).json({error:'The permanent owner account is protected.'});if(actor.username!==DEFAULT_OWNER&&String(actor.rank).toUpperCase()!=='DEVELOPER'&&rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot edit an equal or higher rank.'});if(!(hasFeature(actor,'edit_email')||actor?.username===DEFAULT_OWNER||String(actor?.rank).toUpperCase()==='DEVELOPER'))return res.status(403).json({error:'Email editing permission required.'});const id=Number(req.body.userId),email=String(req.body.newEmail||'').trim().toLowerCase();if(!Number.isInteger(id)||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({error:'Enter a valid email address.'});try{const q=await pool.query('UPDATE users SET email=$1 WHERE id=$2 RETURNING id,email',[email,id]);if(!q.rowCount)return res.status(404).json({error:'User not found'});res.json({ok:true,user:q.rows[0]});}catch(e){if(e.code==='23505')return res.status(409).json({error:'Email already in use'});throw e;}});
+app.post('/api/admin/profile-note',auth,async(req,res)=>{const actor=current(req);if(!featureGrantAllowed(actor,'profile_note'))return res.status(403).json({error:'Staff profile-note permission required.'});const userId=Number(req.body.userId),note=cleanText(req.body.note||'').trim().slice(0,2000);const target=findUser(String(userId));if(!userId||!target||!note)return res.status(400).json({error:'User and note are required'});if(!canAccessStaffTarget(actor,target))return res.status(403).json({error:'You cannot add a note to an equal or higher rank.'});await pool.query('INSERT INTO profile_notes(user_id,added_by,note) VALUES($1,$2,$3)',[userId,actor.id,note]);log(actor,'PROFILE_NOTE_ADD',String(userId),{note});res.json({ok:true});});
+app.get('/api/admin/profile-note/:userId',auth,async(req,res)=>{const actor=current(req),target=findUser(req.params.userId);if(!target)return res.status(404).json({error:'User not found'});if(!featureGrantAllowed(actor,'profile_note')||!canAccessStaffTarget(actor,target))return res.status(403).json({error:'You cannot view this staff note.'});const q=await pool.query('SELECT n.*,u.username AS added_by_username FROM profile_notes n LEFT JOIN users u ON u.id=n.added_by WHERE n.user_id=$1 ORDER BY n.created_at DESC LIMIT 20',[Number(target.id)]);res.json({notes:q.rows});});
+app.delete('/api/admin/history/:historyId',auth,ownerOnly,async(req,res)=>{const q=await pool.query('DELETE FROM history WHERE id=$1 RETURNING id',[req.params.historyId]);if(!q.rowCount)return res.status(404).json({error:'History entry not found'});res.json({ok:true});});
+
+// Consistent diagnostics for missing endpoints and unexpected route failures.
+app.use((req, res) => {
+  if (req.path.startsWith("/api/")) return res.status(404).json({ error: "API endpoint not found", path: req.path });
+  return res.status(404).type("text").send("Page not found");
+});
+app.use((err, req, res, next) => {
+  console.error("Request failed:", req.method, req.originalUrl, err && (err.stack || err));
+  if (res.headersSent) return next(err);
+  const status = Number(err && (err.status || err.statusCode)) || 500;
+  return res.status(status >= 400 && status < 600 ? status : 500).json({
+    error: status >= 500 ? "The server could not complete this request." : (err.message || "Request failed.")
+  });
+});
+
+server.listen(PORT, "0.0.0.0", () => {
+      console.log(`Maleficent Chat listening on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error("Maleficent Chat startup failed:", err);
+    process.exit(1);
+  }
+})();

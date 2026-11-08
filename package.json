@@ -1,0 +1,26 @@
+{
+  "name": "maleficent-chat",
+  "version": "4.0.0",
+  "private": true,
+  "description": "Maleficent Chat rebuild — selective core migration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node scripts/check-security.js && node --check server.js && node --check db.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "connect-pg-simple": "^10.0.0",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.8.1",
+    "pg": "^8.16.3",
+    "web-push": "^3.6.7",
+    "tesseract.js": "^6.0.1",
+    "firebase-admin": "^13.0.2"
+  }
+}
