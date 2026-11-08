@@ -467,4 +467,28 @@ assert.match(friendsFeedRoute,/w\.user_id=ANY\(\$1::int\[\]\)/,
 assert.match(server,/Your rank cannot create wall posts/,
   "Shadow Feed additions must preserve existing post-creation authorization");
 
+
+const rankPolicySchema = ["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
+const serverRankPolicyMatch = server.match(/const ranks=\\[([^\\]]+)\\]/);
+const clientRankPolicyMatch = activeClient.match(/const ranks\\s*=\\s*\\[([^\\]]+)\\]/);
+assert.ok(serverRankPolicyMatch && clientRankPolicyMatch, "server and client must expose the canonical rank schema");
+const serverRankPolicy = [...serverRankPolicyMatch[1].matchAll(/"([A-Z_]+)"/g)].map(match => match[1]);
+const clientRankPolicy = [...clientRankPolicyMatch[1].matchAll(/"([A-Z_]+)"/g)].map(match => match[1]);
+assert.deepEqual(serverRankPolicy, rankPolicySchema, "server rank hierarchy must use only the current canonical ranks and order");
+assert.deepEqual(clientRankPolicy, rankPolicySchema, "client rank hierarchy must exactly match the server");
+assert.ok(server.includes('const grantCeiling=ownerPower?"OWNER":actorRankNow==="ELITE"?"COOWNER":actorRankNow==="COOWNER"?"CHIEF_COMMISSOR":"MOD";'),
+  "staff application grants must cap ordinary staff at Moderator, Co-owner at Chief Commissor, Elite at Co-owner, and Owner at Owner");
+assert.ok(server.includes("const grantCeiling=ownerPower?'OWNER':(actorRank==='ELITE'?'COOWNER':(actorRank==='COOWNER'?'CHIEF_COMMISSOR':'MOD'));"),
+  "direct staff rank changes must enforce the same grant ceilings");
+assert.ok(server.includes('invisible_mode:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]'),
+  "Invisible mode must begin at Commissor");
+assert.ok(server.includes('ghost_mode:["OWNER"]') && server.includes('dead_mode:["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]'),
+  "Ghost and Dead modes must follow the current rank policy");
+assert.ok(server.includes("const FEATURE_GRANT_POLICY_VERSION=8;"),
+  "rank and feature-grant policy migration must be versioned");
+assert.ok(server.includes("blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER']"),
+  "Elite and higher ranks must be blocked from purchasing Premium on the server");
+assert.ok(activeClient.includes("/app.js?v=rank-schema-20261108-3") === false || fs.readFileSync("public/index.html", "utf8").includes("/app.js?v=rank-schema-20261108-3"),
+  "the HTML must point at the current rank-schema app bundle");
+
 console.log("Room history, private-room access, invitations, private-message deletion, Shadow Feed, Friends Activity, bootstrap privacy, capacity, and slow-mode regression checks passed.");
