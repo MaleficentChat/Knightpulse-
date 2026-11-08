@@ -1676,21 +1676,18 @@ app.post(
     const normalizedGender=String(gender||"").trim();
 
     if(
-      !displayName||
-      String(displayName).length>32||
+      (displayName&&String(displayName).length>32)||
       !password||
       password.length<8||
-      (normalizedEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail))||
-      !normalizedDob||
-      !normalizedGender
+      (normalizedEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail))
     ){
       return res.status(400).json({
         error:
-          "Display name, date of birth, gender and password are required. Email is optional; if supplied, enter a valid email. Password must be 8+ characters."
+          "Username and password are required. Email, display name, date of birth and gender are optional; if supplied, enter a valid email. Password must be 8+ characters."
       });
     }
 
-    {const dobDate=new Date(normalizedDob+"T00:00:00Z");if(Number.isNaN(dobDate.getTime()) || dobDate>new Date()) return res.status(400).json({error:"Please enter a valid date of birth."});}
+    if(normalizedDob){const dobDate=new Date(normalizedDob+"T00:00:00Z");if(Number.isNaN(dobDate.getTime()) || dobDate>new Date()) return res.status(400).json({error:"Please enter a valid date of birth."});}
 
     if(normalizedEmail){
       const emailTaken=await pool.query(`SELECT id FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1`,[normalizedEmail]);
@@ -1706,10 +1703,10 @@ app.post(
     const u={
       id:null,
       username,
-      displayName,
+      displayName:String(displayName||username).trim()||username,
       email:normalizedEmail,
       dateOfBirth:normalizedDob,
-      gender:normalizedGender,
+      gender:normalizedGender||null,
 
       password:password,
       passwordHash:
