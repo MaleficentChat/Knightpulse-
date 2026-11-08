@@ -5118,7 +5118,7 @@ app.get("/api/staff/dashboard",auth,featureAllowed("view_staff_dashboard"),async
 });
 
 app.post("/api/staff/reports/:id/assign",auth,async(req,res)=>{
-  const actor=current(req);if(!hasRank(actor,"MOD"))return res.status(403).json({error:"Staff only"});
+  const actor=current(req);if(!hasRank(actor,"ADMIN"))return res.status(403).json({error:"Admin rank or higher required to manage reports."});
   const assignee=findUser(req.body.staffUserId||req.body.username||"");
   if(!assignee||!hasRank(assignee,"MOD"))return res.status(400).json({error:"Choose an existing site staff member."});
   try{
@@ -5133,7 +5133,7 @@ app.post("/api/staff/reports/:id/assign",auth,async(req,res)=>{
 });
 app.post("/api/staff/reports/:id/resolve",auth,async(req,res)=>{
   const u=current(req);
-  if(!hasRank(u,"MOD"))return res.status(403).json({error:"Staff only"});
+  if(!hasRank(u,"ADMIN"))return res.status(403).json({error:"Admin rank or higher required to manage reports."});
   const status=String(req.body.status||"RESOLVED").toUpperCase();
   if(!["RESOLVED","DISMISSED","OPEN"].includes(status))return res.status(400).json({error:"Invalid report status."});
   try{
@@ -6227,7 +6227,7 @@ app.post("/api/report",auth,async(req,res)=>{
   db.reports.push({...data,privateMessages:q.rows.map(x=>x.data)}); notifyStaff("report","New private-message report",`@${reporter.username} reported @${reported.username}.`); res.json({ok:true,report:data});
 });
 app.get("/api/staff/reports/:id/private-messages",auth,featureAllowed("view_staff_dashboard"),async(req,res)=>{
-  const u=current(req);if(!hasRank(u,"MOD"))return res.status(403).json({error:"Staff only"});
+  const u=current(req);if(!hasRank(u,"ADMIN"))return res.status(403).json({error:"Admin rank or higher required to inspect reported private-message evidence."});
   try{
     const q=await pool.query("SELECT r.data,reporter.username AS reporter_username,target.username AS reported_username,convo.username AS conversation_username FROM reports r LEFT JOIN users reporter ON reporter.id=r.reporter_id LEFT JOIN users target ON target.id=r.reported_id LEFT JOIN users convo ON convo.id=r.conversation_user_id WHERE r.id=$1",[req.params.id]);
     const cached=(db.reports||[]).find(r=>String(r.id)===String(req.params.id));
