@@ -4359,7 +4359,18 @@ function openBrandNewsComposer(){
     }catch(err){error.textContent=err.message||"Could not publish this update.";toast(error.textContent);submit.disabled=false;submit.textContent="Publish official update";}
   });
 }
-$("publishBrandNews")?.addEventListener("click",openBrandNewsComposer);
+// Capture the Brand News action before other view-level handlers can intercept it.
+if(!window.__mcBrandNewsPublishBound){
+  window.__mcBrandNewsPublishBound=true;
+  document.addEventListener("click",event=>{
+    const button=event.target instanceof Element?event.target.closest("#publishBrandNews"):null;
+    if(!button||button.disabled||button.classList.contains("hidden"))return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    try{openBrandNewsComposer();}
+    catch(error){console.error("Brand News composer failed:",error);toast(error?.message||"Could not open Brand News composer.");}
+  },true);
+}
 
 async function openNewsComments(id){
   try{
@@ -6603,9 +6614,17 @@ async function openNotificationCenter(){
     const data=await api("/api/notifications");
     const rows=Array.isArray(data.notifications)?data.notifications:[];
     const unreadCount=rows.filter(n=>!n.read).length;
-    modal(`<div class="notification-center"><div class="notification-head"><div><h2>🔔 Notifications</h2><p class="muted">${unreadCount} unread</p></div><div class="toolbar"><button class="mini" id="markAllNotifications" type="button" ${unreadCount?'':'disabled'}>Mark all read</button><button class="mini danger" id="clearNotifications" type="button">Clear all</button></div></div><div class="stack">${rows.map(n=>`<div class="card notification-card ${n.read?'':'unread'}"><div><b>${esc(n.title||n.type||'Notification')}</b><p>${esc(n.text||n.message||'')}</p><small>${fmt(n.time)}</small></div><div class="toolbar"><button class="mini" data-notif-read="${esc(n.id)}" type="button">${n.read?'Read':'Mark read'}</button><button class="mini danger" data-notif-delete="${esc(n.id)}" type="button">×</button></div></div>`).join('')||'<p class="muted">No notifications.</p>'}</div></div>`);
+    modal(`<div class="notification-center"><div class="notification-head"><div><h2>🔔 Notifications</h2><p class="muted">${unreadCount} unread</p></div><div class="toolbar"><button class="mini" id="markAllNotifications" type="button" ${unreadCount?'':'disabled'}>Mark all read</button><button class="mini danger" id="clearNotifications" type="button">Clear all</button></div></div><div class="stack">${rows.map(n=>`<div class="card notification-card ${n.read?'':'unread'}"><div><b>${esc(n.title||n.type||'Notification')}</b><p>${esc(n.text||n.message||'')}</p><small>${fmt(n.time)}</small></div><div class="toolbar"><button class="mini" data-notif-read="${esc(n.id)}" data-notif-type="${esc(n.type||'')}" type="button" ${n.read?'disabled':''}>${n.type==='warning'?'Acknowledge':(n.read?'Read':'Mark read')}</button>${n.type==='warning'?'':`<button class="mini danger" data-notif-delete="${esc(n.id)}" type="button" aria-label="Remove notification">×</button>`}</div></div>`).join('')||'<p class="muted">No notifications.</p>'}</div></div>`);
     document.querySelectorAll('[data-notif-read]').forEach(b=>b.onclick=async()=>{
-      try{const row=b.closest('.notification-card');if(row?.querySelector('b')?.textContent==='Warning ⚠️'){closeModal();return;}await api('/api/notifications/'+encodeURIComponent(b.dataset.notifRead)+'/read',{method:'PATCH'});row?.classList.remove('unread');b.textContent='Read';await loadNotifications();}catch(e){toast(e.message||'Could not update notification.');}
+      try{
+        const warning=b.dataset.notifType==='warning';
+        const endpoint=warning?'/api/notifications/'+encodeURIComponent(b.dataset.notifRead)+'/acknowledge-warning':'/api/notifications/'+encodeURIComponent(b.dataset.notifRead)+'/read';
+        await api(endpoint,{method:warning?'POST':'PATCH'});
+        const row=b.closest('.notification-card');
+        if(warning){row?.remove();toast('Warning acknowledged.');}
+        else{row?.classList.remove('unread');b.textContent='Read';}
+        await loadNotifications();
+      }catch(e){toast(e.message||'Could not update notification.');}
     });
     document.querySelectorAll('[data-notif-delete]').forEach(b=>b.onclick=async()=>{
       try{await api('/api/notifications/'+encodeURIComponent(b.dataset.notifDelete),{method:'DELETE'});b.closest('.notification-card')?.remove();await loadNotifications();}catch(e){toast(e.message||'Could not delete notification.');}
