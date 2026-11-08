@@ -1,0 +1,12 @@
+{
+  "name": "maleficent-chat-independent-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated, independently implemented core for the Maleficent Chat rebuild",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
