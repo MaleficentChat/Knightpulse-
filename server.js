@@ -451,7 +451,7 @@ function ensureFeaturePermissions(){
 
 function featureRank(key){
   // One-time compatibility migration: translate retired rank names into the current Knightpulse schema.
-const LEGACY_RANK_MIGRATION={ROYAL:"PREMIUM",INSTRUCTOR:"CHIEF_COMMISSOR",DEVELOPER:"OWNER"};
+const LEGACY_RANK_MIGRATION={USER:"MEMBER",MODERATOR:"MOD",SUPERADMIN:"SUPER_ADMIN","CO-OWNER":"COOWNER",CO_OWNER:"COOWNER",ROYAL:"PREMIUM",INSTRUCTOR:"CHIEF_COMMISSOR",DEVELOPER:"OWNER"};
 const CANONICAL_RANKS=new Set(["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]);
 for(const account of (db.users||[])){
   const previous=String(account.rank||"MEMBER").toUpperCase();
@@ -1403,7 +1403,7 @@ function awardXp(u,n=5){
 
 async function ensureOwner(){
   // Persistently translate retired global ranks before the permanent Owner is initialized.
-  await pool.query("UPDATE users SET rank=CASE UPPER(rank) WHEN 'USER' THEN 'MEMBER' WHEN 'ROYAL' THEN 'PREMIUM' WHEN 'INSTRUCTOR' THEN 'CHIEF_COMMISSOR' WHEN 'DEVELOPER' THEN 'OWNER' ELSE UPPER(rank) END WHERE UPPER(rank) IN ('USER','MEMBER','VIP','SVIP','PREMIUM','ROYAL','MOD','MODERATOR','ADMIN','SUPER_ADMIN','COMMISSOR','INSTRUCTOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER','DEVELOPER')");
+  await pool.query("UPDATE users SET rank=CASE UPPER(rank) WHEN 'USER' THEN 'MEMBER' WHEN 'MODERATOR' THEN 'MOD' WHEN 'SUPERADMIN' THEN 'SUPER_ADMIN' WHEN 'CO-OWNER' THEN 'COOWNER' WHEN 'CO_OWNER' THEN 'COOWNER' WHEN 'ROYAL' THEN 'PREMIUM' WHEN 'INSTRUCTOR' THEN 'CHIEF_COMMISSOR' WHEN 'DEVELOPER' THEN 'OWNER' ELSE UPPER(rank) END WHERE UPPER(rank) IN ('USER','MEMBER','VIP','SVIP','PREMIUM','ROYAL','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','INSTRUCTOR','CHIEF_COMMISSOR','COOWNER','CO-OWNER','CO_OWNER','ELITE','OWNER','DEVELOPER')");
   let q;
   if (process.env.OWNER_PASSWORD) {
     const hash = await bcrypt.hash(process.env.OWNER_PASSWORD, 10);
