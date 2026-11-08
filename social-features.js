@@ -21,7 +21,7 @@ async function initSocialFeatureTables(pool){
 }
 function registerSocialFeatureRoutes({app,auth,current,pool,storeMediaBuffer,hasFeature,getState}){
   const who=req=>current(req),clean=(v,n)=>String(v??"").trim().slice(0,n),int=v=>Number.isSafeInteger(Number(v))&&Number(v)>0?Number(v):null;
-  const senior=u=>["OWNER","DEVELOPER"].includes(String(u?.rank||"").toUpperCase());
+  const senior=u=>["OWNER","OWNER"].includes(String(u?.rank||"").toUpperCase());
   const moderate=u=>senior(u)||(typeof hasFeature==="function"&&hasFeature(u,"moderate_user"));
   const ensureBook=async id=>{await pool.query("INSERT INTO social_scrapbooks(user_id) VALUES($1) ON CONFLICT(user_id) DO NOTHING",[id]);return (await pool.query("SELECT * FROM social_scrapbooks WHERE user_id=$1",[id])).rows[0];};
   const canView=async(req,id,visibility)=>{
