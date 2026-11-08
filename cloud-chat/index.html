@@ -31,7 +31,7 @@
         <button class="icon-btn" id="new-chat" aria-label="New conversation">＋</button>
       </div>
       <label class="search-box"><span>⌕</span><input id="search" placeholder="Search people, rooms..." autocomplete="off"></label>
-      <div class="sidebar-tabs"><button class="tab active" data-filter="all">All <span>8</span></button><button class="tab" data-filter="unread">Unread</button><button class="tab" data-filter="groups">Rooms</button></div>
+      <div class="sidebar-tabs"><button class="tab active" data-filter="all">All</button><button class="tab" data-filter="unread">Unread</button><button class="tab" data-filter="groups">Rooms</button></div>
       <div class="section-label"><span>PINNED</span><button class="tiny-btn" id="add-room">＋</button></div>
       <div id="conversation-list" class="conversation-list"></div>
       <div class="sidebar-bottom">
@@ -43,23 +43,16 @@
     <main class="main-panel">
       <header class="topbar">
         <div class="crumb"><span class="crumb-cloud">☁</span><span>Cloud Chat</span><span class="slash">/</span><strong id="crumb-current">The Lounge</strong></div>
-        <div class="top-actions"><span class="secure-label"><i></i> Your space is private</span><button class="icon-btn" id="call-btn" title="Start a call">⌁</button><button class="icon-btn notification-trigger" id="notifications" title="Notifications">♧<b class="notification-count" id="notification-count">3</b></button><button class="avatar avatar-mini">Y</button></div>
+        <div class="top-actions"><span class="secure-label"><i></i> Your space is private</span><button class="icon-btn" id="call-btn" title="Start a call">⌁</button><button class="icon-btn notification-trigger" id="notifications" title="Notifications">♧<b class="notification-count" id="notification-count">0</b></button><button class="avatar avatar-mini">Y</button></div>
       </header>
 
       <section class="view view-chat active" id="chat-view">
         <div class="chat-heading">
-          <div class="room-symbol">☁</div><div class="room-heading-copy"><div class="eyebrow">COMMUNITY ROOM <span class="online-pill"><i></i> 24 online</span></div><h2 id="chat-title">The Lounge</h2><p id="chat-subtitle">A little corner of the internet to feel at home.</p></div>
+          <div class="room-symbol">☁</div><div class="room-heading-copy"><div class="eyebrow">COMMUNITY ROOM <span class="online-pill"><i></i> Live community</span></div><h2 id="chat-title">The Lounge</h2><p id="chat-subtitle">A little corner of the internet to feel at home.</p></div>
           <div class="heading-actions"><button class="soft-btn" id="members-btn">♧ <span>Members</span></button><button class="icon-btn" title="More room options">···</button></div>
         </div>
-        <div class="chat-content" id="messages">
-          <div class="day-divider"><span>TODAY</span></div>
-          <div class="welcome-card"><div class="welcome-art">☁</div><div><strong>Welcome to your little corner of the clouds.</strong><p>Be kind, be curious, and make yourself at home.</p></div></div>
-          <div class="message-row"><div class="avatar avatar-lilac">M</div><div class="message-body"><div class="message-meta"><strong>Mira</strong><span>10:42 AM</span><span class="role-tag">MOD</span></div><div class="bubble">Good morning, cloud people ☀️ How's everyone doing today?</div><div class="message-reactions"><button>♡ 3</button><button>＋</button></div></div></div>
-          <div class="message-row"><div class="avatar avatar-peach">A</div><div class="message-body"><div class="message-meta"><strong>Aria</strong><span>10:44 AM</span></div><div class="bubble">Finally got my playlist sorted. The vibes are immaculate today ✨</div></div></div>
-          <div class="message-row own"><div class="message-body"><div class="message-meta"><strong>You</strong><span>10:46 AM</span></div><div class="bubble">That's the energy we're bringing into this week 😌</div></div><div class="avatar avatar-self">Y</div></div>
-          <div class="message-row"><div class="avatar avatar-blue">J</div><div class="message-body"><div class="message-meta"><strong>Jules</strong><span>10:48 AM</span></div><div class="bubble">Anyone up for a game night later?</div><div class="message-reactions"><button>♡ 2</button><button>＋</button></div></div></div>
-        </div>
-        <div class="typing-line" id="typing-line"><span class="typing-dots"><i></i><i></i><i></i></span> Mira is around</div>
+        <div class="chat-content" id="messages"><div class="day-divider"><span>LIVE CHAT</span></div><div class="welcome-card"><div class="welcome-art">☁</div><div><strong>Connect to Cloud Chat</strong><p>Sign in or create an account to load real conversations.</p></div></div></div>
+        <div class="typing-line" id="typing-line">Sign in to see live activity</div>
         <form class="composer" id="message-form"><button type="button" class="attach-btn" title="Add attachment">＋</button><input id="message-input" placeholder="Message The Lounge..." autocomplete="off"><button type="button" class="emoji-btn" title="Emoji">☺</button><button class="send-btn" type="submit" aria-label="Send message">↑</button></form>
         <div class="composer-hint">Be kind to one another <span>↵ to send</span></div>
       </section>
@@ -74,14 +67,12 @@
       <div class="details-head"><span>ROOM DETAILS</span><button class="icon-btn" id="close-details">×</button></div>
       <div class="room-cover"><div class="cover-cloud">☁</div><span>EST. 2026</span></div>
       <h3 id="details-title">The Lounge</h3><p id="details-description">A little corner of the internet to feel at home. Come as you are.</p>
-      <div class="detail-stats"><div><strong>128</strong><small>Members</small></div><div><strong>24</strong><small>Online now</small></div><div><strong>08</strong><small>Moderators</small></div></div>
-      <div class="members-head"><strong>Online now</strong><span>24</span></div>
-      <div class="member-list"><div class="member"><div class="avatar avatar-lilac">M<i></i></div><span><strong>Mira</strong><small>Moderator</small></span><b>✦</b></div><div class="member"><div class="avatar avatar-peach">A<i></i></div><span><strong>Aria</strong><small>Member</small></span></div><div class="member"><div class="avatar avatar-blue">J<i></i></div><span><strong>Jules</strong><small>Member</small></span></div><div class="member"><div class="avatar avatar-green">K<i></i></div><span><strong>Kai</strong><small>Member</small></span></div></div>
+      <div class="detail-stats"><div><strong id="room-member-count">—</strong><small>Members</small></div><div><strong id="room-online-count">—</strong><small>Online now</small></div><div><strong>13</strong><small>Ranks</small></div></div><div class="members-head"><strong>Community members</strong><span id="room-member-label">Live list</span></div><div class="member-list"></div><span><strong>Mira</strong><small>Moderator</small></span><b>✦</b></div><div class="member"><div class="avatar avatar-peach">A<i></i></div><span><strong>Aria</strong><small>Member</small></span></div><div class="member"><div class="avatar avatar-blue">J<i></i></div><span><strong>Jules</strong><small>Member</small></span></div><div class="member"><div class="avatar avatar-green">K<i></i></div><span><strong>Kai</strong><small>Member</small></span></div></div>
       <div class="detail-footer"><span>ROOM GUIDELINES</span><p>Respect · Kindness · Keep it welcoming</p></div>
     </aside>
   </div>
   <div class="toast" id="toast" role="status"></div>
-  <div class="modal-backdrop" id="modal"><div class="modal"><button class="modal-close" id="modal-close">×</button><div class="modal-logo">☁</div><div class="eyebrow">A FRESH PLACE TO CONNECT</div><h2>Welcome to Cloud Chat</h2><p>Sign in to your space or create a new account.</p><div class="auth-tabs"><button class="active" data-auth="login">Sign in</button><button data-auth="signup">Create account</button></div><form id="auth-form"><label><span>Username or email</span><input id="auth-username" name="username" required autocomplete="username" placeholder="Choose a username"></label><label id="auth-email-label" hidden><span>Email address</span><input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com"></label><label><span>Password</span><input id="auth-password" name="password" type="password" required minlength="8" autocomplete="current-password" placeholder="At least 8 characters"></label><button class="primary-btn" type="submit">Continue <span>→</span></button></form><small class="demo-note">Your account is private. Keep your password secure.</small></div></div>
-  <script src="./app.js"></script>
+  <div class="modal-backdrop open" id="modal"><div class="modal"><button class="modal-close" id="modal-close">×</button><div class="modal-logo">☁</div><div class="eyebrow">A FRESH PLACE TO CONNECT</div><h2>Welcome to Cloud Chat</h2><p>Sign in to your space or create a new account.</p><div class="auth-tabs"><button class="active" data-auth="login">Sign in</button><button data-auth="signup">Create account</button></div><form id="auth-form"><label><span>Username or email</span><input id="auth-username" name="username" required autocomplete="username" placeholder="Choose a username"></label><label id="auth-email-label" hidden><span>Email address</span><input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com"></label><label><span>Password</span><input id="auth-password" name="password" type="password" required minlength="8" autocomplete="current-password" placeholder="At least 8 characters"></label><button class="primary-btn" type="submit">Continue <span>→</span></button></form><small class="demo-note">Your account is private. Keep your password secure.</small></div></div>
+  <script src="./app.js?v=cloudchat-live-bootstrap-20261108"></script>
 </body>
 </html>
