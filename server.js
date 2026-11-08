@@ -2113,7 +2113,7 @@ app.delete(
   async(req,res)=>{
     const u=current(req);
     if(!u)return res.status(401).json({error:"Login required"});
-    if(u.username===DEFAULT_OWNER||String(u.rank||"").toUpperCase()==="OWNER"||String(u.rank||"").toUpperCase()==="OWNER"){
+    if(u.username===DEFAULT_OWNER||String(u.rank||"").toUpperCase()==="OWNER"){
       return res.status(400).json({error:"The permanent Owner/Owner account cannot be deleted."});
     }
     try{
@@ -2537,7 +2537,7 @@ app.post("/api/rooms/:id/staff-action",auth,async(req,res)=>{
   const actor=current(req),room=db.rooms.find(x=>String(x.id)===String(req.params.id)),target=db.users.find(x=>String(x.id)===String(req.body.userId));
   if(!room||!target)return res.status(404).json({error:"Room or user not found"});
   if(!requirePrivateRoomAccess(req,res,room,actor))return;
-  const role=roomRole(room.id,actor.id),level=roomRoleLevel(role),global=["OWNER","COOWNER","COMMISSOR","OWNER"].includes(String(actor.rank||"").toUpperCase());
+  const role=roomRole(room.id,actor.id),level=roomRoleLevel(role),global=["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(actor.rank||"").toUpperCase());
   const action=String(req.body.action||"").toUpperCase(),reason=cleanText(req.body.reason||"Room rule violation").slice(0,240);
   if(target.id===actor.id)return res.status(400).json({error:"You cannot moderate yourself."});
   const targetGlobalRank=String(target.rank||"MEMBER").toUpperCase();
@@ -4837,7 +4837,7 @@ app.get("/api/developer/network-security/timeline",auth,async(req,res)=>{const a
 app.get("/api/staff/ip-inspection",auth,async(req,res)=>{
   const actor=current(req),viewerRank=String(actor?.rank||"").toUpperCase();
   if(!["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(viewerRank))return res.status(403).json({error:"Your rank does not have IP Inspection access."});
-  const fullAccess=viewerRank==="OWNER"||viewerRank==="OWNER";
+  const fullAccess=viewerRank==="OWNER";
   const canInspectTarget=target=>fullAccess||(String(target?.id)!==String(actor?.id)&&(rankOrder[String(target?.rank||"MEMBER").toUpperCase()]??999)<(rankOrder[viewerRank]??-1));
   let stage="prepare-query";
   try{
@@ -4974,7 +4974,7 @@ function filterAuditRowsForRank(rows,user){
     const key=auditVisibilityKey(row), rule=settings[key]||{enabled:true,minimumRank:"ADMIN"};
     if(rule.enabled===false)return false;
     const minimum=rankNames.indexOf(String(rule.minimumRank||"ADMIN").toUpperCase());
-    return viewerRank==="OWNER"||viewerRank==="OWNER"||(viewerLevel>=0&&minimum>=0&&viewerLevel>=minimum);
+    return viewerRank==="OWNER"||(viewerLevel>=0&&minimum>=0&&viewerLevel>=minimum);
   });
 }
 app.get("/api/staff/system-center/audit",auth,async(req,res)=>{
@@ -5218,7 +5218,7 @@ function coownerOrAbove(req,res,next){
 
 function normalizeAllowedRanks(v, fallback){
   const list=Array.isArray(v)?v:[];
-  const allowed=["OWNER","ADMIN","STAFF","TRUSTED","PREMIUM","VIP","USER","MEMBER","MOD","SUPER_ADMIN","COMMISSOR","COOWNER"];
+  const allowed=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
   const out=[...new Set(list.map(x=>String(x||"").toUpperCase()).filter(x=>allowed.includes(x)))];
   return out.length?out:fallback;
 }
@@ -5315,7 +5315,7 @@ app.post('/api/wall/:id/save',auth,async(req,res)=>{
 });
 app.post('/api/wall/:id/feature',auth,async(req,res)=>{
   const u=current(req),rank=String(u.rank||'').toUpperCase();
-  if(!hasFeature(u,'pin_news')&&!['OWNER','OWNER'].includes(rank))return res.status(403).json({error:'Only authorized staff can feature community posts.'});
+  if(!hasFeature(u,'pin_news')&&!['OWNER'].includes(rank))return res.status(403).json({error:'Only authorized staff can feature community posts.'});
   const postId=Number(req.params.id),featured=req.body?.featured===true;
   if(!Number.isSafeInteger(postId)||postId<1)return res.status(400).json({error:'Invalid post id.'});
   const result=await pool.query('UPDATE wall_posts SET featured=$2 WHERE id=$1 RETURNING id,featured',[postId,featured]);
@@ -7575,11 +7575,11 @@ app.patch('/api/suggestions/:id',auth,async(req,res)=>{
 app.get('/api/staff-points/:id',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found.'});
   if(String(actor.id)!==String(target.id)&&!hasRank(actor,'MOD'))return res.status(403).json({error:'Staff points are visible only to the account owner and staff.'});
-  res.json({staffPoints:Math.max(0,Math.floor(Number(target.staffPoints)||0)),canEdit:['OWNER','OWNER'].includes(String(actor.rank||'').toUpperCase())});
+  res.json({staffPoints:Math.max(0,Math.floor(Number(target.staffPoints)||0)),canEdit:['OWNER'].includes(String(actor.rank||'').toUpperCase())});
 });
 app.patch('/api/staff-points/:id',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found.'});
-  if(!['OWNER','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Only Owner and Owner can edit staff points.'});
+  if(!['OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Only the Owner can edit staff points.'});
   const value=Number(req.body.points);if(!Number.isSafeInteger(value)||value<0||value>1000000)return res.status(400).json({error:'Enter a whole number from 0 to 1,000,000.'});
   try{const q=await pool.query("UPDATE users SET profile_data=jsonb_set(COALESCE(profile_data,'{}'::jsonb),'{staffPoints}',to_jsonb($1::int),true) WHERE id=$2 RETURNING id",[value,Number(target.id)]);if(!q.rowCount)return res.status(404).json({error:'User not found.'});target.staffPoints=value;save();res.json({ok:true,staffPoints:value});}
   catch(e){console.error('[STAFF POINTS] update:',e?.message||e);res.status(500).json({error:'Could not update staff points.'});}
