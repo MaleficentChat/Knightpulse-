@@ -470,6 +470,7 @@ function canAccessStaffTarget(user){
 }
 function canFeature(key){
   if(!state.user) return false;
+  if(key==="staff_rank_assignment") return ["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(state.user.rank||"").toUpperCase());
   // News publishing is always available to Admin and every higher staff rank.
   if(key==='publish_news'||key==='news_posting')return (rankOrder[String(state.user.rank||'').toUpperCase()]??-1)>=(rankOrder.ADMIN??999);
   const roomRole=String(state.currentRoomRole||'USER').toUpperCase();
@@ -1646,7 +1647,7 @@ function maleficentUserAge(user=state.user) {
   return age>=0&&age<=120?age:null;
 }
 function isMaleficentStaff(user=state.user) {
-  return ["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(String(user?.rank||"").toUpperCase());
+  return ["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER","DEVELOPER"].includes(String(user?.rank||"").toUpperCase());
 }
 function roomForAgeRouting() {
   const staff=isMaleficentStaff();
@@ -1981,7 +1982,7 @@ let onlinePanelTab="online";
 let onlinePanelCache=[];
 
 function isStaffUser(user){
-  return ["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(user.rank);
+  return ["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER","DEVELOPER"].includes(String(user.rank||"").toUpperCase());
 }
 
 let onlineSortMode="online-rank";
