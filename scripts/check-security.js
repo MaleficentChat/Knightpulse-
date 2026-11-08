@@ -638,12 +638,20 @@ assert.match(staffUi,/function auditCategoryFor\(row\)[\s\S]*?function renderAud
   "admin activity logs must be grouped into understandable categories");
 assert.match(staffUi,/\[\[\x27all\x27,\x27All activity\x27\],\[\x27moderation\x27,\x27Moderation\x27\],\[\x27accounts\x27,\x27Accounts & ranks\x27\],\[\x27system\x27,\x27System & security\x27\]/,
   "audit log categories must include moderation, accounts/ranks and system/security");
-assert.match(staffUi,/kp-staff-groups[\s\S]*?Overview[\s\S]*?Moderation & review[\s\S]*?Team management[\s\S]*?Account & system controls/,
+assert.match(staffUi,/kp-staff-groups-ordered[\s\S]*?Dropdown options[\s\S]*?Other staff tools/,
   "staff tools must be grouped into clear functional sections");
-assert.match(staffUi,/kp-profile-quick-stats[\s\S]*?kp-profile-tabs-label/,
+assert.match(staffUi,/profile-actions-row[\s\S]*?kp-profile-tabs-label/,
   "member profiles must use the refreshed identity and navigation layout");
 assert.match(staffCss,/\.kp-staff-groups[\s\S]*\.kp-audit-filters[\s\S]*\.kp-profile-tabs-label/,
   "profile, staff workspace and audit category layouts must be styled");
-assert.ok(indexHtml.includes("knightpulse-complete.css?v=profile-staff-logs-20261108-2"),
+assert.ok(indexHtml.includes("knightpulse-complete.css?v=profile-staff-layout-20261108-3"),
   "the HTML must request the refreshed profile, staff and audit styles");
+
+assert.doesNotMatch(staffUi,/kp-profile-quick-stats|<small>Experience<\/small>|<small>Likes<\/small>/,
+  "profile headers must not show the distracting Level, Experience and Likes stat labels");
+assert.match(staffCss,/\.admin-activity-logs>summary[\s\S]*?font-size:15px[\s\S]*?\.admin-activity-logs-card/,
+  "Admin Activity Logs must have a full-size summary and content panel");
+assert.match(staffCss,/\.kp-staff-dropdown-section[\s\S]*?\.kp-staff-regular-section/,
+  "staff dropdown options must be positioned above non-dropdown tools");
+
 
