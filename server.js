@@ -5099,6 +5099,12 @@ app.get("/api/staff/dashboard",auth,featureAllowed("view_staff_dashboard"),async
   const u=current(req);
   if(!hasRank(u,"MOD"))return res.status(403).json({error:"Staff only"});
   try{
+    const stats={users:db.users.length,online:db.users.filter(x=>x.online).length,messages:db.messages.length,reportsOpen:0};
+    if(String(u.rank||"").toUpperCase()==="MOD"){
+      const count=await pool.query("SELECT COUNT(*)::int AS count FROM reports WHERE COALESCE(data->>'status','OPEN')='OPEN'");
+      stats.reportsOpen=Number(count.rows[0]?.count||0);
+      return res.json({stats});
+    }
     const stored=await pool.query("SELECT r.id,r.reporter_id,r.reported_id,r.conversation_user_id,r.reason,r.data,r.created_at,reporter.username AS reporter_username,target.username AS reported_username,convo.username AS conversation_username FROM reports r LEFT JOIN users reporter ON reporter.id=r.reporter_id LEFT JOIN users target ON target.id=r.reported_id LEFT JOIN users convo ON convo.id=r.conversation_user_id ORDER BY r.created_at DESC LIMIT 500");
     const pgReports=stored.rows.map(row=>{
       const d=row.data&&typeof row.data==="object"?row.data:{};
