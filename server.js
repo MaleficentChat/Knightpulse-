@@ -5820,6 +5820,7 @@ app.get('/api/staff/premium-requests',auth,async(req,res)=>{
 });
 async function grantPremiumToStaffTarget(actor,target){
   if(!target)return {status:404,error:'User not found.'};
+  if(!canAccessStaffTarget(actor,target))return {status:403,error:'You can only grant Premium to an account below your own rank.'};
   if(target.username===DEFAULT_OWNER||String(target.rank||'').toUpperCase()==='OWNER')return {status:403,error:'The Owner account is protected.'};
   const targetRank=String(target.rank||'MEMBER').toUpperCase();
   if((rankOrder[targetRank]??999)>rankOrder.PREMIUM)return {status:403,error:'Premium can only be granted to Member, VIP, SVIP or Premium accounts; higher staff ranks are protected.'};
