@@ -1680,21 +1680,22 @@ app.post(
       String(displayName).length>32||
       !password||
       password.length<8||
-      !normalizedEmail||
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)||
+      (normalizedEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail))||
       !normalizedDob||
       !normalizedGender
     ){
       return res.status(400).json({
         error:
-          "Display name, email, date of birth, gender and password are required. Password must be 8+ characters."
+          "Display name, date of birth, gender and password are required. Email is optional; if supplied, enter a valid email. Password must be 8+ characters."
       });
     }
 
     {const dobDate=new Date(normalizedDob+"T00:00:00Z");if(Number.isNaN(dobDate.getTime()) || dobDate>new Date()) return res.status(400).json({error:"Please enter a valid date of birth."});}
 
-    const emailTaken=await pool.query(`SELECT id FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1`,[normalizedEmail]);
-    if(emailTaken.rows.length) return res.status(409).json({error:"Email is already registered."});
+    if(normalizedEmail){
+      const emailTaken=await pool.query(`SELECT id FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1`,[normalizedEmail]);
+      if(emailTaken.rows.length) return res.status(409).json({error:"Email is already registered."});
+    }
 
     if(findUser(username)){
       return res.status(409).json({
@@ -1784,7 +1785,7 @@ app.post(
     if(!loginUsername||!passwordInput){
       return res.status(400).json({error:"Enter both your username and password."});
     }
-    const u=findUser(loginUsername);
+    const u=findUser(loginUsername)||db.users.find(x=>String(x.email||"").trim().toLowerCase()===loginUsername.toLowerCase());
     let passwordValid=!!(u?.password && passwordInput===String(u.password));
 
     // Some older accounts may contain a malformed legacy hash. A bad stored
