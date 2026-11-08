@@ -5034,7 +5034,7 @@ app.post('/api/staff/applications/:id/reject',auth,featureAllowed('view_staff_da
 });
 app.delete('/api/staff/applications/:id',auth,async(req,res)=>{
   const actor=current(req);
-  if(String(actor.rank||'').toUpperCase()!=='OWNER')return res.status(403).json({error:'Developer rank required to delete staff applications.'});
+  if(String(actor.rank||'').toUpperCase()!=='OWNER')return res.status(403).json({error:'Owner rank required to delete staff applications.'});
   try{
     await ensureStaffApplicationsTable();
     const q=await pool.query('DELETE FROM staff_applications WHERE id=$1 RETURNING username',[req.params.id]);
