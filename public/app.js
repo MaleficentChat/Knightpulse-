@@ -4696,7 +4696,7 @@ function openProfileEditMenu(targetUser=null){
   const canEditEmail=self||canFeature('edit_email');
   const canChangePassword=self||canFeature('change_password');
   const canViewAccount=self||canFeature('manage_staff_accounts');
-  const canDelete=self?(!['OWNER','OWNER'].includes(String(user.rank||'').toUpperCase())):(can('COOWNER')&&canAccessStaffTarget(user));
+  const canDelete=self?(!['OWNER'].includes(String(user.rank||'').toUpperCase())):(can('COOWNER')&&canAccessStaffTarget(user));
   const sections=[
     {id:'editUpload',icon:'📤',title:'Upload',desc:'Profile picture or profile background',show:self||canModify},
     {id:'removeProfilePicture',icon:'🗑️',title:'Remove profile picture',desc:self?'Clear your current profile photo':'Remove this member\'s profile photo',show:self||(!self&&canModify&&canAccessStaffTarget(user))},
