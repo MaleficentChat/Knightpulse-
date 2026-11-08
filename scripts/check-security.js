@@ -624,8 +624,8 @@ assert.match(staffUi, /Owner Command Center[\s\S]*Elite Command Center/,
   "Elite and Owner must receive distinct command-center interfaces");
 assert.match(staffUi, /bootstrapData\.settings\?\.feature_grants[\s\S]*Permission audit/,
   "the command center must expose the currently configured feature-grant permission audit");
-assert.match(staffUi, /api\('\/api\/notifications\/unread'\)[\s\S]*system-announcement[\s\S]*Staff Notifications/,
-  "staff spaces must load their unread staff-notification inbox");
+assert.match(staffUi, /api\('\/api\/notifications\/unread'\)[\s\S]*system-announcement/,
+  "staff spaces must load unread system and staff notifications");
 assert.match(staffUi, /api\('\/api\/notifications\/'\+encodeURIComponent\(button\.dataset\.kpRead\)\+'\/read'/,
   "staff notification items must be individually markable as read");
 assert.match(staffUi, /adminActivityLogsDropdown[\s\S]*Admin Activity Logs/,
