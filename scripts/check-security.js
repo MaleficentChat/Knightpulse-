@@ -522,6 +522,13 @@ assert.match(server.slice(server.indexOf("app.patch('/api/staff/user/:id/rank'")
 assert.match(server.slice(server.indexOf("app.post('/api/staff/applications/:id/grant'"), server.indexOf('app.get("/api/staff/dashboard"')),
   /hierarchyIndex\(target\.rank\)>=hierarchyIndex\(actorRankNow\)/,
   'staff application approvals must reject equal- and higher-ranked targets');
+assert.match(activeClient,/const targetBelowActor=\(rankOrder\[targetRank\]\?\?-1\)<\(rankOrder\[actorRank\]\?\?-1\);[\s\S]*const allowed=ranks\.filter\(r=>rankOrder\[r\]<=ceiling && targetBelowActor\)/,
+  'the profile rank selector must hide grants above the actor ceiling and prevent editing equal- or higher-ranked accounts');
+assert.match(activeClient,/ranks\.filter\(r=>rankOrder\[r\]<=\(\(String\(state\.user\?\.rank\|\|\"\"\)\.toUpperCase\(\)==\"OWNER\"\)\?rankOrder\.OWNER:\(String\(state\.user\?\.rank\|\|\"\"\)\.toUpperCase\(\)==\"ELITE\"\)\?rankOrder\.COOWNER:\(String\(state\.user\?\.rank\|\|\"\"\)\.toUpperCase\(\)==\"COOWNER\"\)\?rankOrder\.CHIEF_COMMISSOR:rankOrder\.MOD\)\)/,
+  'the staff-application review selector must use the same rank ceilings');
+assert.match(server,/app\.post\('\/api\/staff\/applications\/:id\/grant',[\s\S]*?if\(!\['COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'\]\.includes\(String\(actor\.rank\|\|''\)\.toUpperCase\(\)\)\)/,
+  'only Commissor and higher ranks may review staff applications');
+
 
 assert.ok(server.includes('invisible_mode:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]'),
   "Invisible mode must begin at Commissor");
