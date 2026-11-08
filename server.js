@@ -477,6 +477,7 @@ function featureRank(key){
 
 function hasFeature(u,key){
   if(!u) return false;
+  if(String(key||"").toLowerCase()==="staff_rank_assignment") return ["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(u.rank||"").toUpperCase());
   // News publishing is a fixed staff-rank permission: Admin and every rank above.
   if(["publish_news","news_posting"].includes(String(key||"").toLowerCase())) return hasRank(u,"ADMIN");
   if(String(u.rank).toUpperCase()==="DEVELOPER") return true;
@@ -1168,16 +1169,7 @@ app.post("/api/staff/under-construction",express.json(),auth,ownerOnly,async(req
 });
 
 function staff(r){
-  return [
-    "MOD",
-    "ADMIN",
-    "SUPER_ADMIN",
-    "COMMISSOR",
-    "INSTRUCTOR",
-    "COOWNER",
-    "OWNER",
-    "DEVELOPER"
-  ].includes(String(r).toUpperCase());
+  return ["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER","DEVELOPER"].includes(String(r).toUpperCase());
 }
 
 function ownerOnly(req,res,next){
