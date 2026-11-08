@@ -4137,13 +4137,13 @@ app.post('/api/wallet/convert',auth,async(req,res)=>{
 });
 app.post('/api/wallet/reward',auth,async(req,res)=>{
   const actor=current(req),rank=String(actor.rank||'').toUpperCase();
-  if(!['COOWNER','OWNER','OWNER'].includes(rank))return res.status(403).json({error:'Only Coowner, Owner and Owner can grant Gold or Diamond rewards.'});
+  if(!['COOWNER','ELITE','OWNER'].includes(rank))return res.status(403).json({error:'Only Co-owner, Elite, or Owner can grant Gold or Diamond rewards.'});
   const currency=String(req.body?.currency||'DIAMONDS').toUpperCase();
   if(!['DIAMONDS','GOLD'].includes(currency))return res.status(400).json({error:'Choose Gold or Diamonds.'});
   const target=findUser(req.body?.userId||req.body?.username),amount=Number(req.body?.amount),reason=cleanText(req.body?.reason||'').trim().slice(0,240);
-  const max=rank==='COOWNER'?10:rank==='OWNER'?100:Number.MAX_SAFE_INTEGER;
+  const max=['COOWNER','ELITE'].includes(rank)?10:rank==='OWNER'?100:Number.MAX_SAFE_INTEGER;
   const unit=currency==='GOLD'?'gold':'Diamonds',column=currency==='GOLD'?'gold':'diamonds';
-  if(!target||!Number.isSafeInteger(amount)||amount<1||amount>max||!reason)return res.status(400).json({error:rank==='COOWNER'?'Choose a user, reason and a reward from 1 to 10.':rank==='OWNER'?'Choose a user, reason and a reward from 1 to 100.':'Choose a user, valid amount and reason.'});
+  if(!target||!Number.isSafeInteger(amount)||amount<1||amount>max||!reason)return res.status(400).json({error:['COOWNER','ELITE'].includes(rank)?'Choose a user, reason and a reward from 1 to 10.':rank==='OWNER'?'Choose a user, reason and a reward from 1 to 100.':'Choose a user, valid amount and reason.'});
   const client=await pool.connect();let balance;
   try{
     await client.query('BEGIN');
@@ -4897,11 +4897,11 @@ app.get("/api/staff/ip-inspection",auth,async(req,res)=>{
       signals:row.network.vpnSignals||[],method:row.network.vpnDetectionMethod||"provider flag",
       ip_address:row.ip_address
     }));
-    const personalizedRecords=viewerRank==="CHIEF_COMMISSOR"?records.map(row=>({username:row.username,email:row.email||"",network:{country:row.network?.country||"",region:row.network?.region||"",city:row.network?.city||""}})):viewerRank==="COOWNER"?records.map(({user_agent,id,user_id,...row})=>({...row,network:Object.fromEntries(Object.entries(row.network||{}).filter(([key])=>key!=="postalCode"))})):records;
+    const personalizedRecords=viewerRank==="CHIEF_COMMISSOR"?records.map(row=>({username:row.username,email:row.email||"",network:{country:row.network?.country||"",region:row.network?.region||"",city:row.network?.city||""}})):["COOWNER","ELITE"].includes(viewerRank)?records.map(({user_agent,id,user_id,...row})=>({...row,network:Object.fromEntries(Object.entries(row.network||{}).filter(([key])=>key!=="postalCode"))})):records;
     const personalizedMatches=viewerRank==="CHIEF_COMMISSOR"?[]:sameIpAccounts.map(row=>{const {user_agent,...safe}=row;const network=geo[row.ip_address]||{};return fullAccess?{...safe,network}:{id:safe.id,username:safe.username,email:safe.email,created_at:safe.created_at,ip_address:safe.ip_address,event_type:safe.event_type,recorded_at:safe.recorded_at,network:{country:network.country||"",region:network.region||"",city:network.city||"",networkProvider:network.networkProvider||"",asn:network.asn||"",lookupStatus:network.lookupStatus||"Unavailable"}};});
     return res.json({
       accessProfile:viewerRank,
-      accessFields:viewerRank==="CHIEF_COMMISSOR"?["email","location"]:viewerRank==="COOWNER"?["email","ip_address","location","networkProvider","networkTechnical","eventTime"]:["all"],
+      accessFields:viewerRank==="CHIEF_COMMISSOR"?["email","location"]:["COOWNER","ELITE"].includes(viewerRank)?["email","ip_address","location","networkProvider","networkTechnical","eventTime"]:["all"],
       vpnAccounts:fullAccess?vpnAccounts:[],
       sameIpAccounts:personalizedMatches,
       records:personalizedRecords,
