@@ -487,6 +487,12 @@ assert.ok(server.includes('invisible_mode:["COMMISSOR","CHIEF_COMMISSOR","COOWNE
   "Invisible mode must begin at Commissor");
 assert.ok(server.includes('ghost_mode:["OWNER"]') && server.includes('dead_mode:["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]'),
   "Ghost and Dead modes must follow the current rank policy");
+assert.ok(database.includes("VALUES('Maleficent',$1,'OWNER',999999,999999)"),
+  "fresh database bootstrap must seed the canonical Owner rank");
+assert.ok(database.includes('owner.rank="OWNER"') && !database.includes("DEVELOPER"),
+  "database state loading must never reintroduce a Developer rank");
+assert.ok(database.includes('["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]'),
+  "database defaults must include every current rank for filter settings");
 assert.ok(server.includes("const FEATURE_GRANT_POLICY_VERSION=8;"),
   "rank and feature-grant policy migration must be versioned");
 assert.ok(server.includes("blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER']"),
