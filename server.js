@@ -1091,8 +1091,8 @@ app.get("/api/under-construction/status",async(req,res)=>{
     // Maintenance stays enabled until the owner/developer explicitly switches it off.
     const enabled=setting.enabled===true;
     const u=current(req),rankName=String(u?.rank||"").toUpperCase();
-    const exempt=rankName==="OWNER"||rankName==="OWNER";
-    const canManage=!!u&&(rankName==="OWNER"||rankName==="OWNER");
+    const exempt=rankName==="OWNER";
+    const canManage=!!u&&(rankName==="OWNER");
     res.json({enabled:enabled&&!exempt,configuredEnabled:enabled,until:0,exempt,canManage,message:String(setting.message||"")});
   }catch(error){
     console.error("Under-construction status read failed:",error);
@@ -1182,7 +1182,7 @@ function staff(r){
 
 function ownerOnly(req,res,next){
   const u=current(req);
-  if(!u || !(String(u.rank).toUpperCase()==="OWNER" || String(u.rank).toUpperCase()==="OWNER")){
+  if(!u || !(String(u.rank).toUpperCase()==="OWNER")){
     return res.status(403).json({error:"Owner only"});
   }
   next();
@@ -1407,7 +1407,7 @@ async function ensureOwner(){
   let q;
   if (process.env.OWNER_PASSWORD) {
     const hash = await bcrypt.hash(process.env.OWNER_PASSWORD, 10);
-    q = await pool.query(`INSERT INTO users(username,password,rank,gold,xp) VALUES('Maleficent',$1,'OWNER',999999,999999) ON CONFLICT(username) DO UPDATE SET rank='Owner',password=EXCLUDED.password RETURNING *`, [hash]);
+    q = await pool.query(`INSERT INTO users(username,password,rank,gold,xp) VALUES('Maleficent',$1,'OWNER',999999,999999) ON CONFLICT(username) DO UPDATE SET rank='OWNER',password=EXCLUDED.password RETURNING *`, [hash]);
   } else {
     q = await pool.query(`UPDATE users SET rank='OWNER' WHERE username='Maleficent' RETURNING *`);
     if (!q.rowCount) throw new Error('OWNER_PASSWORD is required to initialize the permanent Owner account.');
@@ -1814,7 +1814,7 @@ app.post(
 
     if(["VIP","SVIP"].includes(String(u.rank).toUpperCase()) && u.vipExpiresAt && Number(u.vipExpiresAt)<Date.now()){
       u.rank="MEMBER"; u.vipExpiresAt=null; u.vip_expires_at=null;
-      await pool.query(`UPDATE users SET rank='user',vip_expires_at=NULL WHERE id=$1`,[Number(u.id)]);
+      await pool.query(`UPDATE users SET rank='MEMBER',vip_expires_at=NULL WHERE id=$1`,[Number(u.id)]);
     }
     if(!(await enforceNetworkAccess(req,res,u)))return;
     if(u.banned===true){
@@ -5521,12 +5521,12 @@ app.post('/api/shop/premium/request',auth,async(req,res)=>{
 app.get('/api/owner/premium-requests',ownerOnly,async(req,res)=>{const {rows}=await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`);res.json({requests:rows});});
 app.post('/api/owner/premium-requests/:id/grant',ownerOnly,async(req,res)=>{
   const q=await pool.query(`SELECT user_id FROM premium_requests WHERE id=$1 AND status='pending'`,[req.params.id]); if(!q.rowCount)return res.status(404).json({error:'Request not found'});
-  const userId=Number(q.rows[0].user_id); await pool.query(`UPDATE users SET rank='Premium',is_premium=true,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`UPDATE premium_requests SET status='granted' WHERE user_id=$1 AND status='pending'`,[userId]);
+  const userId=Number(q.rows[0].user_id); await pool.query(`UPDATE users SET rank='PREMIUM',is_premium=true,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`UPDATE premium_requests SET status='granted' WHERE user_id=$1 AND status='pending'`,[userId]);
   const u=db.users.find(x=>Number(x.id)===userId); if(u){u.rank='PREMIUM';u.isPremium=true;u.is_premium=true;u.vipExpiresAt=null;} save(); res.json({ok:true,requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
 });
 app.post('/api/premium/grant',ownerOnly,async(req,res)=>{
   const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'Cannot change Owner'});
-  v.rank='PREMIUM';v.isPremium=true;v.is_premium=true;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='Premium',is_premium=true,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`UPDATE premium_requests SET status='granted' WHERE user_id=$1 AND status='pending'`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
+  v.rank='PREMIUM';v.isPremium=true;v.is_premium=true;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='PREMIUM',is_premium=true,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`UPDATE premium_requests SET status='granted' WHERE user_id=$1 AND status='pending'`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
 });
 app.post('/api/premium/cancel',ownerOnly,async(req,res)=>{
   const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'Cannot change Owner'});
