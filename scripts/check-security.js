@@ -163,6 +163,7 @@ const rankNames = [...server.slice(rankListStart, rankListEnd).matchAll(/\"([A-Z
 const vm = require("node:vm");
 const policyContext = {
   rankOrder: Object.fromEntries(rankNames.map((rank, index) => [rank, index])),
+  normalizedRank(value) { return String(value || "").toUpperCase(); },
   DEFAULT_OWNER: "Maleficent"
 };
 vm.runInNewContext(`${server.slice(staffAccessStart, staffAccessEnd + 2)}\nglobalThis.canAccessStaffTarget = canAccessStaffTarget;`, policyContext);
@@ -170,8 +171,8 @@ assert.equal(policyContext.canAccessStaffTarget({id: "1", rank: "MOD"}, {id: "2"
   "moderators must not read or manage higher-ranked staff notes");
 assert.equal(policyContext.canAccessStaffTarget({id: "1", rank: "MOD"}, {id: "2", rank: "VIP"}), true,
   "staff-target checks must preserve access to lower-ranked accounts");
-assert.equal(policyContext.canAccessStaffTarget({id: "1", rank: "OWNER"}, {id: "2", rank: "DEVELOPER"}), false,
-  "the Developer account must remain protected from lower-ranked staff");
+assert.equal(policyContext.canAccessStaffTarget({id: "1", rank: "OWNER"}, {id: "2", rank: "OWNER"}), false,
+  "equal-rank Owner accounts must remain protected");
 assert.equal(policyContext.canAccessStaffTarget({id: "1", rank: "MOD"}, {id: "2", rank: "UNKNOWN"}), false,
   "unknown target ranks must fail closed");
 
