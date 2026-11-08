@@ -469,11 +469,14 @@ assert.match(server,/Your rank cannot create wall posts/,
 
 
 const rankPolicySchema = ["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
-const serverRankPolicyMatch = server.match(/const ranks=\\[([^\\]]+)\\]/);
-const clientRankPolicyMatch = activeClient.match(/const ranks\\s*=\\s*\\[([^\\]]+)\\]/);
-assert.ok(serverRankPolicyMatch && clientRankPolicyMatch, "server and client must expose the canonical rank schema");
-const serverRankPolicy = [...serverRankPolicyMatch[1].matchAll(/"([A-Z_]+)"/g)].map(match => match[1]);
-const clientRankPolicy = [...clientRankPolicyMatch[1].matchAll(/"([A-Z_]+)"/g)].map(match => match[1]);
+const serverRankStart = server.indexOf("const ranks=[");
+const serverRankEnd = server.indexOf("];", serverRankStart);
+const clientRankStart = activeClient.indexOf("const ranks = [");
+const clientRankEnd = activeClient.indexOf("];", clientRankStart);
+assert.ok(serverRankStart >= 0 && serverRankEnd > serverRankStart && clientRankStart >= 0 && clientRankEnd > clientRankStart,
+  "server and client must expose the canonical rank schema");
+const serverRankPolicy = [...server.slice(serverRankStart, serverRankEnd).matchAll(/"([A-Z_]+)"/g)].map(match => match[1]);
+const clientRankPolicy = [...activeClient.slice(clientRankStart, clientRankEnd).matchAll(/"([A-Z_]+)"/g)].map(match => match[1]);
 assert.deepEqual(serverRankPolicy, rankPolicySchema, "server rank hierarchy must use only the current canonical ranks and order");
 assert.deepEqual(clientRankPolicy, rankPolicySchema, "client rank hierarchy must exactly match the server");
 assert.ok(server.includes('const grantCeiling=ownerPower?"OWNER":actorRankNow==="ELITE"?"COOWNER":actorRankNow==="COOWNER"?"CHIEF_COMMISSOR":"MOD";'),
@@ -488,7 +491,7 @@ assert.ok(server.includes("const FEATURE_GRANT_POLICY_VERSION=8;"),
   "rank and feature-grant policy migration must be versioned");
 assert.ok(server.includes("blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER']"),
   "Elite and higher ranks must be blocked from purchasing Premium on the server");
-assert.ok(activeClient.includes("/app.js?v=rank-schema-20261108-3") === false || fs.readFileSync("public/index.html", "utf8").includes("/app.js?v=rank-schema-20261108-3"),
+assert.ok(indexHtml.includes("/app.js?v=rank-schema-20261108-3"),
   "the HTML must point at the current rank-schema app bundle");
 
 console.log("Room history, private-room access, invitations, private-message deletion, Shadow Feed, Friends Activity, bootstrap privacy, capacity, and slow-mode regression checks passed.");
