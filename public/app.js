@@ -5208,7 +5208,8 @@ async function loadStaff() {
     }
 
     const bootstrapData=await api('/api/bootstrap');
-    const filterWords=await api('/api/staff/filter-word');
+    const canManageFilters=['COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(staffRank);
+    const filterWords=canManageFilters?await api('/api/staff/filter-word'):{words:[]};
     const systemCenter=await api('/api/staff/system-center').catch(()=>null);
     const canUseAdminPanel=['ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(staffRank);
     const staffRankOrder=['MEMBER','VIP','SVIP','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'];
@@ -5240,7 +5241,7 @@ async function loadStaff() {
       </details>` : ''}
       <div class="grid2">
         <div class="card"><h3>Statistics</h3><p>Users: ${data.stats.users}<br>Online: ${data.stats.online}<br>Messages: ${data.stats.messages}<br>Open reports: ${data.stats.reportsOpen}</p></div>
-        <div class="card"><h3>Filtered words</h3><p class="muted">Use <code>p: phrase</code> for OCR-based restricted image text. SUPER_ADMIN and above bypass the media restriction.</p><button class="mini" onclick="addFilterWord()">＋ Add word</button><details class="filter-words-details"><summary>Filter words (${(filterWords.words||[]).length})</summary><div class="filter-word-list">${(filterWords.words||[]).map(w=>`<div class="filter-word-row"><span class="muted">${/^p\s*:/i.test(w)?'Restricted Media':(/^r\s*:/i.test(w)?'Auto Report':(/^u\s*:/i.test(w)?'Restricted Username':'Filter'))}</span> <code>${esc(w)}</code><button class="mini danger" onclick="deleteFilterWord(decodeURIComponent('${encodeURIComponent(w)}'))">×</button></div>`).join('')||'<span class="muted">No filter words configured.</span>'}</div></details><p class="muted">Link filter: ${bootstrapData.settings?.linkFilter?'ON':'OFF'}</p></div>
+        ${canManageFilters ? `<div class="card"><h3>Filtered words</h3><p class="muted">Use <code>p: phrase</code> for OCR-based restricted image text. SUPER_ADMIN and above bypass the media restriction.</p><button class="mini" onclick="addFilterWord()">＋ Add word</button><details class="filter-words-details"><summary>Filter words (${(filterWords.words||[]).length})</summary><div class="filter-word-list">${(filterWords.words||[]).map(w=>`<div class="filter-word-row"><span class="muted">${/^p\s*:/i.test(w)?'Restricted Media':(/^r\s*:/i.test(w)?'Auto Report':(/^u\s*:/i.test(w)?'Restricted Username':'Filter'))}</span> <code>${esc(w)}</code><button class="mini danger" onclick="deleteFilterWord(decodeURIComponent('${encodeURIComponent(w)}'))">×</button></div>`).join('')||'<span class="muted">No filter words configured.</span>'}</div></details><p class="muted">Link filter: ${bootstrapData.settings?.linkFilter?'ON':'OFF'}</p></div>` : ''}
       ${canUseAdminPanel ? `<details class="staff-compact-dropdown admin-activity-logs" id="adminActivityLogsDropdown">
         <summary>📜 Admin Activity Logs <span class="muted">— Admin and above</span></summary>
         <section class="card admin-activity-logs-card">
