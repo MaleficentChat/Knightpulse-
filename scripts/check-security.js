@@ -510,11 +510,21 @@ const expectedGrantLists = {
   ELITE:["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER"],
   OWNER:grantHierarchy
 };
+const expectedEditableTargets = {
+  MOD:["MEMBER","VIP","SVIP","PREMIUM"],
+  ADMIN:["MEMBER","VIP","SVIP","PREMIUM","MOD"],
+  SUPER_ADMIN:["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN"],
+  COMMISSOR:["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN"],
+  CHIEF_COMMISSOR:["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR"],
+  COOWNER:["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR"],
+  ELITE:["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER"],
+  OWNER:["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE"]
+};
 for (const [actorRank, ceiling] of Object.entries(expectedGrantCeilings)) {
   const actualGrantList = grantHierarchy.filter(rank => grantIndex(rank)<=grantIndex(ceiling));
   assert.deepEqual(actualGrantList, expectedGrantLists[actorRank], actorRank+' must expose exactly its permitted grant list');
   const actualTargetList = grantHierarchy.filter(rank => grantIndex(rank)<grantIndex(actorRank));
-  assert.deepEqual(actualTargetList, grantHierarchy.slice(0,grantIndex(actorRank)), actorRank+' may only change strictly lower-ranked targets');
+  assert.deepEqual(actualTargetList, expectedEditableTargets[actorRank], actorRank+' must never edit equal- or higher-ranked accounts');
 }
 assert.match(server.slice(server.indexOf("app.patch('/api/staff/user/:id/rank'"), server.indexOf('app.patch(\n  "/api/owner/user/:id/rank"')),
   /rankOrder\[String\(target\.rank\|\|'MEMBER'\)\.toUpperCase\(\)\]>=rankOrder\[actorRank\]/,
