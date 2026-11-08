@@ -167,13 +167,13 @@ const policyContext = {
   DEFAULT_OWNER: "Maleficent"
 };
 vm.runInNewContext(`${server.slice(staffAccessStart, staffAccessEnd + 2)}\nglobalThis.canAccessStaffTarget = canAccessStaffTarget;`, policyContext);
-assert.equal(policyContext.canAccessStaffTarget({id: "1", rank: "MOD"}, {id: "2", rank: "ADMIN"}), false,
+assert.equal(policyContext.canAccessStaffTarget({id: "1", rank: "MODERATOR"}, {id: "2", rank: "ADMIN"}), false,
   "moderators must not read or manage higher-ranked staff notes");
-assert.equal(policyContext.canAccessStaffTarget({id: "1", rank: "MOD"}, {id: "2", rank: "VIP"}), true,
+assert.equal(policyContext.canAccessStaffTarget({id: "1", rank: "MODERATOR"}, {id: "2", rank: "VIP"}), true,
   "staff-target checks must preserve access to lower-ranked accounts");
 assert.equal(policyContext.canAccessStaffTarget({id: "1", rank: "OWNER"}, {id: "2", rank: "OWNER"}), false,
   "equal-rank Owner accounts must remain protected");
-assert.equal(policyContext.canAccessStaffTarget({id: "1", rank: "MOD"}, {id: "2", rank: "UNKNOWN"}), false,
+assert.equal(policyContext.canAccessStaffTarget({id: "1", rank: "MODERATOR"}, {id: "2", rank: "UNKNOWN"}), false,
   "unknown target ranks must fail closed");
 
 console.log("Staff note rank-access regression checks passed.");
