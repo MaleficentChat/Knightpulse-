@@ -93,24 +93,12 @@ const rankIcon = {
 };
 
 const rankOrder = {
-  MEMBER: 0,
-  VIP: 1,
-  SVIP: 2,
-  PREMIUM: 3,
-  ROYAL: 4,
-  MOD: 5,
-  ADMIN: 6,
-  SUPER_ADMIN: 7,
-  COMMISSOR: 8,
-  CHIEF_COMMISSOR: 9,
-  INSTRUCTOR: 10,
-  COOWNER: 11,
-  ELITE: 12,
-  OWNER: 13,
-  DEVELOPER: 14
+  MEMBER:0, VIP:1, SVIP:2, PREMIUM:3, MOD:4, ADMIN:5, SUPER_ADMIN:6,
+  COMMISSOR:7, CHIEF_COMMISSOR:8, COOWNER:9, ELITE:10, OWNER:11,
+  // Legacy values are recognized for display/protection, not offered for assignment.
+  ROYAL:12, INSTRUCTOR:13, DEVELOPER:14
 };
-
-const ranks = Object.keys(rankOrder);
+const ranks = ["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
 
 const esc = s =>
   String(s ?? "").replace(/[&<>"']/g, c => ({
@@ -4520,7 +4508,9 @@ function rankFromProfile(user){
   if(!isOwner && !isStaff){toast("You do not have permission to change ranks.");return;}
   if(user.username==="Maleficent" && !isOwner){toast("The permanent owner is protected.");return;}
   const ceiling=isOwner?rankOrder.OWNER:(actorRank==="ELITE"?rankOrder.COOWNER:(actorRank==="COOWNER"?rankOrder.CHIEF_COMMISSOR:rankOrder.MOD));
-  const allowed=ranks.filter(r=>rankOrder[r]<=ceiling && rankOrder[r]<rankOrder[actorRank]);
+  const targetRank=String(user.rank||"MEMBER").toUpperCase();
+  const targetBelowActor=rankOrder[targetRank]<rankOrder[actorRank];
+  const allowed=ranks.filter(r=>rankOrder[r]<=ceiling && (isOwner?targetBelowActor:rankOrder[r]<rankOrder[actorRank]));
   const ceilingLabel=isOwner?"Owner":actorRank==="ELITE"?"Co-owner":actorRank==="COOWNER"?"Chief Commissor":"Moderator";
   modal(`<h2>🏅 Change rank for @${esc(user.username)}</h2><p class="muted">${isOwner?"Owner control: you may assign ranks up to Owner.":`You may assign ranks up to ${ceilingLabel}.`}</p><select id="profileRankSelect">${allowed.map(r=>`<option value="${r}" ${r===user.rank?'selected':''}>${rankIcon[r]||''} ${r.replace(/_/g," ")}</option>`).join('')}</select><div class="toolbar"><button class="primary" id="saveProfileRank">Save rank</button></div>`);
   $('saveProfileRank').onclick=async()=>{
@@ -6014,7 +6004,7 @@ async function loadOwner() {
     const addQuickFilterEntry=async(inputId,prefix,label)=>{const input=$(inputId),value=String(input?.value||'').trim();if(!value){toast('Enter a word or phrase first.');input?.focus();return;}const entry=prefix+value;const button=input?.parentElement?.nextElementSibling;try{if(button){button.disabled=true;button.textContent='Saving…';}await api('/api/filter-words/bulk',{method:'POST',body:JSON.stringify({text:entry})});toast(label+' saved.');await loadOwner();}catch(e){toast(e.message||'Could not save filter entry.');}finally{if(button){button.disabled=false;button.textContent=label;}}};
     if($('filterSearch')) $('filterSearch').oninput=()=>{const q=$('filterSearch').value.toLowerCase();const rows=[...document.querySelectorAll('.filter-table-row')];let showing=0;rows.forEach(r=>{const show=r.dataset.word.toLowerCase().includes(q);r.style.display=show?'':'none';if(show)showing++});$('filterCounts').textContent=`Total: ${rows.length} | Showing: ${showing}`};
 
-    const commandKeys=["rose","bread","brain","welcome","ship","bank","steal","roast","aura","anonymous","abrakadabra","clear"],rankChoices=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"],commandLabels={rose:"Rose",bread:"Bread",brain:"Brain",welcome:"Welcome",ship:"Ship",bank:"Bank",steal:"Steal",roast:"Roast",aura:"Aura",anonymous:"Anonymous message",abrakadabra:"Abrakadabra",clear:"Clear room"};
+    const commandKeys=["rose","bread","brain","welcome","ship","bank","steal","roast","aura","anonymous","abrakadabra","clear"],rankChoices=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],commandLabels={rose:"Rose",bread:"Bread",brain:"Brain",welcome:"Welcome",ship:"Ship",bank:"Bank",steal:"Steal",roast:"Roast",aura:"Aura",anonymous:"Anonymous message",abrakadabra:"Abrakadabra",clear:"Clear room"};
     const commandData=(await api("/api/owner/command-management").catch(()=>({commands:{}}))).commands||{},commandHost=$("ownerCommandManagementRows");
     if(commandHost)commandHost.innerHTML=commandKeys.map(key=>{const item=commandData[key]||{name:key,ranks:rankChoices},chosen=Array.isArray(item.ranks)?item.ranks:rankChoices;return '<div class="card" style="margin:8px 0"><b>'+esc(commandLabels[key]||key)+'</b><label>Command name<input data-command-name="'+key+'" maxlength="24" value="'+esc(item.name||key)+'"></label><div class="rank-check-grid">'+rankChoices.map(rank=>'<label><input type="checkbox" data-command-rank="'+key+'" value="'+rank+'" '+(chosen.includes(rank)?'checked':'')+'> '+rank+'</label>').join('')+'</div></div>';}).join('');
     $("saveOwnerCommandManagement")?.addEventListener("click",async()=>{const commands={};commandKeys.forEach(key=>commands[key]={name:$('[data-command-name="'+key+'"]')?.value||key,ranks:[...document.querySelectorAll('[data-command-rank="'+key+'"]:checked')].map(x=>x.value)});const status=$("ownerCommandManagementStatus");try{await api("/api/owner/settings",{method:"PATCH",body:JSON.stringify({commandManagement:commands})});if(status)status.textContent="Saved.";toast("Command settings saved.");}catch(e){if(status)status.textContent=e.message;toast(e.message);}});
@@ -6040,17 +6030,7 @@ async function ownerEdit(id) {
       return;
     }
 
-    const editableRanks = [
-      "MEMBER",
-      "VIP",
-      "PREMIUM",
-      "MOD",
-      "ADMIN",
-      "SUPER_ADMIN",
-      "COMMISSOR",
-      "COOWNER",
-      "OWNER"
-    ];
+    const editableRanks = ["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
 
     modal(`
       <h2>Manage @${esc(user.username)}</h2>
@@ -6812,8 +6792,8 @@ function editRoom() {
   if(!room)return;
   if(!canEditRoomFromMenu(room)){toast("You do not have permission to edit this room.");return;}
   if(room.isDefault || /^main room$/i.test(String(room.name||"").trim())){toast("Main Room is protected.");return;}
-  const ranks=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
-  const rankLabels={MEMBER:"Member",VIP:"VIP",PREMIUM:"Premium",MOD:"Moderator",ADMIN:"Admin",SUPER_ADMIN:"Super Admin",COMMISSOR:"Commissor",COOWNER:"Co-owner",OWNER:"Owner",ROYAL:"Legacy rank — Royal",INSTRUCTOR:"Legacy rank — Instructor"};
+  const ranks=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
+  const rankLabels={MEMBER:"Member",VIP:"VIP",SVIP:"SVIP",PREMIUM:"Premium",MOD:"Moderator",ADMIN:"Admin",SUPER_ADMIN:"Super Admin",COMMISSOR:"Commissor",CHIEF_COMMISSOR:"Chief Commissor",COOWNER:"Co-owner",ELITE:"Elite",OWNER:"Owner"};
   const savedRequiredRank=String(room.rankRequired||"MEMBER").toUpperCase();
   const rankChoices=ranks.includes(savedRequiredRank)?ranks:[savedRequiredRank,...ranks];
   const savedAgeCriteria=Number(room.minAge??0)>=20?"adult":Number(room.maxAge??120)<=19?"teen":"global";
