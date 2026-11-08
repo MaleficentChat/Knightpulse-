@@ -225,23 +225,7 @@ function id(){
 
 const ranks=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
 
-const rankIcons={
-  MEMBER:"⚡",
-  VIP:"💎",
-  SVIP:"💠",
-  PREMIUM:"🏅",
-  ELITE:"✨",
-  PREMIUM:"⚜️",
-  MOD:"🛡️",
-  ADMIN:"⭐",
-  SUPER_ADMIN:"🌟",
-  COMMISSOR:"👻",
-  CHIEF_COMMISSOR:"⚔️",
-  CHIEF_COMMISSOR:"⚔️",
-  COOWNER:"👻",
-  OWNER:"👑",
-  OWNER:"🛠️"
-};
+const rankIcons={MEMBER:"⚡",VIP:"💎",SVIP:"💠",PREMIUM:"🏅",MOD:"🛡️",ADMIN:"⭐",SUPER_ADMIN:"🌟",COMMISSOR:"👻",CHIEF_COMMISSOR:"⚔️",COOWNER:"🦉",ELITE:"✨",OWNER:"👑"};
 
 const rankOrder=Object.fromEntries(ranks.map((r,i)=>[r,i]));
 
@@ -253,7 +237,7 @@ function hasRank(u,r){
 function canAccessStaffTarget(actor,target){
   if(!actor||!target||String(actor.id)===String(target.id))return false;
   const actorRank=String(actor.rank||"").toUpperCase(), targetRank=String(target.rank||"").toUpperCase();
-  if(targetRank==="OWNER"||target.username===DEFAULT_OWNER)return false;
+  if(target.username===DEFAULT_OWNER)return false;
   return (rankOrder[targetRank]??999)<(rankOrder[actorRank]??-1);
 }
 
@@ -1195,7 +1179,7 @@ function staff(r){
 function ownerOnly(req,res,next){
   const u=current(req);
   if(!u || !(String(u.rank).toUpperCase()==="OWNER" || String(u.rank).toUpperCase()==="OWNER")){
-    return res.status(403).json({error:"Owner/Developer only"});
+    return res.status(403).json({error:"Owner only"});
   }
   next();
 }
@@ -1203,7 +1187,7 @@ function ownerOnly(req,res,next){
 function developerOnly(req,res,next){
   const u=current(req);
   if(!u || String(u.rank).toUpperCase()!=="OWNER" || u.username!=="Maleficent"){
-    return res.status(403).json({error:"Permanent Developer account only"});
+    return res.status(403).json({error:"Permanent Owner account only"});
   }
   next();
 }
