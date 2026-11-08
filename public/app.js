@@ -3357,7 +3357,7 @@ function renderUserProfileModal(user,data={}){
     <div class="profile-banner" ${bannerStyle}>
       <div class="equipped-profile-frame ${frame?esc(frame.id):''}" title="${frame?esc(frame.name):'Profile avatar'}">${avatar(user,'big-avatar')}</div>
       ${user.profileMusicUrl?`<div class="profile-music-pill"><button type="button" class="profile-music-toggle" id="profileMusicToggle" aria-label="Play profile music">▶</button><span class="profile-music-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="profile-music-title">${esc(user.profileMusicTitle||'Profile music')}</span><audio id="profileMusicAudio" preload="none" src="${esc(safeProfileUrl(user.profileMusicUrl))}"></audio></div>`:''}
-      <div class="profile-stats kp-profile-quick-stats"><span class="profile-stat"><b>⭐ ${user.level||1}</b><small>Level</small></span><span class="profile-stat"><b>XP ${user.xp||0}</b><small>Experience</small></span><span class="profile-stat"><b>❤️ ${user.profileLikes||data.profileLikes||0}</b><small>Likes</small></span>${!isSelf && (String(state.user?.rank||"").toUpperCase()==="OWNER" || (state.user?.username==="Maleficent" && String(state.user?.rank||"").toUpperCase()==="OWNER") || canFeature("staff_rank_assignment")) ? `<button class="mini profile-rank-btn" id="profileRankBtn">🏅 Rank</button>` : ""}${isSelf?'<button class="mini profile-hamburger" id="profileMenuBtn" title="Profile actions">☰</button><button class="mini profile-edit-btn" id="profileEditBtn" title="Edit account">✏️ Edit</button>':((canFeature("account_modifications")||canFeature("edit_email")||canFeature("change_password")||canFeature("manage_staff_accounts")) && canAccessStaffTarget(user) ? '<button class="mini profile-hamburger" id="profileMenuBtn" title="Profile actions">☰</button><button class="mini profile-edit-btn" id="staffProfileEditBtn" title="Edit this member account">✏️ Edit</button>' : '')}</div>
+      <div class="profile-actions-row">${!isSelf && (String(state.user?.rank||"").toUpperCase()==="OWNER" || (state.user?.username==="Maleficent" && String(state.user?.rank||"").toUpperCase()==="OWNER") || canFeature("staff_rank_assignment")) ? `<button class="mini profile-rank-btn" id="profileRankBtn">🏅 Rank</button>` : ""}${isSelf?'<button class="mini profile-hamburger" id="profileMenuBtn" title="Profile actions">☰</button><button class="mini profile-edit-btn" id="profileEditBtn" title="Edit account">✏️ Edit</button>':((canFeature("account_modifications")||canFeature("edit_email")||canFeature("change_password")||canFeature("manage_staff_accounts")) && canAccessStaffTarget(user) ? '<button class="mini profile-hamburger" id="profileMenuBtn" title="Profile actions">☰</button><button class="mini profile-edit-btn" id="staffProfileEditBtn" title="Edit this member account">✏️ Edit</button>' : '')}</div>
       <div class="profile-rank">${rank(user.rank)}${user.verified?' · ✓ Verified':''}${profileBadge?` <span class="equipped-profile-badge" title="${esc(profileBadge.name)}">${esc(profileBadge.icon)} ${esc(profileBadge.name)}</span>`:''}</div>
       <div class="profile-name">${esc(user.displayName)}${user._nickname?` <span class="nickname-badge">“${esc(user._nickname)}”</span>`:''}</div>
       <div class="profile-handle">@${esc(user.username)}</div>
@@ -4641,7 +4641,7 @@ async function loadProfile(user){
   const banner=user.banner?`style="background-image:linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.72)),url('${esc(user.banner)}')"`:'';
   $('profile').innerHTML=`<div class="my-profile-wrap kp-my-profile-wrap"><div class="profile-settings-card kp-self-profile-card ${profileTheme?esc(profileTheme.id):''} profile-theme-${['obsidian','midnight','rose','emerald'].includes(user.theme)?esc(user.theme):'obsidian'}">
     <div class="profile-settings-head" ${banner}>
-      <div class="profile-settings-top"><span>⭐ ${user.level||1} <small>LEVEL</small></span><span>❤️ ${user.profileLikes||0} <small>LIKES</small></span><button class="mini profile-edit-launch" onclick="openProfileEditMenu()" title="Edit account">✏️ Edit</button><button class="mini" id="myProfileMenuBtn" title="More">☰</button></div>
+      <div class="profile-settings-top"><button class="mini profile-edit-launch" onclick="openProfileEditMenu()" title="Edit account">✏️ Edit</button><button class="mini" id="myProfileMenuBtn" title="More">☰</button></div>
       <div class="profile-media-actions"><button class="mini profile-media-action" type="button" onclick="uploadAvatar()">📷 Change picture</button>${user.avatar?'<button class="mini danger profile-media-action" type="button" onclick="deleteAvatar()">Remove picture</button>':''}<button class="mini profile-media-action" type="button" onclick="uploadBanner()">🖼️ Change background</button>${user.banner?'<button class="mini danger profile-media-action" type="button" onclick="deleteBanner()">Remove background</button>':''}</div>
       ${avatar(user,'big-avatar')}
       <div class="profile-rank">${rank(user.rank)}${user.verified?' · ✓ Verified':''}</div>
@@ -5377,28 +5377,27 @@ async function loadStaff() {
       [staffRoot?.querySelector(".site-hard-refresh-card"),"staff-order-9"]
     ];
     orderedStaffSections.forEach(([node,cls])=>{if(node){node.classList.add(cls);staffRoot.appendChild(node);}});
-    // Group the staff dashboard by purpose so each rank sees a predictable, compact workspace.
+    // Put every collapsible/dropdown option first, followed by all always-visible tools.
+    // This keeps each rank's Space predictable without changing the rank-gated content.
     if(staffRoot&&!staffRoot.querySelector('.kp-staff-groups')){
-      const groups=[
-        ['overview','✦ Overview','Quick status, command centre and staff messages',['.staff-space-stat-grid','.kp-command-center','.kp-staff-inbox']],
-        ['moderation','🛡️ Moderation & review','Reports, filters, room review and audit history',['#staffFilterManagementDropdown','.cleared-room-evidence-card','#adminActivityLogsDropdown']],
-        ['team','♜ Team management','Applications, staff communications and network inspection',['#staffApplicationsDropdown','#systemNotificationsDropdown','.ip-inspection-card']],
-        ['controls','⚙️ Account & system controls','Premium, multi-account and maintenance tools',['#staffPremiumGrantDropdown','#staffMultiAccountRuleDropdown','.under-construction-admin-card','.site-hard-refresh-card']]
-      ];
-      const shell=document.createElement('div');shell.className='kp-staff-groups';
-      for(const [key,title,desc,selectors] of groups){
-        const section=document.createElement('details');section.className='kp-staff-group';section.open=key==='overview';
-        const summary=document.createElement('summary');summary.innerHTML='<span>'+title+'</span><small>'+desc+'</small>';section.appendChild(summary);
-        const body=document.createElement('div');body.className='kp-staff-group-body';
-        for(const selector of selectors){
-          staffRoot.querySelectorAll(selector).forEach(node=>{
-            const move=node.matches('details')||node.matches('.grid2')||node.matches('.kp-command-center')||node.matches('.kp-staff-inbox')?node:node.closest('details')||node;
-            if(move&&staffRoot.contains(move)&&!body.contains(move))body.appendChild(move);
-          });
-        }
-        if(body.children.length){section.appendChild(body);shell.appendChild(section);}
-      }
-      if(shell.children.length)staffRoot.appendChild(shell);
+      const hero=staffRoot.querySelector('.staff-space-hero');
+      const children=Array.from(staffRoot.children).filter(node=>node!==hero&&!node.classList.contains('kp-staff-groups'));
+      const dropdowns=children.filter(node=>node.matches('details'));
+      const regular=children.filter(node=>!node.matches('details'));
+      const shell=document.createElement('div');shell.className='kp-staff-groups kp-staff-groups-ordered';
+      const dropdownSection=document.createElement('section');dropdownSection.className='kp-staff-order-section kp-staff-dropdown-section';
+      dropdownSection.innerHTML='<header><span>▾ Dropdown options</span><small>Open a section to access its tools</small></header>';
+      const dropdownBody=document.createElement('div');dropdownBody.className='kp-staff-group-body';
+      dropdowns.forEach(node=>dropdownBody.appendChild(node));
+      dropdownSection.appendChild(dropdownBody);
+      const regularSection=document.createElement('section');regularSection.className='kp-staff-order-section kp-staff-regular-section';
+      regularSection.innerHTML='<header><span>✦ Other staff tools</span><small>Quick panels and always-visible options</small></header>';
+      const regularBody=document.createElement('div');regularBody.className='kp-staff-group-body';
+      regular.forEach(node=>regularBody.appendChild(node));
+      regularSection.appendChild(regularBody);
+      if(dropdowns.length) shell.appendChild(dropdownSection);
+      if(regular.length) shell.appendChild(regularSection);
+      staffRoot.appendChild(shell);
     }
     if(statsGrid&&!statsGrid.children.length)statsGrid.remove();
     $("hardRefreshSiteButton")?.addEventListener("click",hardRefreshSiteCache);
