@@ -34,7 +34,7 @@ async function migrate(){
  ].join(';'));
  await pool.query("INSERT INTO cc_rooms(slug,name,description) VALUES('lounge','The Lounge','A friendly place for the whole community.'),('creative','Creative minds','Art, design, music and inspiration.'),('games','Game lounge','Find people to play and have fun together.') ON CONFLICT(slug) DO NOTHING");
 }
-app.use('/api',requireOrigin);
+app.use('/api',(req,res,next)=>{const origin=req.headers.origin;if(origin&&origins.includes(origin)){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Access-Control-Allow-Credentials','true');res.setHeader('Access-Control-Allow-Headers','Content-Type');res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,OPTIONS');res.setHeader('Vary','Origin')}if(origin&&origins.length&&!origins.includes(origin))return res.status(403).json({error:'Origin not allowed.'});if(req.method==='OPTIONS')return res.sendStatus(204);next()});
 app.get('/api/health',route(async(req,res)=>{await pool.query('SELECT 1');res.json({ok:true,service:'cloudchat-api'})}));
 app.post('/api/auth/register',limitAuth,route(async(req,res)=>{
  const username=clean(req.body.username,24),email=clean(req.body.email,254).toLowerCase(),password=String(req.body.password||'');
