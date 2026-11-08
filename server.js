@@ -5801,6 +5801,80 @@ function featureGrantAllowed(u,key){
   if(!Array.isArray(configured))configured=db.settings?.feature_grants?.[key]||[];
   return configured.map(x=>String(x).toUpperCase()==='USER'?'MEMBER':String(x).toUpperCase()).includes(rankName);
 }
+
+// Elite and Owner can grant Premium without receiving access to Owner Space.
+app.get('/api/staff/premium-requests',auth,async(req,res)=>{
+  const actor=current(req);
+  if(!featureGrantAllowed(actor,'premium_granting'))return res.status(403).json({error:'Premium granting has not been granted to your rank.'});
+  try{
+    const {rows}=await pool.query("SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' AND UPPER(COALESCE(u.rank,'MEMBER')) IN ('MEMBER','VIP','SVIP','PREMIUM') ORDER BY pr.created_at DESC");
+    res.json({requests:rows});
+  }catch(error){console.error('Staff Premium requests failed:',error);res.status(500).json({error:'Could not load Premium requests.'});}
+});
+async function grantPremiumToStaffTarget(actor,target){
+  if(!target)return {status:404,error:'User not found.'};
+  if(target.username===DEFAULT_OWNER||String(target.rank||'').toUpperCase()==='OWNER')return {status:403,error:'The Owner account is protected.'};
+  const targetRank=String(target.rank||'MEMBER').toUpperCase();
+  if((rankOrder[targetRank]??999)>rankOrder.PREMIUM)return {status:403,error:'Premium can only be granted to Member, VIP, SVIP or Premium accounts; higher staff ranks are protected.'};
+  const previousRank=targetRank;
+  target.rank='PREMIUM';target.isPremium=true;target.is_premium=true;target.vipExpiresAt=null;target.vip_expires_at=null;
+  await pool.query("UPDATE users SET rank='PREMIUM',is_premium=true,vip_expires_at=NULL WHERE id=$1",[Number(target.id)]);
+  await pool.query("UPDATE premium_requests SET status='granted' WHERE user_id=$1 AND status='pending'",[Number(target.id)]);
+  save();
+  await log(actor,'STAFF_PREMIUM_GRANT',target.username,{previousRank,rank:'PREMIUM'});
+  notify(target.id,'premium','Premium granted','Your account has been granted Premium by staff.');
+  return {status:200,user:safeUser(target)};
+}
+app.post('/api/staff/premium/grant',auth,async(req,res)=>{
+  const actor=current(req);
+  if(!featureGrantAllowed(actor,'premium_granting'))return res.status(403).json({error:'Premium granting has not been granted to your rank.'});
+  const username=cleanText(req.body?.username||'').trim().replace(/^@/,'').slice(0,26);
+  if(!username)return res.status(400).json({error:'Enter a username.'});
+  const target=findUser(username);
+  try{
+    const result=await grantPremiumToStaffTarget(actor,target);
+    if(result.status!==200)return res.status(result.status).json({error:result.error});
+    res.json({ok:true,user:result.user});
+  }catch(error){console.error('Staff Premium grant failed:',error);res.status(500).json({error:'Could not grant Premium.'});}
+});
+app.post('/api/staff/premium-requests/:id/grant',auth,async(req,res)=>{
+  const actor=current(req);
+  if(!featureGrantAllowed(actor,'premium_granting'))return res.status(403).json({error:'Premium granting has not been granted to your rank.'});
+  try{
+    const request=await pool.query("SELECT user_id FROM premium_requests WHERE id=$1 AND status='pending'",[req.params.id]);
+    if(!request.rowCount)return res.status(404).json({error:'Pending Premium request not found.'});
+    const target=findUser(request.rows[0].user_id);
+    const result=await grantPremiumToStaffTarget(actor,target);
+    if(result.status!==200)return res.status(result.status).json({error:result.error});
+    res.json({ok:true,user:result.user});
+  }catch(error){console.error('Staff Premium request grant failed:',error);res.status(500).json({error:'Could not grant this Premium request.'});}
+});
+
+// Elite and Owner can manage only the multi-account rule, not the other Owner-only system rules.
+app.get('/api/staff/multi-account-rule',auth,(req,res)=>{
+  const actor=current(req);
+  if(!featureGrantAllowed(actor,'manage_multi_account_rules'))return res.status(403).json({error:'Multi-account rule management has not been granted to your rank.'});
+  const rule=db.settings?.system_moderation?.multi_account||{enabled:false,action:'WARN',durationMinutes:0,reason:''};
+  res.json({rule});
+});
+app.put('/api/staff/multi-account-rule',auth,async(req,res)=>{
+  const actor=current(req);
+  if(!featureGrantAllowed(actor,'manage_multi_account_rules'))return res.status(403).json({error:'Multi-account rule management has not been granted to your rank.'});
+  const incoming=req.body?.rule;
+  const actions=new Set(['WARN','MUTE','KICK','BAN']);
+  if(!incoming||typeof incoming!=='object'||Array.isArray(incoming)||!actions.has(String(incoming.action||'').toUpperCase()))return res.status(400).json({error:'Choose a valid multi-account moderation action.'});
+  const action=String(incoming.action).toUpperCase(),needsDuration=action==='MUTE'||action==='KICK';
+  const duration=needsDuration?Number(incoming.durationMinutes):0;
+  const reason=cleanText(incoming.reason||'').trim().slice(0,240);
+  if((needsDuration&&(!Number.isFinite(duration)||duration<1||duration>10080))||!reason)return res.status(400).json({error:needsDuration?'Enter a duration from 1 to 10080 minutes and a reason.':'Enter a reason for the multi-account rule.'});
+  db.settings.system_moderation||={};
+  const rule={enabled:incoming.enabled===true,action,durationMinutes:needsDuration?Math.floor(duration):0,reason};
+  db.settings.system_moderation.multi_account=rule;
+  save();
+  await log(actor,'SYSTEM_MODERATION_RULE_UPDATE','multi_account',{...rule});
+  res.json({ok:true,rule});
+});
+
 app.get('/api/owner/feature-grants',ownerOnly,(req,res)=>{ensureFeatureGrants();res.json({ranks:GRANT_RANKS,features:FEATURE_GRANT_DEFAULTS,grants:db.settings.feature_grants});});
 app.get('/api/owner/user/:id/feature-grants',ownerOnly,async(req,res)=>{
   const target=findUser(req.params.id);if(!target)return res.status(404).json({error:"User not found."});
