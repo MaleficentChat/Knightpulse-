@@ -26,22 +26,6 @@ document.addEventListener("click", event => {
 }, true);
 
 // Room theme data must exist before early socket events or room rendering can apply it.
-const ROOM_THEMES = [
-{id:"obsidian",name:"Obsidian",emoji:"🌑",bg:"#0b0b14",bubble:"#302342",accent:"#b58cff"},
-{id:"midnight",name:"Midnight",emoji:"🌌",bg:"#080d20",bubble:"#17264a",accent:"#7197ff"},
-{id:"lavender",name:"Lavender",emoji:"💜",bg:"#171027",bubble:"#4b3268",accent:"#d1a5ff"},
-{id:"rose",name:"Rose",emoji:"🌹",bg:"#210f1b",bubble:"#593044",accent:"#ff8fbe"},
-{id:"forest",name:"Forest",emoji:"🌲",bg:"#091a16",bubble:"#1b4035",accent:"#69d5a7"},
-{id:"sunset",name:"Sunset",emoji:"🌇",bg:"#24120e",bubble:"#653522",accent:"#ffab70"},
-{id:"ocean",name:"Ocean",emoji:"🌊",bg:"#071a24",bubble:"#16465a",accent:"#65d9ef"},
-{id:"cyberpunk",name:"Cyberpunk",emoji:"⚡",bg:"#10091f",bubble:"#39205a",accent:"#ff4fd8"},
-{id:"aurora",name:"Aurora",emoji:"✨",bg:"#071b20",bubble:"#16434a",accent:"#76f0d0"},
-{id:"sakura",name:"Sakura",emoji:"🌸",bg:"#21111f",bubble:"#60304f",accent:"#ffa8db"},
-{id:"ember",name:"Ember",emoji:"🔥",bg:"#1d100d",bubble:"#51271f",accent:"#ff765e"},
-{id:"ice",name:"Ice Palace",emoji:"🧊",bg:"#0b1724",bubble:"#263d52",accent:"#b3e7ff"}
-];
-
-
 // Declare maintenance polling state before bootstrap can start the app.
 let constructionTimer=null,constructionPoll=null,constructionWriteInFlight=false;
 
@@ -1308,7 +1292,25 @@ $("mobileMenu").onclick = () => {
   $("sidebar").classList.toggle("open");
 };
 const chatToolsToggle=$("chatToolsToggle");
-if(chatToolsToggle) chatToolsToggle.onclick=()=>$("chatToolsDrawer")?.classList.toggle("open");
+if(chatToolsToggle){
+  chatToolsToggle.onclick=()=>{
+    const drawer=$("chatToolsDrawer");
+    if(!drawer)return;
+    const opened=drawer.classList.toggle("open");
+    chatToolsToggle.setAttribute("aria-expanded",opened?"true":"false");
+    chatToolsToggle.setAttribute("aria-label",opened?"Close chat tools":"Open chat tools");
+    chatToolsToggle.textContent=opened?"×":"＋";
+  };
+  document.addEventListener("click",event=>{
+    const drawer=$("chatToolsDrawer");
+    if(!drawer?.classList.contains("open"))return;
+    if(event.target instanceof Element&&event.target.closest("#chatToolsDrawer, #chatToolsToggle"))return;
+    drawer.classList.remove("open");
+    chatToolsToggle.setAttribute("aria-expanded","false");
+    chatToolsToggle.setAttribute("aria-label","Open chat tools");
+    chatToolsToggle.textContent="＋";
+  });
+}
 
 // Main-room attachment control: keep ordinary file uploads separate from YouTube sharing.
 const roomFileInput=$("file");
@@ -6717,8 +6719,7 @@ document.addEventListener("click", async event => {
     const actions = [
       ["pinned","📌 Pinned messages"],
       ["youtube","▶️ YouTube"],
-      ["invite","🔐 Room code"],
-      ["theme","🎨 Site Theme"]
+      ["invite","🔐 Room code"]
     ];
     try { const announcementRank=String(state.user?.rank||"").toUpperCase().replace(/[\s_-]/g,""); if ((rankOrder[announcementRank]??-1)>=(rankOrder.COMMISSOR??7)) actions.unshift(["announcement","📢 Room announcement"]); } catch (_) {}
     try { if (canFeature("clear_room")) actions.unshift(["clear","🧹 Clear messages"]); } catch (_) {}
@@ -6752,7 +6753,6 @@ document.addEventListener("click", async event => {
           else if (action==="pinned") showPinnedMessages();
           else if (action==="youtube") openYoutubePanel();
           else if (action==="invite") showInvite();
-          else if (action==="theme") openRoomThemePicker();
           else if (action==="presence-settings") openPresenceModes();
           else if (action==="party") setPartyMode(!isPartyModeActive());
         } catch (error) {
@@ -6771,16 +6771,6 @@ window.__MC_ROOM_MENU_HANDLER_READY__ = true;
 function applyRoomTheme(){
  const root=$("viewRooms");if(root){root.removeAttribute("data-room-theme");root.style.removeProperty("--room-theme-bg");root.style.removeProperty("--room-theme-bubble");root.style.removeProperty("--room-theme-accent");}
 }
-async function openRoomThemePicker(){
- const selected=String(state.user?.settings?.theme||state.user?.theme||"obsidian").toLowerCase();
- modal(`<div class="room-theme-picker"><h2>🎨 Site Theme</h2><p class="muted">Choose your personal site appearance. It applies across every section and chat room for your account only.</p><div class="room-theme-grid">${ROOM_THEMES.filter(t=>["obsidian","midnight","forest","rose","lavender","sunset","ocean"].includes(t.id)).map(t=>`<article class="room-theme-card ${t.id===selected?"selected":""}"><div class="room-theme-preview" style="--preview-bg:${t.bg};--preview-bubble:${t.bubble};--preview-accent:${t.accent}"><span>${t.emoji} ${esc(t.name)}</span><i></i><i></i><b></b></div><div class="room-theme-card-footer"><strong>${esc(t.name)}</strong><button type="button" class="mini" data-apply-site-theme="${t.id}">${t.id===selected?"Selected":"Select"}</button></div></article>`).join("")}</div></div>`);
- document.querySelectorAll("[data-apply-site-theme]").forEach(button=>button.addEventListener("click",async()=>{
-  const themeId=button.dataset.applySiteTheme;button.disabled=true;
-  try{const result=await api("/api/settings",{method:"PUT",body:JSON.stringify({theme:themeId})});state.user=state.user||{};state.user.settings={...(state.user.settings||{}),...(result.settings||{}),theme:themeId};state.user.theme=themeId;applyTheme(themeId);applyRoomTheme();closeModal();toast("Site theme saved for your account.");}
-  catch(e){toast(e.message||"Could not save site theme.");button.disabled=false;}
- }));
-}
-
 async function clearRoom() {
   if (!confirm("Clear this room?")) {
     return;
@@ -6990,8 +6980,9 @@ function applyTheme(theme){
   const allowedThemes=['obsidian','midnight','forest','rose','lavender','sunset','ocean'];
   theme=String(theme||state.user?.settings?.theme||state.user?.theme||'obsidian').toLowerCase();
   theme=allowedThemes.includes(theme)?theme:'obsidian';
-  document.documentElement.dataset.theme=theme;
-  document.body.dataset.theme=theme;
+  // Knightpulse uses one shared appearance across every account and section.
+  document.documentElement.dataset.theme="midnight";
+  document.body.dataset.theme="midnight";
   const st=state.user?.settings||{}; document.documentElement.style.setProperty('--username-color',st.usernameColor||'#9b5cff');
   document.documentElement.style.setProperty('--profile-color',state.user?.profileColor||'#9b5cff');
   document.documentElement.style.setProperty('--profile-accent',state.user?.profileAccentColor||st.profileAccentColor||'#ff4fd8'); document.documentElement.style.setProperty('--bubble-color',st.bubbleColor||'#33244f'); document.documentElement.style.setProperty('--chat-font',st.chatFont||'Inter'); document.documentElement.style.setProperty('--chat-size',st.fontSize==='large'?'1.08em':st.fontSize==='small'?'.94em':'1em'); document.documentElement.classList.toggle('compact-chat',!!st.compactMode); document.documentElement.dataset.effects=st.messageEffects||'none';
