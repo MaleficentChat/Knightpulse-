@@ -652,3 +652,17 @@ html[data-theme] body{background-image:radial-gradient(ellipse at 48% -18%,rgba(
  #staff .admin-activity-logs-card #systemAuditSearch{grid-column:1/-1!important}
  #staff .admin-activity-logs-card #systemAuditSearchForm button{min-width:0!important}
 }
+
+/* Correction: keep profile stat icons and values; hide only their captions. */
+#viewProfile .kp-profile-quick-stats{display:flex!important;align-items:center!important;justify-content:center!important;flex-wrap:wrap!important;gap:10px!important;margin:12px auto 6px!important;padding:0!important;background:transparent!important;border:0!important}
+#viewProfile .kp-profile-quick-stats .profile-stat{display:flex!important;align-items:center!important;justify-content:center!important;min-width:52px!important;padding:8px 12px!important}
+#viewProfile .kp-profile-quick-stats .profile-stat small{display:none!important}
+#viewProfile .kp-profile-quick-stats .profile-stat b{font-size:14px!important;font-weight:850!important;white-space:nowrap!important}
+#viewProfile .kp-profile-quick-stats .profile-rank-btn,#viewProfile .kp-profile-quick-stats .profile-hamburger,#viewProfile .kp-profile-quick-stats .profile-edit-btn{min-height:34px!important}
+
+/* Activity Logs must occupy the full available row width, not merely grow vertically. */
+#staff .admin-activity-logs{display:block!important;grid-column:1/-1!important;justify-self:stretch!important;align-self:stretch!important;width:100%!important;max-width:none!important;min-width:0!important}
+#staff .kp-staff-dropdown-section .kp-staff-group-body{display:grid!important;grid-template-columns:minmax(0,1fr)!important;width:100%!important;min-width:0!important}
+#staff .kp-staff-dropdown-section .kp-staff-group-body>.admin-activity-logs{grid-column:1/-1!important;width:100%!important;max-width:none!important;min-width:0!important}
+#staff .admin-activity-logs>.admin-activity-logs-card{display:block!important;box-sizing:border-box!important;width:100%!important;max-width:none!important;min-width:0!important}
+#staff .admin-activity-logs-card #systemAuditSearchForm{width:100%!important;min-width:0!important}
