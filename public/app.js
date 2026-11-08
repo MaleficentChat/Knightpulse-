@@ -1626,7 +1626,7 @@ function maleficentUserAge(user=state.user) {
   return age>=0&&age<=120?age:null;
 }
 function isMaleficentStaff(user=state.user) {
-  return ["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER","OWNER"].includes(String(user?.rank||"").toUpperCase());
+  return ["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(user?.rank||"").toUpperCase());
 }
 function roomForAgeRouting() {
   const staff=isMaleficentStaff();
@@ -1707,10 +1707,10 @@ function renderRooms() {
   const search=(($('roomSearch')?.value)||'').trim().toLowerCase();
   const visited=joinedRoomIds();
   const normalizedRoomRank=String(state.user?.rank||"").toUpperCase().replace(/[\s_-]/g,"");
-  const canSeeRoomPins=["COOWNER","OWNER","OWNER"].includes(normalizedRoomRank);
+  const canSeeRoomPins=["COOWNER","ELITE","OWNER"].includes(normalizedRoomRank);
   const canPinRooms=canSeeRoomPins;
   const allRooms=(Array.isArray(state.rooms)?state.rooms:[]).slice().sort((a,b)=>canSeeRoomPins?(Number(!!b.pinned)-Number(!!a.pinned)):0);
-  const canViewHiddenRooms=["OWNER","OWNER"].includes(String(state.user?.rank||"").toUpperCase());
+  const canViewHiddenRooms=["OWNER"].includes(String(state.user?.rank||"").toUpperCase());
   const hiddenRooms=allRooms.filter(room=>room.public===false);
   const hiddenToggle=$("hiddenRoomsToggle");
   if(hiddenToggle){
@@ -1787,7 +1787,7 @@ function handleRoomCodeInput(input){
 }
 
 function toggleHiddenRoomsView(){
-  if(!["OWNER","OWNER"].includes(String(state.user?.rank||"").toUpperCase()))return;
+  if(!["OWNER"].includes(String(state.user?.rank||"").toUpperCase()))return;
   state.showHiddenRoomsOnly=!state.showHiddenRoomsOnly;
   if($("roomSearch"))$("roomSearch").value="";
   renderRooms();
@@ -6278,8 +6278,8 @@ async function ownerFeatureGrants(){
        games_access:'Games & media',gravity_run:'Games & media',doodle_studio_save:'Games & media',doodle_studio_share:'Games & media',gif_search:'Games & media',media_embeds:'Games & media',premium_access:'Gold & rewards',vip_access:'Gold & rewards',gold_wallet:'Gold & rewards',gold_catalogue:'Gold & rewards',gold_purchase:'Gold & rewards',gold_equip:'Gold & rewards',gold_transaction_history:'Gold & rewards',daily_rewards:'Gold & rewards',achievement_access:'Gold & rewards',premium_requests:'Gold & rewards',grant_premium:'Staff & moderation',view_rules:'Safety & reports',submit_reports:'Safety & reports',manage_reports:'Safety & reports',report_assign:'Safety & reports',report_resolve:'Safety & reports',edit_site_rules:'Safety & reports',edit_room_rules:'Safety & reports',leaderboard_access:'Social & community',saved_messages:'Chat & media',advanced_search:'Social & community',staff_application_submit:'Staff & moderation',staff_application_review:'Staff & moderation',staff_dashboard_access:'Staff & moderation',staff_notifications:'Notifications',system_notifications:'Notifications',audit_log_access:'Staff & moderation',audit_log_settings:'Owner tools',under_construction_control:'Owner tools',site_hard_refresh:'Staff & moderation',
        inspect_ip_details:'Security & privacy',inspect_similar_ips:'Security & privacy',view_user_history:'Security & privacy',view_username_history:'Security & privacy',manage_profile_notes:'Staff & moderation',manage_account_locks:'Security & privacy',manage_avatar:'Accounts & profiles',delete_accounts:'Owner tools',manage_bans:'Staff & moderation',manage_mutes:'Staff & moderation',manage_kicks:'Staff & moderation',manage_warnings:'Staff & moderation',manage_automated_filters:'Staff & moderation',manage_vpn_proxy_rules:'Security & privacy',manage_multi_account_rules:'Security & privacy',manage_spam_flood_rules:'Staff & moderation',manage_user_feature_exceptions:'Owner tools',manage_rank_feature_grants:'Owner tools',manage_individual_feature_grants:'Owner tools',manage_owner_space:'Owner tools',manage_site_refresh:'Owner tools',view_system_diagnostics:'Owner tools',manage_site_themes:'Owner tools',manage_economy_settings:'Owner tools',manage_premium_settings:'Owner tools',manage_notifications_settings:'Owner tools',manage_room_permissions:'Owner tools',manage_room_themes:'Owner tools',manage_room_staff:'Owner tools',manage_suggestions_settings:'Owner tools',manage_feature_granting:'Owner tools'
     };
-    const ranks=d.ranks||['MEMBER','VIP','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','COOWNER','OWNER'];
-    const rankLabels={MEMBER:'Member',VIP:'VIP',PREMIUM:'Premium',PREMIUM:'Royal',MOD:'Moderator',ADMIN:'Admin',SUPER_ADMIN:'Super Admin',COMMISSOR:'Commissor',CHIEF_COMMISSOR:'Chief Commissor',CHIEF_COMMISSOR:'Instructor',COOWNER:'Co-owner',OWNER:'Owner'};
+    const ranks=d.ranks||['MEMBER','VIP','SVIP','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'];
+    const rankLabels={MEMBER:'Member',VIP:'VIP',SVIP:'SVIP',PREMIUM:'Premium',MOD:'Moderator',ADMIN:'Admin',SUPER_ADMIN:'Super Admin',COMMISSOR:'Commissor',CHIEF_COMMISSOR:'Chief Commissor',COOWNER:'Co-owner',ELITE:'Elite',OWNER:'Owner'};
     const keys=Object.keys(d.features||{}).filter(key=>!['schedule_message','expire_message'].includes(key)), categories={};
     keys.forEach(key=>{const category=categoryFor[key]||'Other site features';if(!categories[category])categories[category]=[];categories[category].push(key);});
     function renderRow(key){
@@ -6682,7 +6682,7 @@ document.addEventListener("click", async event => {
     try { if (canFeature("clear_room")) actions.unshift(["clear","🧹 Clear messages"]); } catch (_) {}
     try { if (canEditRoomFromMenu(room)) actions.unshift(["edit","✏️ Edit room"]); } catch (_) {}
     try { if (canFeature("delete_room")) actions.unshift(["delete","🗑 Delete room"]); } catch (_) {}
-    try { const pinRank=String(state.user?.rank||"").toUpperCase().replace(/[\s_-]/g,""); if (["COOWNER","OWNER","OWNER"].includes(pinRank)) actions.unshift(["pin",room?.pinned?"📌 Unpin room":"📌 Pin room"]); } catch (_) {}
+    try { const pinRank=String(state.user?.rank||"").toUpperCase().replace(/[\s_-]/g,""); if (["COOWNER","ELITE","OWNER"].includes(pinRank)) actions.unshift(["pin",room?.pinned?"📌 Unpin room":"📌 Pin room"]); } catch (_) {}
     try {
       if (["ghost","dead","invisible"].some(mode => canUsePresenceMode(mode))) {
         actions.push(["presence-settings","⚙️ Presence mode settings"]);
@@ -6759,7 +6759,7 @@ function canEditRoomFromMenu(room){
 }
 async function toggleRoomPinById(roomId){
   const rank=String(state.user?.rank||"").toUpperCase().replace(/[\s_-]/g,"");
-  if(!["COOWNER","OWNER","OWNER"].includes(rank)){toast("Only Co-owner, Owner, or Developer can pin rooms.");return;}
+  if(!["COOWNER","ELITE","OWNER"].includes(rank)){toast("Only Co-owner, Elite, or Owner can pin rooms.");return;}
   const room=(state.rooms||[]).find(r=>String(r.id)===String(roomId));
   if(!room){toast("Room not found. Refresh the room list and try again.");return;}
   try{const result=await api("/api/rooms/"+encodeURIComponent(room.id)+"/pin",{method:"PUT",body:JSON.stringify({pinned:!room.pinned})});room.pinned=!!result.pinned;await loadRooms();renderRooms();toast(room.pinned?"Room pinned at the top of your staff room list.":"Room unpinned.");}
@@ -6879,7 +6879,7 @@ async function showInvite(roomOrId=state.currentRoom) {
   const room=roomOrId&&typeof roomOrId==="object"?roomOrId:state.rooms.find(r=>String(r.id)===String(roomOrId));
   if(!room)return;
   if(room.public!==false){modal("<h2>Public room</h2><p class=\"muted\">This room is public and does not need an access code.</p>");return;}
-  if(String(room.ownerId||"")!==String(state.user?.id)&&!["OWNER","OWNER"].includes(String(state.user?.rank||"").toUpperCase())){toast("Only the room owner, Owner, or Developer can view this room code.");return;}
+  if(String(room.ownerId||"")!==String(state.user?.id)&&!["OWNER"].includes(String(state.user?.rank||"").toUpperCase())){toast("Only the room owner, Elite, or Owner can view this room code.");return;}
   const code=String(room.roomCode||"").trim();
   if(!/^\d{5} \d{5}$/.test(code)){toast("Room code is not available yet. Refresh the room list and try again.");return;}
   modal("<div class=\"room-code-share\"><h2>🔐 Room code</h2><p class=\"muted\">Share this 10-digit code. They can enter it in the code bar above the room list.</p><div class=\"room-code-display\" id=\"roomCodeDisplay\">"+esc(code)+"</div><div class=\"toolbar\"><button type=\"button\" class=\"primary\" id=\"copyRoomCode\">Copy room code</button></div></div>");
