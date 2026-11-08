@@ -350,7 +350,7 @@ const FEATURE_GRANT_DEFAULTS={
   change_password:["OWNER"],
   edit_email:["OWNER"],
   manage_xp_level:["OWNER"],
-  create_rooms:["PREMIUM","ROYAL","MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"],
+  create_rooms:["PREMIUM","MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
   edit_rooms:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
   delete_rooms:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
   join_rooms:GRANT_RANKS,
@@ -1168,7 +1168,7 @@ function staff(r){
 function ownerOnly(req,res,next){
   const u=current(req);
   if(!u || !(String(u.rank).toUpperCase()==="OWNER" || String(u.rank).toUpperCase()==="OWNER")){
-    return res.status(403).json({error:"Owner/Owner only"});
+    return res.status(403).json({error:"Owner only"});
   }
   next();
 }
@@ -3922,7 +3922,7 @@ app.post("/api/native/dm/reply",async(req,res)=>{
     const networkDecision=await networkAccessDecision(req,u);
     if(!networkDecision.allowed)return res.status(403).json({error:networkDecision.reason||"Network access is restricted."});
     const construction=db.settings?.under_construction||{};
-    if(construction.enabled===true&&!["OWNER","OWNER"].includes(String(u.rank||"").toUpperCase()))return res.status(503).json({error:"The site is under construction."});
+    if(construction.enabled===true&&!["OWNER"].includes(String(u.rank||"").toUpperCase()))return res.status(503).json({error:"The site is under construction."});
     if(isUserFeatureBlocked(u,"private_messages")||!hasFeature(u,"private_messages"))return res.status(403).json({error:"Private messaging is not available for this account."});
     if(privateMessagesBlocked(u,v))return res.status(403).json({error:"Messaging blocked."});
     const m={id:id(),from:u.id,to:v.id,text:message.slice(0,4000),attachment:null,replyTo:null,time:Date.now(),read:false,delivered:true};
@@ -4132,7 +4132,7 @@ app.post('/api/wallet/convert',auth,async(req,res)=>{
 });
 app.post('/api/wallet/reward',auth,async(req,res)=>{
   const actor=current(req),rank=String(actor.rank||'').toUpperCase();
-  if(!['COOWNER','OWNER','OWNER'].includes(rank))return res.status(403).json({error:'Only Coowner, Owner and Owner can grant Gold or Diamond rewards.'});
+  if(!['COOWNER','OWNER','OWNER'].includes(rank))return res.status(403).json({error:'Only Coowner, Owner can grant Gold or Diamond rewards.'});
   const currency=String(req.body?.currency||'DIAMONDS').toUpperCase();
   if(!['DIAMONDS','GOLD'].includes(currency))return res.status(400).json({error:'Choose Gold or Diamonds.'});
   const target=findUser(req.body?.userId||req.body?.username),amount=Number(req.body?.amount),reason=cleanText(req.body?.reason||'').trim().slice(0,240);
