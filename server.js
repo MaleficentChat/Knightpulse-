@@ -393,7 +393,7 @@ const FEATURE_GRANT_DEFAULTS={
 };
 
 const FEATURE_GRANT_POLICY_VERSION=7;
-const RANK_TIERS={all:[...GRANT_RANKS],vip:GRANT_RANKS.slice(1),svip:GRANT_RANKS.slice(2),premium:GRANT_RANKS.slice(3),mod:GRANT_RANKS.slice(4),admin:GRANT_RANKS.slice(5),superAdmin:GRANT_RANKS.slice(6),commissor:GRANT_RANKS.slice(7),chiefCommissor:GRANT_RANKS.slice(8),chiefCommissor:GRANT_RANKS.slice(8),coowner:GRANT_RANKS.slice(9),elite:GRANT_RANKS.slice(10),owner:GRANT_RANKS.slice(11)};
+const RANK_TIERS={all:[...GRANT_RANKS],vip:GRANT_RANKS.slice(1),svip:GRANT_RANKS.slice(2),premium:GRANT_RANKS.slice(3),mod:GRANT_RANKS.slice(4),admin:GRANT_RANKS.slice(5),superAdmin:GRANT_RANKS.slice(6),commissor:GRANT_RANKS.slice(7),chiefCommissor:GRANT_RANKS.slice(8),coowner:GRANT_RANKS.slice(9),elite:GRANT_RANKS.slice(10),owner:GRANT_RANKS.slice(11)};
 const REQUESTED_FEATURE_GRANTS_EXPLICIT={
 send_messages:RANK_TIERS.all,private_messages:RANK_TIERS.svip,gif_sending:RANK_TIERS.svip,gift_sending:RANK_TIERS.svip,emojis_stickers:RANK_TIERS.all,chat_file_upload:RANK_TIERS.vip,chat_attachments:RANK_TIERS.vip,chat_image_upload:RANK_TIERS.vip,chat_video_upload:RANK_TIERS.vip,chat_audio_upload:RANK_TIERS.vip,use_youtube:RANK_TIERS.vip,chat_youtube_music:RANK_TIERS.vip,
 edit_message:RANK_TIERS.premium,pin_message:RANK_TIERS.mod,save_message:RANK_TIERS.all,react_message:RANK_TIERS.all,reply_messages:RANK_TIERS.all,quote_messages:RANK_TIERS.all,copy_messages:RANK_TIERS.all,hide_messages:RANK_TIERS.all,delete_own_messages:RANK_TIERS.premium,mention_users:RANK_TIERS.all,chat_unread_counts:RANK_TIERS.all,chat_message_search:RANK_TIERS.all,report_message:RANK_TIERS.all,
@@ -5988,7 +5988,7 @@ app.patch('/api/staff/user/:id/email',auth,async(req,res)=>{
 });
 
 app.patch('/api/staff/user/:id/rank',auth,async(req,res)=>{
-  const actor=current(req), target=findUser(req.params.id), nr=String(req.body.rank||'');
+  const actor=current(req), target=findUser(req.params.id), nr=String(req.body.rank||'').toUpperCase();
   if(!target) return res.status(404).json({error:'User not found'});
   if(!hasFeature(actor,'staff_rank_assignment')) return res.status(403).json({error:`Rank assignment requires ${featureRank('staff_rank_assignment')} or higher.`});
   if(String(target.rank).toUpperCase()==='OWNER' || target.username==='Maleficent') return res.status(403).json({error:'Owner account is protected.'});
