@@ -20,7 +20,7 @@ function addNav(){
  const main=document.querySelector(".main");if(!main)return;
  if(!el("sfScrapbookView")){
   const scrapbook=document.createElement("section");scrapbook.id="sfScrapbookView";scrapbook.className="view hidden sf-view";
-  scrapbook.innerHTML='<div class="topbar"><div><h2>📖 My Scrapbook</h2><p class="muted">Your memories, your little corner of Maleficent Chat.</p></div><button class="primary" id="sfBookSettings">⚙ Settings</button></div><div class="sf-content" id="sfBookContent"></div>';
+  scrapbook.innerHTML='<div class="topbar"><div><h2>📖 My Scrapbook</h2><p class="muted">Your memories, your little corner of Knight Pulse.</p></div><button class="primary" id="sfBookSettings">⚙ Settings</button></div><div class="sf-content" id="sfBookContent"></div>';
   main.appendChild(scrapbook);
  }
  if(!el("sfConfessionsView")){
