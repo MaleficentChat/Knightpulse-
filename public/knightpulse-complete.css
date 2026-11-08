@@ -278,3 +278,38 @@ input:focus,textarea:focus,select:focus{border-color:var(--kp-blue)!important;bo
  #viewProfile #myProfileSettings .settings-list{grid-template-columns:1fr;gap:7px}
  #viewProfile #myProfileSettings .settings-row{min-height:60px}
 }
+
+
+/* KNIGHTPULSE FIXED DEFAULT THEME — one consistent look across the entire site. */
+:root{color-scheme:dark;--kp-void:#070b14;--kp-night:#0b1220;--kp-surface:#111c2d;--kp-raised:#17263b;--kp-raised2:#1d3049;--kp-line:rgba(159,190,231,.16);--kp-line-hot:rgba(110,165,255,.42);--kp-ink:#eff5ff;--kp-muted:#93a6c2;--kp-blue:#6da5ff;--kp-blue2:#3d7fe8;--kp-gold:#e5c17e;--kp-mint:#66d9bf;--kp-red:#ff7f91}
+html[data-theme],body[data-theme]{background-color:#070b14!important;color:#eff5ff!important}
+html[data-theme] body{background-image:radial-gradient(ellipse at 48% -18%,rgba(55,105,184,.22),transparent 47%),radial-gradient(ellipse at 100% 65%,rgba(28,66,111,.10),transparent 35%)!important;background-attachment:fixed!important}
+/* Compact floating chat-tool launcher and polished action panel. */
+#viewRooms.chatting .composer{position:relative!important;display:flex!important;align-items:center!important;flex-wrap:nowrap!important;gap:9px!important;padding:10px 12px!important;background:linear-gradient(180deg,rgba(17,31,52,.98),rgba(9,20,36,.99))!important;border-top:1px solid rgba(109,165,255,.2)!important}
+#viewRooms.chatting .composer #message{flex:1 1 auto!important;min-width:0!important;height:44px!important;padding:0 14px!important;border-radius:14px!important;background:rgba(5,14,27,.9)!important;border:1px solid rgba(137,174,226,.24)!important}
+#viewRooms.chatting .composer .send{flex:0 0 auto!important;min-width:72px!important;height:44px!important;padding:0 16px!important;border-radius:14px!important}
+#viewRooms.chatting .chat-tools-toggle{display:grid!important;place-items:center!important;flex:0 0 44px!important;width:44px!important;height:44px!important;padding:0!important;border:1px solid rgba(109,165,255,.34)!important;border-radius:14px!important;background:linear-gradient(145deg,rgba(48,91,151,.42),rgba(20,39,66,.95))!important;color:#e5c17e!important;font-size:25px!important;font-weight:500!important;line-height:1!important;box-shadow:0 5px 18px rgba(0,0,0,.2)!important}
+#viewRooms.chatting .chat-tools-drawer{display:none!important;position:absolute!important;z-index:150!important;left:10px!important;bottom:calc(100% + 10px)!important;width:min(560px,calc(100vw - 28px))!important;padding:13px!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:8px!important;border:1px solid rgba(130,174,235,.27)!important;border-radius:18px!important;background:linear-gradient(150deg,rgba(23,39,63,.98),rgba(7,16,30,.99))!important;box-shadow:0 22px 65px rgba(0,0,0,.56),inset 0 1px rgba(255,255,255,.05)!important;backdrop-filter:blur(22px)!important}
+#viewRooms.chatting .chat-tools-drawer.open{display:grid!important}
+#viewRooms.chatting .chat-tools-heading{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 4px 8px;border-bottom:1px solid rgba(159,190,231,.13);color:#edf4ff}
+#viewRooms.chatting .chat-tools-heading strong{font-size:13px;letter-spacing:.04em}
+#viewRooms.chatting .chat-tools-heading span{font-size:10px;color:#93a6c2}
+#viewRooms.chatting .chat-tools-drawer>button{display:flex!important;min-width:0!important;min-height:76px!important;flex-direction:column!important;align-items:flex-start!important;justify-content:center!important;gap:7px!important;padding:10px!important;border:1px solid rgba(145,180,229,.16)!important;border-radius:13px!important;background:rgba(34,57,88,.56)!important;color:#edf4ff!important;text-align:left!important;white-space:normal!important}
+#viewRooms.chatting .chat-tools-drawer>button:hover{transform:translateY(-2px)!important;border-color:rgba(109,165,255,.55)!important;background:rgba(57,103,164,.28)!important;box-shadow:0 8px 20px rgba(0,0,0,.2)!important}
+#viewRooms.chatting .chat-tool-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:rgba(109,165,255,.13);font-size:17px}
+#viewRooms.chatting .chat-tools-drawer>button>span:last-child{display:grid;gap:2px}
+#viewRooms.chatting .chat-tools-drawer>button b{font-size:11px;font-weight:800}
+#viewRooms.chatting .chat-tools-drawer>button small{font-size:9px;color:#9eb1cb;font-weight:500}
+#viewRooms.chatting .composer-file-name{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:#e5c17e}
+@media(max-width:600px){
+ #viewRooms.chatting .composer{gap:6px!important;padding:8px!important}
+ #viewRooms.chatting .composer #message{height:42px!important;padding:0 11px!important;font-size:14px!important}
+ #viewRooms.chatting .composer .send{min-width:58px!important;height:42px!important;padding:0 10px!important;font-size:12px!important}
+ #viewRooms.chatting .chat-tools-toggle{flex-basis:40px!important;width:40px!important;height:42px!important}
+ #viewRooms.chatting .chat-tools-drawer{left:6px!important;width:calc(100vw - 24px)!important;padding:10px!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px!important}
+ #viewRooms.chatting .chat-tools-heading{grid-column:1/-1}
+ #viewRooms.chatting .chat-tools-drawer>button{min-height:62px!important;flex-direction:row!important;align-items:center!important;gap:9px!important;padding:9px!important}
+ #viewRooms.chatting .chat-tool-icon{width:34px;height:34px;flex:0 0 34px}
+ #viewRooms.chatting .chat-tools-drawer>button b{font-size:12px}
+ #viewRooms.chatting .chat-tools-drawer>button small{font-size:10px}
+}
