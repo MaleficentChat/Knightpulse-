@@ -224,21 +224,10 @@ function id(){
 }
 
 const ranks=[
-  "MEMBER",
-  "VIP",
-  "SVIP",
-  "PREMIUM",
-  "ROYAL",
-  "MOD",
-  "ADMIN",
-  "SUPER_ADMIN",
-  "COMMISSOR",
-  "CHIEF_COMMISSOR",
-  "INSTRUCTOR",
-  "COOWNER",
-  "ELITE",
-  "OWNER",
-  "DEVELOPER"
+  "MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN",
+  "COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER",
+  // Legacy values remain recognized for existing accounts, but are never grantable.
+  "ROYAL","INSTRUCTOR","DEVELOPER"
 ];
 
 const rankIcons={
@@ -365,7 +354,7 @@ const FEATURE_CONTROLS=[
   {key:"room_clear_own",name:"Clear messages in owned rooms",category:"Room Staff",defaultRank:"OWNER"}
 ];
 
-const GRANT_RANKS=["MEMBER","VIP","SVIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","INSTRUCTOR","COOWNER","ELITE","OWNER"];
+const GRANT_RANKS=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
 const FEATURE_GRANT_DEFAULTS={
   send_messages:GRANT_RANKS,
   doodle_studio:GRANT_RANKS,
@@ -424,7 +413,7 @@ const FEATURE_GRANT_DEFAULTS={
 };
 
 const FEATURE_GRANT_POLICY_VERSION=7;
-const RANK_TIERS={all:[...GRANT_RANKS],vip:GRANT_RANKS.slice(1),svip:GRANT_RANKS.slice(2),premium:GRANT_RANKS.slice(3),royal:GRANT_RANKS.slice(4),mod:GRANT_RANKS.slice(4),admin:GRANT_RANKS.slice(5),superAdmin:GRANT_RANKS.slice(6),commissor:GRANT_RANKS.slice(7),instructor:GRANT_RANKS.slice(8),coowner:GRANT_RANKS.slice(9),owner:GRANT_RANKS.slice(10)};
+const RANK_TIERS={all:[...GRANT_RANKS],vip:GRANT_RANKS.slice(1),svip:GRANT_RANKS.slice(2),premium:GRANT_RANKS.slice(3),royal:GRANT_RANKS.slice(3),mod:GRANT_RANKS.slice(4),admin:GRANT_RANKS.slice(5),superAdmin:GRANT_RANKS.slice(6),commissor:GRANT_RANKS.slice(7),chiefCommissor:GRANT_RANKS.slice(8),instructor:GRANT_RANKS.slice(8),coowner:GRANT_RANKS.slice(9),elite:GRANT_RANKS.slice(10),owner:GRANT_RANKS.slice(11)};
 const REQUESTED_FEATURE_GRANTS_EXPLICIT={
 send_messages:RANK_TIERS.all,private_messages:RANK_TIERS.svip,gif_sending:RANK_TIERS.svip,gift_sending:RANK_TIERS.svip,emojis_stickers:RANK_TIERS.all,chat_file_upload:RANK_TIERS.vip,chat_attachments:RANK_TIERS.vip,chat_image_upload:RANK_TIERS.vip,chat_video_upload:RANK_TIERS.vip,chat_audio_upload:RANK_TIERS.vip,use_youtube:RANK_TIERS.vip,chat_youtube_music:RANK_TIERS.vip,
 edit_message:RANK_TIERS.royal,pin_message:RANK_TIERS.mod,save_message:RANK_TIERS.all,react_message:RANK_TIERS.all,reply_messages:RANK_TIERS.all,quote_messages:RANK_TIERS.all,copy_messages:RANK_TIERS.all,hide_messages:RANK_TIERS.all,delete_own_messages:RANK_TIERS.premium,mention_users:RANK_TIERS.all,chat_unread_counts:RANK_TIERS.all,chat_message_search:RANK_TIERS.all,report_message:RANK_TIERS.all,
@@ -6007,7 +5996,7 @@ app.patch('/api/staff/user/:id/rank',auth,async(req,res)=>{
   const actorRank=String(actor.rank||'MEMBER').toUpperCase();
   const ownerPower=actorRank==='OWNER';
   const grantCeiling=ownerPower?'OWNER':(actorRank==='ELITE'?'COOWNER':(actorRank==='COOWNER'?'CHIEF_COMMISSOR':'MOD'));
-  const grantableStaffRanks=['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','INSTRUCTOR','COOWNER','ELITE','OWNER'];
+  const grantableStaffRanks=['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'];
   if(!grantableStaffRanks.includes(actorRank)) return res.status(403).json({error:'Staff rank assignment is not available to this account.'});
   if((rankOrder[String(nr).toUpperCase()]??999)>(rankOrder[grantCeiling]??-1)) return res.status(403).json({error:'Your rank can assign '+grantCeiling.replace(/_/g,' ')+' or below only.'});
   if(rankOrder[String(target.rank||'MEMBER').toUpperCase()]>=rankOrder[actorRank]) return res.status(403).json({error:'You cannot change an equal or higher rank.'});
@@ -6026,10 +6015,10 @@ app.patch(
       req.params.id
     );
 
+    const assignableRanks=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
     if(
       !v||
-      !ranks.includes(req.body.rank)||
-      String(req.body.rank).toUpperCase()==="DEVELOPER"
+      !assignableRanks.includes(String(req.body.rank||"").toUpperCase())
     ){
       return res.status(400).json({
         error:"Invalid"
@@ -6037,7 +6026,8 @@ app.patch(
     }
 
     if(
-      v.username===DEFAULT_OWNER
+      v.username===DEFAULT_OWNER ||
+      String(v.rank||"MEMBER").toUpperCase()==="OWNER"
     ){
       return res.status(400).json({
         error:
