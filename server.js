@@ -151,7 +151,7 @@ function applySystemRule(target, rule, reason, source){
   const minutes=Math.max(1,Math.min(10080,Number(rule.durationMinutes)||5));
   const until=Date.now()+minutes*60000;
   const why=cleanText(reason||rule.reason||"Automated moderation").slice(0,240);
-  if(String(target.rank||"").toUpperCase()==="DEVELOPER") return false;
+  if(String(target.rank||"").toUpperCase()==="OWNER") return false;
   if(action==="WARN"){target.warnings=(target.warnings||0)+1;target.lastWarningReason=why;}
   else if(action==="MUTE"){target.mutedUntil=until;target.muteReason=why;}
   else if(action==="KICK"){target.kickedUntil=until;target.kickReason=why;target.online=false;}
@@ -223,12 +223,7 @@ function id(){
   return crypto.randomUUID();
 }
 
-const ranks=[
-  "MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN",
-  "COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER",
-  // Legacy values remain recognized for existing accounts, but are never grantable.
-  "ROYAL","INSTRUCTOR","DEVELOPER"
-];
+const ranks=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
 
 const rankIcons={
   MEMBER:"⚡",
@@ -236,21 +231,19 @@ const rankIcons={
   SVIP:"💠",
   PREMIUM:"🏅",
   ELITE:"✨",
-  ROYAL:"⚜️",
+  PREMIUM:"⚜️",
   MOD:"🛡️",
   ADMIN:"⭐",
   SUPER_ADMIN:"🌟",
   COMMISSOR:"👻",
   CHIEF_COMMISSOR:"⚔️",
-  INSTRUCTOR:"⚔️",
+  CHIEF_COMMISSOR:"⚔️",
   COOWNER:"👻",
   OWNER:"👑",
-  DEVELOPER:"🛠️"
+  OWNER:"🛠️"
 };
 
-const rankOrder=Object.fromEntries(
-  ranks.map((r,i)=>[r,i])
-);
+const rankOrder=Object.fromEntries(ranks.map((r,i)=>[r,i]));
 
 function hasRank(u,r){
   return !!u&&rankOrder[u.rank]>=rankOrder[r];
@@ -260,7 +253,7 @@ function hasRank(u,r){
 function canAccessStaffTarget(actor,target){
   if(!actor||!target||String(actor.id)===String(target.id))return false;
   const actorRank=String(actor.rank||"").toUpperCase(), targetRank=String(target.rank||"").toUpperCase();
-  if(targetRank==="DEVELOPER"||target.username===DEFAULT_OWNER)return false;
+  if(targetRank==="OWNER"||target.username===DEFAULT_OWNER)return false;
   return (rankOrder[targetRank]??999)<(rankOrder[actorRank]??-1);
 }
 
@@ -365,7 +358,7 @@ const FEATURE_GRANT_DEFAULTS={
   change_password:["OWNER"],
   edit_email:["OWNER"],
   manage_xp_level:["OWNER"],
-  create_rooms:["PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"],
+  create_rooms:["PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER"],
   edit_rooms:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
   delete_rooms:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
   join_rooms:GRANT_RANKS,
@@ -404,11 +397,11 @@ const FEATURE_GRANT_DEFAULTS={
   search_rooms:GRANT_RANKS,leave_rooms:GRANT_RANKS,room_passwords:GRANT_RANKS,room_member_limits:GRANT_RANKS,room_rank_restrictions:GRANT_RANKS,room_friends_only:GRANT_RANKS,room_topics:GRANT_RANKS,room_rules:GRANT_RANKS,room_staff_list:GRANT_RANKS,room_mute_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_kick_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_block_users:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_edit_rules:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_persistence:GRANT_RANKS,room_themes:GRANT_RANKS,room_message_search:GRANT_RANKS,
   reply_messages:GRANT_RANKS,quote_messages:GRANT_RANKS,delete_own_messages:GRANT_RANKS,copy_messages:GRANT_RANKS,hide_messages:GRANT_RANKS,mention_users:GRANT_RANKS,chat_unread_counts:GRANT_RANKS,chat_attachments:GRANT_RANKS,chat_image_upload:GRANT_RANKS,chat_video_upload:GRANT_RANKS,chat_audio_upload:GRANT_RANKS,chat_youtube_music:GRANT_RANKS,chat_message_search:GRANT_RANKS,chat_message_expiry:GRANT_RANKS,chat_scheduled_messages:GRANT_RANKS,chat_doodle_share:GRANT_RANKS,chat_doodle_save:GRANT_RANKS,chat_aurora_announcements:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
   dm_search:GRANT_RANKS,dm_unread_counts:GRANT_RANKS,dm_previews:GRANT_RANKS,dm_reply:GRANT_RANKS,dm_pin:GRANT_RANKS,dm_mute:GRANT_RANKS,dm_archive:GRANT_RANKS,dm_filters:GRANT_RANKS,dm_nicknames:GRANT_RANKS,dm_preferences:GRANT_RANKS,dm_report:GRANT_RANKS,inspect_private_messages:["OWNER"],manage_dm_reports:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  news_read:GRANT_RANKS,news_comment:GRANT_RANKS,news_react:GRANT_RANKS,news_report:GRANT_RANKS,news_pin:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],wall_read:GRANT_RANKS,wall_search:GRANT_RANKS,wall_comment:GRANT_RANKS,wall_react:GRANT_RANKS,wall_report:GRANT_RANKS,wall_pin:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],suggestions_submit:GRANT_RANKS,suggestions_review:["DEVELOPER"],suggestions_set_status:["DEVELOPER"],suggestions_notify_submitter:["DEVELOPER"],
+  news_read:GRANT_RANKS,news_comment:GRANT_RANKS,news_react:GRANT_RANKS,news_report:GRANT_RANKS,news_pin:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],wall_read:GRANT_RANKS,wall_search:GRANT_RANKS,wall_comment:GRANT_RANKS,wall_react:GRANT_RANKS,wall_report:GRANT_RANKS,wall_pin:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],suggestions_submit:GRANT_RANKS,suggestions_review:["OWNER"],suggestions_set_status:["OWNER"],suggestions_notify_submitter:["OWNER"],
   games_access:GRANT_RANKS,gravity_run:GRANT_RANKS,doodle_studio_save:GRANT_RANKS,doodle_studio_share:GRANT_RANKS,gif_search:GRANT_RANKS,media_embeds:GRANT_RANKS,
   premium_access:GRANT_RANKS,vip_access:GRANT_RANKS,gold_wallet:GRANT_RANKS,gold_catalogue:GRANT_RANKS,gold_purchase:GRANT_RANKS,gold_equip:GRANT_RANKS,gold_transaction_history:GRANT_RANKS,daily_rewards:GRANT_RANKS,achievement_access:GRANT_RANKS,premium_requests:GRANT_RANKS,grant_premium:["ELITE","OWNER"],
-  view_rules:GRANT_RANKS,submit_reports:GRANT_RANKS,manage_reports:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_assign:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_resolve:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],edit_site_rules:["INSTRUCTOR","COMMISSOR","COOWNER","OWNER","DEVELOPER"],edit_room_rules:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  leaderboard_access:GRANT_RANKS,saved_messages:GRANT_RANKS,advanced_search:GRANT_RANKS,staff_application_submit:GRANT_RANKS,staff_application_review:["OWNER","COOWNER","COMMISSOR"],staff_dashboard_access:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],staff_notifications:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],system_notifications:["COOWNER","OWNER","DEVELOPER"],audit_log_access:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],audit_log_settings:["OWNER"],under_construction_control:["OWNER"],site_hard_refresh:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  view_rules:GRANT_RANKS,submit_reports:GRANT_RANKS,manage_reports:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_assign:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_resolve:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],edit_site_rules:["CHIEF_COMMISSOR","COMMISSOR","COOWNER","OWNER","OWNER"],edit_room_rules:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  leaderboard_access:GRANT_RANKS,saved_messages:GRANT_RANKS,advanced_search:GRANT_RANKS,staff_application_submit:GRANT_RANKS,staff_application_review:["OWNER","COOWNER","COMMISSOR"],staff_dashboard_access:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],staff_notifications:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],system_notifications:["COOWNER","OWNER","OWNER"],audit_log_access:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],audit_log_settings:["OWNER"],under_construction_control:["OWNER"],site_hard_refresh:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
   inspect_ip_details:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],inspect_similar_ips:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_user_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_username_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_profile_notes:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_account_locks:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_avatar:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],delete_accounts:["COOWNER","OWNER"],manage_bans:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_mutes:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_kicks:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_warnings:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_automated_filters:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_vpn_proxy_rules:["OWNER"],manage_multi_account_rules:["ELITE","OWNER"],manage_spam_flood_rules:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_user_feature_exceptions:["OWNER"],manage_rank_feature_grants:["OWNER"],manage_individual_feature_grants:["OWNER"],manage_owner_space:["OWNER"],manage_site_refresh:["OWNER"],view_system_diagnostics:["OWNER"],manage_site_themes:["OWNER"],manage_economy_settings:["OWNER"],manage_premium_settings:["OWNER"],manage_notifications_settings:["OWNER"],manage_room_permissions:["OWNER"],manage_room_themes:["OWNER"],manage_room_staff:["OWNER","COOWNER","COMMISSOR"],manage_suggestions_settings:["OWNER"],manage_feature_granting:["OWNER"]
 };
 
@@ -421,7 +414,7 @@ join_rooms:RANK_TIERS.all,view_pinned:RANK_TIERS.all,search_rooms:RANK_TIERS.all
 friend_wall_posting:RANK_TIERS.all,wall_post:RANK_TIERS.all,wall_commenting:RANK_TIERS.all,wall_comment:RANK_TIERS.all,wall_liking:RANK_TIERS.all,wall_react:RANK_TIERS.all,wall_read:RANK_TIERS.all,wall_search:RANK_TIERS.all,wall_report:RANK_TIERS.all,wall_pin:RANK_TIERS.svip,wall_upload:RANK_TIERS.vip,nickname_users:RANK_TIERS.vip,room_clear_own:RANK_TIERS.admin,clear_room:RANK_TIERS.admin,room_member_limits:RANK_TIERS.admin,room_rank_restrictions:RANK_TIERS.admin,room_topics:RANK_TIERS.admin,room_friends_only:RANK_TIERS.admin,
 change_avatar:RANK_TIERS.all,change_bio:RANK_TIERS.all,account_register:RANK_TIERS.all,account_login:RANK_TIERS.all,account_settings:RANK_TIERS.all,change_own_password:RANK_TIERS.all,change_own_email:RANK_TIERS.all,account_modifications:RANK_TIERS.mod,profile_note:RANK_TIERS.mod,manage_profile_notes:RANK_TIERS.mod,change_password:RANK_TIERS.instructor,edit_email:RANK_TIERS.commissor,view_emails:RANK_TIERS.commissor,
 dm_search:RANK_TIERS.svip,dm_unread_counts:RANK_TIERS.svip,dm_previews:RANK_TIERS.svip,dm_reply:RANK_TIERS.svip,dm_pin:RANK_TIERS.svip,dm_mute:RANK_TIERS.svip,dm_archive:RANK_TIERS.svip,dm_filters:RANK_TIERS.svip,dm_nicknames:RANK_TIERS.svip,dm_preferences:RANK_TIERS.svip,dm_report:RANK_TIERS.svip,inspect_private_messages:RANK_TIERS.owner,manage_dm_reports:RANK_TIERS.mod,
-suggestions_submit:RANK_TIERS.all,view_rules:RANK_TIERS.all,submit_reports:RANK_TIERS.all,suggestions_review:["DEVELOPER"],suggestions_set_status:["DEVELOPER"],suggestions_notify_submitter:["DEVELOPER"],manage_reports:RANK_TIERS.mod,reports_management:RANK_TIERS.mod,report_resolve:RANK_TIERS.mod,edit_room_rules:RANK_TIERS.mod,room_edit_rules:RANK_TIERS.mod,report_assign:RANK_TIERS.superAdmin,edit_site_rules:RANK_TIERS.commissor,
+suggestions_submit:RANK_TIERS.all,view_rules:RANK_TIERS.all,submit_reports:RANK_TIERS.all,suggestions_review:["OWNER"],suggestions_set_status:["OWNER"],suggestions_notify_submitter:["OWNER"],manage_reports:RANK_TIERS.mod,reports_management:RANK_TIERS.mod,report_resolve:RANK_TIERS.mod,edit_room_rules:RANK_TIERS.mod,room_edit_rules:RANK_TIERS.mod,report_assign:RANK_TIERS.superAdmin,edit_site_rules:RANK_TIERS.commissor,
 news_posting:RANK_TIERS.admin,manage_news:RANK_TIERS.admin,delete_news:RANK_TIERS.admin,news_pin:RANK_TIERS.admin,news_read:RANK_TIERS.all,news_comment:RANK_TIERS.all,news_react:RANK_TIERS.all,news_report:RANK_TIERS.all,
 view_online_users:RANK_TIERS.all,manage_push_notifications:RANK_TIERS.all,moderate_users:RANK_TIERS.mod,moderate_user:RANK_TIERS.mod,delete_message:RANK_TIERS.mod,bypass_filter_words:RANK_TIERS.mod,bypass_mute:RANK_TIERS.mod,staff_rank_assignment:RANK_TIERS.mod,staff_dashboard_access:RANK_TIERS.mod,staff_application_review:RANK_TIERS.commissor,view_user_history:RANK_TIERS.mod,view_username_history:RANK_TIERS.mod,manage_mutes:RANK_TIERS.mod,manage_kicks:RANK_TIERS.mod,manage_warnings:RANK_TIERS.mod,staff_notifications:RANK_TIERS.mod,manage_bans:RANK_TIERS.admin,manage_account_locks:RANK_TIERS.admin,audit_log_access:RANK_TIERS.admin,inspect_ip_details:RANK_TIERS.instructor,inspect_similar_ips:RANK_TIERS.instructor,view_ips:RANK_TIERS.instructor,site_hard_refresh:RANK_TIERS.instructor,manage_site_refresh:RANK_TIERS.instructor,invisible_mode:RANK_TIERS.commissor,presence_modes:RANK_TIERS.commissor,manage_filter_words:RANK_TIERS.commissor,manage_automated_filters:RANK_TIERS.commissor,manage_spam_flood_rules:RANK_TIERS.commissor,grant_premium:["ELITE","OWNER"],premium_granting:RANK_TIERS.owner,manage_multi_account_rules:RANK_TIERS.owner,system_notifications:RANK_TIERS.coowner,ghost_mode:RANK_TIERS.owner,dead_mode:RANK_TIERS.instructor
 };const REQUESTED_FEATURE_GRANTS={
@@ -432,10 +425,10 @@ view_online_users:RANK_TIERS.all,manage_push_notifications:RANK_TIERS.all,modera
 };
 
 const REQUESTED_COMMAND_RANKS={clear:RANK_TIERS.admin,abrakadabra:RANK_TIERS.all,aura:RANK_TIERS.all,roast:RANK_TIERS.all,anonymous:RANK_TIERS.superAdmin,bank:RANK_TIERS.all,convert:RANK_TIERS.all,ship:RANK_TIERS.vip,welcome:RANK_TIERS.vip,steal:RANK_TIERS.premium,bread:RANK_TIERS.premium,rose:RANK_TIERS.premium,brain:RANK_TIERS.premium};
-const REQUESTED_MODE_RANKS={invisible:["COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"],dead:["INSTRUCTOR","COOWNER","OWNER","DEVELOPER"],ghost:["OWNER","DEVELOPER"]};
+const REQUESTED_MODE_RANKS={invisible:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"],dead:["CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"],ghost:["OWNER","OWNER"]};
 function modeRankAllowed(mode,rank){
   const normalized=String(rank||"").toUpperCase();
-  if(normalized==="DEVELOPER")return true;
+  if(normalized==="OWNER")return true;
   const configured=db.settings?.mode_management?.[mode];
   const allowed=Array.isArray(configured)?configured:REQUESTED_MODE_RANKS[mode]||[];
   return allowed.map(x=>String(x||"").toUpperCase()).includes(normalized);
@@ -470,7 +463,19 @@ function ensureFeaturePermissions(){
 }
 
 function featureRank(key){
-  ensureFeaturePermissions();
+  // One-time compatibility migration: translate retired rank names into the current Knightpulse schema.
+const LEGACY_RANK_MIGRATION={ROYAL:"PREMIUM",INSTRUCTOR:"CHIEF_COMMISSOR",DEVELOPER:"OWNER"};
+for(const account of (db.users||[])){
+  const previous=String(account.rank||"MEMBER").toUpperCase();
+  if(LEGACY_RANK_MIGRATION[previous])account.rank=LEGACY_RANK_MIGRATION[previous];
+}
+function migrateRankSettings(value){
+  if(Array.isArray(value))return value.map(migrateRankSettings);
+  if(value&&typeof value==="object"){for(const key of Object.keys(value))value[key]=migrateRankSettings(value[key]);return value;}
+  return typeof value==="string"?(LEGACY_RANK_MIGRATION[value.toUpperCase()]||value):value;
+}
+db.settings=migrateRankSettings(db.settings||{});
+ensureFeaturePermissions();
   const f=FEATURE_CONTROLS.find(x=>x.key===key);
   return f ? db.featurePermissions[key] : "OWNER";
 }
@@ -480,7 +485,7 @@ function hasFeature(u,key){
   if(String(key||"").toLowerCase()==="staff_rank_assignment") return ["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(u.rank||"").toUpperCase());
   // News publishing is a fixed staff-rank permission: Admin and every rank above.
   if(["publish_news","news_posting"].includes(String(key||"").toLowerCase())) return hasRank(u,"ADMIN");
-  if(String(u.rank).toUpperCase()==="DEVELOPER") return true;
+  if(String(u.rank).toUpperCase()==="OWNER") return true;
   if(u.username===DEFAULT_OWNER && u.rank==="OWNER") return true;
   const granted=userFeatureGrant(u,key);if(granted!==null)return granted;
   // Apply Owner Space's Feature Granting thresholds to every feature check,
@@ -506,7 +511,7 @@ function featureAllowed(key){
     // Keep the configured site Owner bypass consistent with hasFeature().
     // Without this, an explicit rank-grant array can reject the Owner before
     // the normal feature check gets a chance to apply the Owner override.
-    if(String(u.rank).toUpperCase()==="DEVELOPER" || (u.username===DEFAULT_OWNER && String(u.rank).toUpperCase()==="OWNER")) return next();
+    if(String(u.rank).toUpperCase()==="OWNER" || (u.username===DEFAULT_OWNER && String(u.rank).toUpperCase()==="OWNER")) return next();
     const individual=userFeatureGrant(u,key);
     if(individual!==null)return individual?next():res.status(403).json({error:"This feature has not been granted to your account."});
     const alias={create_room:"create_rooms",manage_filters:"manage_filter_words",moderate_user:"moderate_users",publish_news:"news_posting",wall_post:"friend_wall_posting"}[key]||key;
@@ -1011,7 +1016,7 @@ function normalizedList(value,max=80){
 }
 async function networkAccessDecision(req,userOverride=null){
   const actor=userOverride||current(req);
-  if(String(actor?.rank||"").toUpperCase()==="DEVELOPER"&&String(actor?.username||"")==="Maleficent")return {allowed:true,ip:clientIp(req)};
+  if(String(actor?.rank||"").toUpperCase()==="OWNER"&&String(actor?.username||"")==="Maleficent")return {allowed:true,ip:clientIp(req)};
   const config=await getDeveloperNetworkSecurity();
   const ip=clientIp(req);
   const matchingRule=(config.ipRules||[]).find(rule=>rule.enabled!==false&&networkRuleMatches(ip,rule.pattern));
@@ -1060,7 +1065,7 @@ async function auth(req,res,next){
   if(u.kickedUntil&&Number(u.kickedUntil)>Date.now())return res.status(403).json({error:"You have been kicked",reason:u.kickReason||"Community rules",kickedUntil:Number(u.kickedUntil),moderationLock:"KICK"});
 
   const construction=db.settings?.under_construction||{};
-  if(String(u.rank||"").toUpperCase()!=="DEVELOPER" &&
+  if(String(u.rank||"").toUpperCase()!=="OWNER" &&
      String(u.rank||"").toUpperCase()!=="OWNER" &&
      construction.enabled===true){
     return res.status(503).json({error:"The site is under construction.",underConstruction:true});
@@ -1098,8 +1103,8 @@ app.get("/api/under-construction/status",async(req,res)=>{
     // Maintenance stays enabled until the owner/developer explicitly switches it off.
     const enabled=setting.enabled===true;
     const u=current(req),rankName=String(u?.rank||"").toUpperCase();
-    const exempt=rankName==="DEVELOPER"||rankName==="OWNER";
-    const canManage=!!u&&(rankName==="DEVELOPER"||rankName==="OWNER");
+    const exempt=rankName==="OWNER"||rankName==="OWNER";
+    const canManage=!!u&&(rankName==="OWNER"||rankName==="OWNER");
     res.json({enabled:enabled&&!exempt,configuredEnabled:enabled,until:0,exempt,canManage,message:String(setting.message||"")});
   }catch(error){
     console.error("Under-construction status read failed:",error);
@@ -1184,12 +1189,12 @@ app.post("/api/staff/under-construction",express.json(),auth,ownerOnly,async(req
 });
 
 function staff(r){
-  return ["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER","DEVELOPER"].includes(String(r).toUpperCase());
+  return ["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER","OWNER"].includes(String(r).toUpperCase());
 }
 
 function ownerOnly(req,res,next){
   const u=current(req);
-  if(!u || !(String(u.rank).toUpperCase()==="DEVELOPER" || String(u.rank).toUpperCase()==="OWNER")){
+  if(!u || !(String(u.rank).toUpperCase()==="OWNER" || String(u.rank).toUpperCase()==="OWNER")){
     return res.status(403).json({error:"Owner/Developer only"});
   }
   next();
@@ -1197,7 +1202,7 @@ function ownerOnly(req,res,next){
 
 function developerOnly(req,res,next){
   const u=current(req);
-  if(!u || String(u.rank).toUpperCase()!=="DEVELOPER" || u.username!=="Maleficent"){
+  if(!u || String(u.rank).toUpperCase()!=="OWNER" || u.username!=="Maleficent"){
     return res.status(403).json({error:"Permanent Developer account only"});
   }
   next();
@@ -1366,7 +1371,7 @@ async function checkRestrictedMediaBuffer(res,user,buffer){
 
 
 function awardXp(u,n=5){
-  if(String(u?.rank).toUpperCase()==="DEVELOPER"){u.xp=(u.xp||0)+Math.max(0,Number(n)||0);u.level=Math.floor(u.xp/(db.settings.xpPerLevel||100))+1;return;}
+  if(String(u?.rank).toUpperCase()==="OWNER"){u.xp=(u.xp||0)+Math.max(0,Number(n)||0);u.level=Math.floor(u.xp/(db.settings.xpPerLevel||100))+1;return;}
   const day=new Date()
     .toISOString()
     .slice(0,10);
@@ -1418,8 +1423,8 @@ async function ensureDeveloper(){
     if (!q.rowCount) throw new Error('OWNER_PASSWORD is required to initialize the permanent Developer account.');
   }
   const row=q.rows[0]; let u=findUser('Maleficent');
-  if(!u){ u={id:String(row.id),username:'Maleficent',displayName:'Maleficent',password:row.password,passwordHash:row.password,rank:'DEVELOPER',gold:999999,xp:999999,verified:true,createdAt:Date.now(),lastSeen:Date.now(),online:false,level:999999,bio:'Permanent Developer of Cloud Chat.',settings:{rememberLogin:true,theme:'obsidian',notificationPrefs:{messages:true,mentions:true,replies:true,security:true,staff:true,gamification:true,other:true}}}; db.users.push(u); }
-  else { u.rank='DEVELOPER'; u.password=row.password; u.passwordHash=row.password; }
+  if(!u){ u={id:String(row.id),username:'Maleficent',displayName:'Maleficent',password:row.password,passwordHash:row.password,rank:'OWNER',gold:999999,xp:999999,verified:true,createdAt:Date.now(),lastSeen:Date.now(),online:false,level:999999,bio:'Permanent Developer of Cloud Chat.',settings:{rememberLogin:true,theme:'obsidian',notificationPrefs:{messages:true,mentions:true,replies:true,security:true,staff:true,gamification:true,other:true}}}; db.users.push(u); }
+  else { u.rank='OWNER'; u.password=row.password; u.passwordHash=row.password; }
 }
 ensureFeaturePermissions();
 
@@ -2113,7 +2118,7 @@ app.delete(
   async(req,res)=>{
     const u=current(req);
     if(!u)return res.status(401).json({error:"Login required"});
-    if(u.username===DEFAULT_OWNER||String(u.rank||"").toUpperCase()==="OWNER"||String(u.rank||"").toUpperCase()==="DEVELOPER"){
+    if(u.username===DEFAULT_OWNER||String(u.rank||"").toUpperCase()==="OWNER"||String(u.rank||"").toUpperCase()==="OWNER"){
       return res.status(400).json({error:"The permanent Owner/Developer account cannot be deleted."});
     }
     try{
@@ -2308,7 +2313,7 @@ app.get("/api/rooms",auth,async(req,res)=>{
   const {rows}=await pool.query(`SELECT r.*,u.username AS creator FROM rooms r LEFT JOIN users u ON r.created_by=u.id ORDER BY r.is_default DESC,r.created_at ASC,r.id ASC`);
   if(!rows.length) return res.status(503).json({error:'Rooms are not initialized yet. Please retry in a moment.',rooms:[]});
   const viewer=current(req);
-  const canSeeRoomPins=["COOWNER","CO-OWNER","CO_OWNER","OWNER","DEVELOPER"].includes(String(viewer.rank||"").toUpperCase().replace(/\s+/g,""));
+  const canSeeRoomPins=["COOWNER","CO-OWNER","CO_OWNER","OWNER","OWNER"].includes(String(viewer.rank||"").toUpperCase().replace(/\s+/g,""));
    const allRooms=rows.map(r=>{const room={id:String(r.id),name:r.name,icon:r.icon||"💬",description:r.description||"",category:r.category||"Community",public:r.is_public!==false,passwordHash:r.password_hash||null,rankRequired:String(r.rank_required||"MEMBER").toUpperCase(),limit:Number(r.room_limit||100),slowMode:Number(r.slow_mode||0),announcement:r.announcement||"",ownerId:r.created_by?String(r.created_by):null,banner:r.banner||"",inviteToken:r.invite_token||"",creator:r.creator||null,isDefault:!!r.is_default,minAge:Number(r.min_age??0),maxAge:Number(r.max_age??120),friendsOnly:!!(db.settings?.room_access?.[String(r.id)]?.friendsOnly),roomTheme:String(db.settings?.room_themes?.[String(r.id)]||"obsidian"),locked:!!r.password_hash,roomCode:r.is_public===false?formatRoomCode(r.room_code):null,onlineCount:visibleRoomOnlineCount(r.id),...(canSeeRoomPins?{pinned:!!db.settings?.room_pins?.[String(r.id)]}:{})};return room;});
   db.rooms=allRooms;
   const joinToken=String(req.headers["x-room-join-token"]||"");
@@ -2318,12 +2323,12 @@ app.get("/api/rooms",auth,async(req,res)=>{
     if(!roomIsPrivate(room))return true;
     if(roomOwnerOrGlobal(viewer,room)||roomRole(room.id,viewer.id)!=="USER")return true;
     return verifyRoomJoinToken(joinToken,viewer.id,room);
-  }).map(room=>{const safe={...room,passwordHash:undefined,inviteToken:undefined};if(room.public===false&&String(room.ownerId||"")!==String(viewer.id)&&!["OWNER","DEVELOPER"].includes(String(viewer.rank||"").toUpperCase()))delete safe.roomCode;return safe;});
+  }).map(room=>{const safe={...room,passwordHash:undefined,inviteToken:undefined};if(room.public===false&&String(room.ownerId||"")!==String(viewer.id)&&!["OWNER","OWNER"].includes(String(viewer.rank||"").toUpperCase()))delete safe.roomCode;return safe;});
   res.json({rooms});
 });
 
 function roomAgeAllowed(user,room){
-  const staff=["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(String(user?.rank||"").toUpperCase());
+  const staff=["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(String(user?.rank||"").toUpperCase());
   // Staff may enter any room; the age-appropriate shortcut still routes them to Teen Chat.
   if(staff)return true;
   const minAge=Number(room?.minAge??room?.min_age??0),maxAge=Number(room?.maxAge??room?.max_age??120);
@@ -2357,7 +2362,7 @@ async function createRoomHandler(req,res){
   // Keep server authorization aligned with the room-creation UI.
   // Premium/Royal and designated staff ranks may create rooms; explicit feature grants
   // remain available for other accounts configured by the Owner/Developer.
-  const roomCreatorRanks=["PREMIUM","ROYAL","MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+  const roomCreatorRanks=["PREMIUM","PREMIUM","MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"];
   if(!roomCreatorRanks.includes(String(u.rank||"").toUpperCase()) && !(featureGrantAllowed(u,"create_rooms")||hasFeature(u,"create_room"))) {
     return res.status(403).json({error:`Create room requires ${featureRank("create_room")} or an explicit create-room permission.`});
   }
@@ -2431,7 +2436,7 @@ function roomRoleCan(roomId,userId,permission){
   const configured=db.settings?.room_role_permissions?.[role];
   return typeof configured?.[permission]==="boolean"?configured[permission]:!!ROOM_ROLE_PERMISSION_DEFAULTS[role][permission];
 }
-function roomOwnerOrGlobal(u,room){return roomRole(room.id,u.id)==="ROOM_OWNER"||["OWNER","COOWNER","COMMISSOR","DEVELOPER"].includes(String(u.rank||"").toUpperCase())||String(room.ownerId||room.owner_id||room.createdBy||room.created_by||"")===String(u.id);}
+function roomOwnerOrGlobal(u,room){return roomRole(room.id,u.id)==="ROOM_OWNER"||["OWNER","COOWNER","COMMISSOR","OWNER"].includes(String(u.rank||"").toUpperCase())||String(room.ownerId||room.owner_id||room.createdBy||room.created_by||"")===String(u.id);}
 function requirePrivateRoomAccess(req,res,room,actor=current(req)){
   if(!roomIsPrivate(room)||verifyRoomJoinToken(req.headers["x-room-join-token"],actor?.id,room))return true;
   res.status(403).json({error:"Join this private room before viewing its details."});
@@ -2524,7 +2529,7 @@ app.put("/api/rooms/:id/staff/:userId",auth,(req,res)=>{
   const permissionNeeded=role==="USER"?"manage_staff":"assign_ranks";
   if(!roomOwnerOrGlobal(actor,room)&&!roomRoleCan(room.id,actor.id,permissionNeeded))return res.status(403).json({error:"Your room role does not have permission to "+(role==="USER"?"manage or remove room staff.":"assign room ranks.")});
   if(role!=="USER"&&(!Array.isArray(db.settings?.feature_grants?.room_rank_assign)||!db.settings.feature_grants.room_rank_assign.length))return res.status(403).json({error:"Room-rank assignment is disabled in Feature Granting."});
-  if(String(target.rank||"").toUpperCase()==="DEVELOPER"&&String(actor.rank||"").toUpperCase()!=="DEVELOPER")return res.status(403).json({error:"Only the Developer can change this account's room rank."});
+  if(String(target.rank||"").toUpperCase()==="OWNER"&&String(actor.rank||"").toUpperCase()!=="OWNER")return res.status(403).json({error:"Only the Developer can change this account's room rank."});
   const targetGlobalRank=String(target.rank||"MEMBER").toUpperCase();
   const targetIsStaff=(rankOrder[targetGlobalRank]??-1)>=(rankOrder["MOD"]??4)||String(target.username||"").toLowerCase()==="maleficent";
   if(targetIsStaff&&!canAccessStaffTarget(actor,target))return res.status(403).json({error:"You cannot change room ranks for an equal or higher-ranked staff account. Room rank never overrides global staff hierarchy."});
@@ -2537,7 +2542,7 @@ app.post("/api/rooms/:id/staff-action",auth,async(req,res)=>{
   const actor=current(req),room=db.rooms.find(x=>String(x.id)===String(req.params.id)),target=db.users.find(x=>String(x.id)===String(req.body.userId));
   if(!room||!target)return res.status(404).json({error:"Room or user not found"});
   if(!requirePrivateRoomAccess(req,res,room,actor))return;
-  const role=roomRole(room.id,actor.id),level=roomRoleLevel(role),global=["OWNER","COOWNER","COMMISSOR","DEVELOPER"].includes(String(actor.rank||"").toUpperCase());
+  const role=roomRole(room.id,actor.id),level=roomRoleLevel(role),global=["OWNER","COOWNER","COMMISSOR","OWNER"].includes(String(actor.rank||"").toUpperCase());
   const action=String(req.body.action||"").toUpperCase(),reason=cleanText(req.body.reason||"Room rule violation").slice(0,240);
   if(target.id===actor.id)return res.status(400).json({error:"You cannot moderate yourself."});
   const targetGlobalRank=String(target.rank||"MEMBER").toUpperCase();
@@ -2604,7 +2609,7 @@ app.put("/api/rooms/:id",auth,async(req,res)=>{
 app.put("/api/rooms/:id/pin",auth,(req,res)=>{
   const actor=current(req),room=db.rooms.find(item=>String(item.id)===String(req.params.id));
   if(!room)return res.status(404).json({error:"Room not found"});
-  if(!["COOWNER","CO-OWNER","CO_OWNER","OWNER","DEVELOPER"].includes(String(actor.rank||"").toUpperCase().replace(/\s+/g,"")))return res.status(403).json({error:"Only Co-owner, Owner, and Developer can pin rooms."});
+  if(!["COOWNER","CO-OWNER","CO_OWNER","OWNER","OWNER"].includes(String(actor.rank||"").toUpperCase().replace(/\s+/g,"")))return res.status(403).json({error:"Only Co-owner, Owner, and Developer can pin rooms."});
   const pinned=typeof req.body?.pinned==="boolean"?req.body.pinned:!db.settings?.room_pins?.[String(room.id)];
   db.settings ||= {};db.settings.room_pins ||= {};db.settings.room_pins[String(room.id)]=pinned;
   save();log(actor,pinned?"ROOM_PIN":"ROOM_UNPIN",room.name,{roomId:String(room.id)});
@@ -2678,7 +2683,7 @@ app.post(
     if(kicked&&Number(kicked.until)>Date.now())return res.status(403).json({error:"You were removed from this room temporarily. Reason: "+String(kicked.reason||"Room rules").slice(0,240)});
     if(kicked&&Number(kicked.until)<=Date.now())delete roomState.room_kicks[roomKey][uid];
     const isAgeRoom=/^(teen chat|adult chat)$/i.test(String(r.name||"").trim());
-    const isStaffAccount=["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(String(u.rank||"").toUpperCase());
+    const isStaffAccount=["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(String(u.rank||"").toUpperCase());
     if(!isAgeRoom&&!isStaffAccount&&!hasFeature(u,"join_rooms")){
       return res.status(403).json({error:"Your account does not have permission to join rooms."});
     }
@@ -2789,8 +2794,8 @@ app.post("/api/rooms/:id/messages",auth,featureAllowed("send_messages"),upload.s
   if(u.banned===true)return res.status(403).json({error:"You have been banned",reason:u.banReason||"Community rules"});
   if(u.kickedUntil&&u.kickedUntil>Date.now())return res.status(403).json({error:"You have been kicked",reason:u.kickReason||"Community rules",kickedUntil:u.kickedUntil});
   if(u.mutedUntil&&u.mutedUntil>Date.now())return res.status(403).json({error:"You are muted until "+new Date(u.mutedUntil).toLocaleString()});
-  if(req.file && String(u.rank).toUpperCase()!=="DEVELOPER" && !featureGrantAllowed(u,"chat_file_upload")) return res.status(403).json({error:"Your rank cannot upload files in chat."});
-  if(String(u.rank).toUpperCase()!=="DEVELOPER" && req.file){
+  if(req.file && String(u.rank).toUpperCase()!=="OWNER" && !featureGrantAllowed(u,"chat_file_upload")) return res.status(403).json({error:"Your rank cannot upload files in chat."});
+  if(String(u.rank).toUpperCase()!=="OWNER" && req.file){
     const mime=String(req.file.mimetype||"").toLowerCase();
     const ext=path.extname(String(req.file.originalname||"")).toLowerCase();
     const allowedAudioExt=[".mp3",".m4a",".wav",".ogg",".aac",".flac",".opus",".weba"];
@@ -2819,7 +2824,7 @@ app.post("/api/rooms/:id/messages",auth,featureAllowed("send_messages"),upload.s
     if(systemNetworkWindows.size>5000){for(const [k,v] of systemNetworkWindows)if(!v.length||now-v[v.length-1]>120000)systemNetworkWindows.delete(k);}
   }
   // Configurable AutoGuard: flood and repeated-message checks run on the server.
-  if(!req.file && String(u.rank||"").toUpperCase()!=="DEVELOPER"){
+  if(!req.file && String(u.rank||"").toUpperCase()!=="OWNER"){
     const now=Date.now(), key=String(u.id), signature=String(text||"").toLowerCase().replace(/\\s+/g," ").trim().slice(0,300);
     const prev=systemModerationWindows.get(key)||{times:[],texts:[]};
     prev.times=prev.times.filter(t=>now-t<10000); prev.times.push(now);
@@ -2872,12 +2877,12 @@ app.post("/api/rooms/:id/messages",auth,featureAllowed("send_messages"),upload.s
       for(const key of commandDefs){
         const config=commandSettings[key]||{};
         const allowedRanks=(key==="bank"||key==="convert")?RANK_TIERS.all:(Array.isArray(config.ranks)?config.ranks:(REQUESTED_COMMAND_RANKS[key]||RANK_TIERS.all));
-        if(rank!=="DEVELOPER"&&!allowedRanks.map(x=>String(x||"").toUpperCase()).includes(rank))continue;
+        if(rank!=="OWNER"&&!allowedRanks.map(x=>String(x||"").toUpperCase()).includes(rank))continue;
         const item=descriptions[key];if(!item)continue;
         visible.push({name:String(config.name||key),usage:"/"+String(config.name||key)+(item.usage||("/"+key)).slice(("/"+key).length),description:item.description});
       }
       const clearRanks=Array.isArray(commandSettings.clear?.ranks)?commandSettings.clear.ranks:(REQUESTED_COMMAND_RANKS.clear||RANK_TIERS.admin);
-      const clearAllowed=rank==="DEVELOPER"||clearRanks.map(x=>String(x||"").toUpperCase()).includes(rank);
+      const clearAllowed=rank==="OWNER"||clearRanks.map(x=>String(x||"").toUpperCase()).includes(rank);
       const modes=["invisible","dead","ghost"].filter(mode=>modeRankAllowed(mode,rank));
       if(modes.length)visible.push({...descriptions.mode,description:"Open available modes: "+modes.join(", ")+".",name:"mode"});
       visible.push(descriptions.guide);
@@ -2888,7 +2893,7 @@ app.post("/api/rooms/:id/messages",auth,featureAllowed("send_messages"),upload.s
     if(commandDefs.includes(commandKey)){
       const config=commandSettings[commandKey],allowedRanks=(commandKey==="bank"||commandKey==="convert")?RANK_TIERS.all:(Array.isArray(config?.ranks)?config.ranks:(REQUESTED_COMMAND_RANKS[commandKey]||RANK_TIERS.all));
       const actorRank=String(u.rank||"MEMBER").toUpperCase();
-      if(actorRank!=="DEVELOPER"&&!allowedRanks.includes(actorRank))return res.status(403).json({error:"Your rank cannot use this command."});
+      if(actorRank!=="OWNER"&&!allowedRanks.includes(actorRank))return res.status(403).json({error:"Your rank cannot use this command."});
     }
     const canonicalCommand=commandKey;
 
@@ -3143,11 +3148,11 @@ app.post("/api/rooms/:id/messages",auth,featureAllowed("send_messages"),upload.s
     if(commandKey!=="clear")return res.status(400).json({error:"Unknown command. Available commands: /clear, /Abrakadabra, /welcome, /ship, /roast, /aura, /rose, /bread, and /brain."});
 
   }
-  if((r.locked||db.settings?.locked_rooms?.[String(r.id)]) && !hasRank(u,"MOD") && String(u.rank).toUpperCase()!=="DEVELOPER")return res.status(403).json({error:"This room is locked. Only staff can send messages."});
+  if((r.locked||db.settings?.locked_rooms?.[String(r.id)]) && !hasRank(u,"MOD") && String(u.rank).toUpperCase()!=="OWNER")return res.status(403).json({error:"This room is locked. Only staff can send messages."});
 
   // Report-only filter words use the "r:" prefix. Keep the message unchanged and do not notify the sender.
   const reportOnlyMatch=reportOnlyFilteredWord(text);
-  if(reportOnlyMatch && String(u.rank).toUpperCase()!=="DEVELOPER"){
+  if(reportOnlyMatch && String(u.rank).toUpperCase()!=="OWNER"){
     const autoReport={
       id:id(),time:Date.now(),reporter:null,reporterUsername:"System filter",
       reportedUserId:u.id,reportedUserUsername:u.username,reportedUserDisplayName:u.displayName||u.username,
@@ -3166,7 +3171,7 @@ app.post("/api/rooms/:id/messages",auth,featureAllowed("send_messages"),upload.s
   const matchedFilter=filteredWord(text);
   const affected=(db.settings.filter_affected_ranks||[]).map(x=>String(x).toUpperCase());
   let autoMuted=false;
-  if(matchedFilter && String(u.rank).toUpperCase()!=="DEVELOPER" && affected.includes(String(u.rank).toUpperCase())){
+  if(matchedFilter && String(u.rank).toUpperCase()!=="OWNER" && affected.includes(String(u.rank).toUpperCase())){
     const minutes=Math.max(1,Number(db.settings.filterMuteDurationMinutes||5));
     const stars="*".repeat(Math.max(3,String(matchedFilter).length));
     const re=new RegExp(String(matchedFilter).replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"gi");
@@ -3526,7 +3531,7 @@ app.post(
 // Cleared-room evidence is restricted server-side to Instructor and higher ranks.
 function requireClearedRoomEvidenceAccess(req,res,next){
   const viewer=current(req);
-  if(!viewer||!hasRank(viewer,"INSTRUCTOR"))return res.status(403).json({error:"Cleared room message inspection requires Instructor rank or higher."});
+  if(!viewer||!hasRank(viewer,"CHIEF_COMMISSOR"))return res.status(403).json({error:"Cleared room message inspection requires Instructor rank or higher."});
   next();
 }
 app.get("/api/staff/cleared-room-evidence",auth,requireClearedRoomEvidenceAccess,async(req,res)=>{
@@ -3937,7 +3942,7 @@ app.post("/api/native/dm/reply",async(req,res)=>{
     const networkDecision=await networkAccessDecision(req,u);
     if(!networkDecision.allowed)return res.status(403).json({error:networkDecision.reason||"Network access is restricted."});
     const construction=db.settings?.under_construction||{};
-    if(construction.enabled===true&&!["DEVELOPER","OWNER"].includes(String(u.rank||"").toUpperCase()))return res.status(503).json({error:"The site is under construction."});
+    if(construction.enabled===true&&!["OWNER","OWNER"].includes(String(u.rank||"").toUpperCase()))return res.status(503).json({error:"The site is under construction."});
     if(isUserFeatureBlocked(u,"private_messages")||!hasFeature(u,"private_messages"))return res.status(403).json({error:"Private messaging is not available for this account."});
     if(privateMessagesBlocked(u,v))return res.status(403).json({error:"Messaging blocked."});
     const m={id:id(),from:u.id,to:v.id,text:message.slice(0,4000),attachment:null,replyTo:null,time:Date.now(),read:false,delivered:true};
@@ -4147,7 +4152,7 @@ app.post('/api/wallet/convert',auth,async(req,res)=>{
 });
 app.post('/api/wallet/reward',auth,async(req,res)=>{
   const actor=current(req),rank=String(actor.rank||'').toUpperCase();
-  if(!['COOWNER','OWNER','DEVELOPER'].includes(rank))return res.status(403).json({error:'Only Coowner, Owner and Developer can grant Gold or Diamond rewards.'});
+  if(!['COOWNER','OWNER','OWNER'].includes(rank))return res.status(403).json({error:'Only Coowner, Owner and Developer can grant Gold or Diamond rewards.'});
   const currency=String(req.body?.currency||'DIAMONDS').toUpperCase();
   if(!['DIAMONDS','GOLD'].includes(currency))return res.status(400).json({error:'Choose Gold or Diamonds.'});
   const target=findUser(req.body?.userId||req.body?.username),amount=Number(req.body?.amount),reason=cleanText(req.body?.reason||'').trim().slice(0,240);
@@ -4187,14 +4192,14 @@ app.post('/api/staff/system-notifications',auth,featureAllowed('view_staff_dashb
   const message=String(req.body?.message||'').trim().slice(0,2000);
   const targetRank=String(req.body?.targetRank||'ALL').trim().toUpperCase();
   const targetRange=String(req.body?.targetRange||'EXACT').trim().toUpperCase();
-  const allowedTargets=['ALL','MEMBER','VIP','PREMIUM','ROYAL','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'];
+  const allowedTargets=['ALL','MEMBER','VIP','PREMIUM','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'];
   const allowedRanges=['EXACT','AND_ABOVE','AND_BELOW'];
   if(!title||!message)return res.status(400).json({error:'Enter both a notification title and message.'});
   if(!allowedTargets.includes(targetRank))return res.status(400).json({error:'Choose a valid recipient rank.'});
   if(!allowedRanges.includes(targetRange))return res.status(400).json({error:'Choose a valid recipient range.'});
   try{
     const q=await pool.query('SELECT id,rank FROM users ORDER BY id');
-    const rankLevels={MEMBER:0,USER:0,VIP:1,PREMIUM:2,ROYAL:3,MOD:4,MODERATOR:4,ADMIN:5,SUPER_ADMIN:6,COMMISSOR:7,INSTRUCTOR:8,COOWNER:9,OWNER:10,DEVELOPER:11};
+    const rankLevels={MEMBER:0,USER:0,VIP:1,SVIP:2,PREMIUM:3,MOD:4,MODERATOR:4,ADMIN:5,SUPER_ADMIN:6,COMMISSOR:7,CHIEF_COMMISSOR:8,COOWNER:9,ELITE:10,OWNER:11}
     const selectedLevel=rankLevels[targetRank];
     const audience=q.rows.filter(row=>{
       if(targetRank==='ALL')return true;
@@ -4596,8 +4601,8 @@ app.get("/api/staff/ip-inspection/diagnostics",auth,ownerOnly,(req,res)=>{
 });
 app.get("/api/staff/ip-inspection/users",auth,async(req,res)=>{
   const actor=current(req),viewerRank=String(actor?.rank||"").toUpperCase();
-  if(!["INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(viewerRank))return res.status(403).json({error:"Your rank does not have IP Inspection access."});
-  const canInspectTarget=target=>viewerRank==="OWNER"||viewerRank==="DEVELOPER"||(String(target?.id)!==String(actor?.id)&&(rankOrder[String(target?.rank||"MEMBER").toUpperCase()]??999)<(rankOrder[viewerRank]??-1));
+  if(!["CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(viewerRank))return res.status(403).json({error:"Your rank does not have IP Inspection access."});
+  const canInspectTarget=target=>viewerRank==="OWNER"||viewerRank==="OWNER"||(String(target?.id)!==String(actor?.id)&&(rankOrder[String(target?.rank||"MEMBER").toUpperCase()]??999)<(rankOrder[viewerRank]??-1));
   const term=String(req.query.q||"").trim().replace(/^@/,"").slice(0,80);
   try{const result=await pool.query("SELECT id,username,email,created_at FROM users WHERE ($1='' OR username ILIKE '%'||$1||'%' OR COALESCE(email,'') ILIKE '%'||$1||'%') ORDER BY LOWER(username) LIMIT 30",[term]);if(result.rows.length||!Array.isArray(db.users))return res.json({users:result.rows.filter(u=>canInspectTarget({...u,rank:db.users.find(x=>String(x.id)===String(u.id))?.rank})).slice(0,30)});}
   catch(error){console.error("[IP_INSPECTION] SQL account search unavailable; using persisted users:",error?.message||error);}
@@ -4800,7 +4805,7 @@ app.get("/api/developer/network-security/lookup",auth,developerOnly,async(req,re
 
 function developerNetworkAccess(req,res){
  const actor=current(req);
- if(String(actor?.rank||"").toUpperCase()!=="DEVELOPER"){res.status(403).json({error:"Developer account access required."});return null;}
+ if(String(actor?.rank||"").toUpperCase()!=="OWNER"){res.status(403).json({error:"Developer account access required."});return null;}
  db.settings ||= {}; db.settings.developer_network_security ||= {ipRules:[],blockVpn:false,allowedCountries:[],blockedCountries:[],blockedRegions:[]};
  const cfg=db.settings.developer_network_security;cfg.ipRules||=[];cfg.allowedCountries||=[];cfg.blockedCountries||=[];cfg.blockedRegions||=[];
  return {actor,cfg};
@@ -4827,17 +4832,17 @@ app.post("/api/developer/network-security/rules",auth,(req,res)=>{
  const valid=networkRuleIsValid(pattern);
  if(!valid)return res.status(400).json({error:"Enter an IPv4 address, wildcard such as 45.67.1.*, or CIDR such as 45.67.0.0/16."});
  if(a.cfg.ipRules.some(r=>r.pattern===pattern&&r.enabled!==false))return res.status(409).json({error:"That rule already exists."});
- a.cfg.ipRules.unshift({id:crypto.randomUUID(),pattern,reason:String(req.body?.reason||"Developer network ban").slice(0,240),enabled:true,createdAt:Date.now(),createdBy:a.actor.username});save();log(a.actor,"DEVELOPER_IP_RANGE_BAN",pattern);res.json({ok:true,config:a.cfg});
+ a.cfg.ipRules.unshift({id:crypto.randomUUID(),pattern,reason:String(req.body?.reason||"Developer network ban").slice(0,240),enabled:true,createdAt:Date.now(),createdBy:a.actor.username});save();log(a.actor,"OWNER_IP_RANGE_BAN",pattern);res.json({ok:true,config:a.cfg});
 });
-app.delete("/api/developer/network-security/rules/:id",auth,(req,res)=>{const a=developerNetworkAccess(req,res);if(!a)return;const old=a.cfg.ipRules.length;a.cfg.ipRules=a.cfg.ipRules.filter(r=>String(r.id)!==String(req.params.id));if(old===a.cfg.ipRules.length)return res.status(404).json({error:"Rule not found."});save();log(a.actor,"DEVELOPER_IP_RANGE_UNBAN",String(req.params.id));res.json({ok:true,config:a.cfg});});
-app.put("/api/developer/network-security/policy",auth,(req,res)=>{const a=developerNetworkAccess(req,res);if(!a)return;const b=req.body||{};a.cfg.blockVpn=b.blockVpn===true;a.cfg.allowedCountries=networkPolicyList(b.allowedCountries);a.cfg.blockedCountries=networkPolicyList(b.blockedCountries);a.cfg.blockedRegions=networkPolicyList(b.blockedRegions);save();log(a.actor,"DEVELOPER_NETWORK_POLICY_UPDATE","network policy");res.json({ok:true,config:a.cfg});});
+app.delete("/api/developer/network-security/rules/:id",auth,(req,res)=>{const a=developerNetworkAccess(req,res);if(!a)return;const old=a.cfg.ipRules.length;a.cfg.ipRules=a.cfg.ipRules.filter(r=>String(r.id)!==String(req.params.id));if(old===a.cfg.ipRules.length)return res.status(404).json({error:"Rule not found."});save();log(a.actor,"OWNER_IP_RANGE_UNBAN",String(req.params.id));res.json({ok:true,config:a.cfg});});
+app.put("/api/developer/network-security/policy",auth,(req,res)=>{const a=developerNetworkAccess(req,res);if(!a)return;const b=req.body||{};a.cfg.blockVpn=b.blockVpn===true;a.cfg.allowedCountries=networkPolicyList(b.allowedCountries);a.cfg.blockedCountries=networkPolicyList(b.blockedCountries);a.cfg.blockedRegions=networkPolicyList(b.blockedRegions);save();log(a.actor,"OWNER_NETWORK_POLICY_UPDATE","network policy");res.json({ok:true,config:a.cfg});});
 app.get("/api/developer/network-security/lookup",auth,async(req,res)=>{const a=developerNetworkAccess(req,res);if(!a)return;const ip=networkIpNorm(req.query.ip);if(networkIpv4Number(ip)===null)return res.status(400).json({error:"Enter a valid public IPv4 address."});const network=await lookupIpNetworkDetails(ip);const signals=[];if(network.vpnDetected)signals.push("VPN / proxy / hosting signal");if((a.cfg.ipRules||[]).some(r=>networkRuleMatches(ip,r.pattern)))signals.push("Matches a developer IP ban rule");const xy=String(network.coordinates||"").split(",");const mapUrl=xy.length===2&&xy.every(x=>Number.isFinite(Number(x)))?"https://www.openstreetmap.org/?mlat="+xy[0]+"&mlon="+xy[1]+"#map=10/"+xy[0]+"/"+xy[1]:null;res.json({ip,network,riskScore:Math.min(100,signals.reduce((v,x)=>v+(x.includes("ban")?70:35),0)),riskSignals:signals,mapUrl});});
 app.get("/api/developer/network-security/timeline",auth,async(req,res)=>{const a=developerNetworkAccess(req,res);if(!a)return;const qname=String(req.query.q||"").trim().replace(/^@/,"").slice(0,80);const u=(db.users||[]).find(x=>String(x.username||"").toLowerCase()===qname.toLowerCase());if(!u)return res.status(404).json({error:"Account not found."});const q=await pool.query("SELECT host(ip_address) AS ip_address,event_type,recorded_at,user_agent FROM user_ip_history WHERE user_id=$1 ORDER BY recorded_at DESC LIMIT 200",[Number(u.id)]);const events=q.rows,ips=[...new Set(events.map(x=>networkIpNorm(x.ip_address)).filter(Boolean))],geo={};await Promise.all(ips.slice(0,40).map(async ip=>{if(networkIpv4Number(ip)!==null)geo[ip]=await lookupIpNetworkDetails(ip);}));const recent=events.filter(x=>Date.now()-new Date(x.recorded_at).getTime()<7200000).length,signals=[];if(ips.length>=5)signals.push("Frequent IP changes");if(ips.length>=10)signals.push("High IP churn");if(recent>=10)signals.push("Many IP-history events in the last 2 hours");if(events.some(x=>geo[networkIpNorm(x.ip_address)]?.vpnDetected))signals.push("VPN / proxy signal in history");const riskScore=Math.min(100,(ips.length>=10?45:ips.length>=5?25:0)+(recent>=10?25:0)+(signals.some(x=>x.startsWith("VPN"))?30:0));res.json({username:u.username,distinctIpCount:ips.length,riskScore,riskSignals:signals,events:events.map(x=>({...x,network:geo[networkIpNorm(x.ip_address)]||{}})),deviceFingerprintRegistered:!!(await pool.query("SELECT 1 FROM device_fingerprints WHERE user_id=$1 LIMIT 1",[Number(u.id)])).rowCount,disclaimer:"Local heuristic only, not a global blacklist or proof of abuse. IP locations are approximate."});});
 
 app.get("/api/staff/ip-inspection",auth,async(req,res)=>{
   const actor=current(req),viewerRank=String(actor?.rank||"").toUpperCase();
-  if(!["INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(viewerRank))return res.status(403).json({error:"Your rank does not have IP Inspection access."});
-  const fullAccess=viewerRank==="OWNER"||viewerRank==="DEVELOPER";
+  if(!["CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(viewerRank))return res.status(403).json({error:"Your rank does not have IP Inspection access."});
+  const fullAccess=viewerRank==="OWNER"||viewerRank==="OWNER";
   const canInspectTarget=target=>fullAccess||(String(target?.id)!==String(actor?.id)&&(rankOrder[String(target?.rank||"MEMBER").toUpperCase()]??999)<(rankOrder[viewerRank]??-1));
   let stage="prepare-query";
   try{
@@ -4907,11 +4912,11 @@ app.get("/api/staff/ip-inspection",auth,async(req,res)=>{
       signals:row.network.vpnSignals||[],method:row.network.vpnDetectionMethod||"provider flag",
       ip_address:row.ip_address
     }));
-    const personalizedRecords=viewerRank==="INSTRUCTOR"?records.map(row=>({username:row.username,email:row.email||"",network:{country:row.network?.country||"",region:row.network?.region||"",city:row.network?.city||""}})):viewerRank==="COOWNER"?records.map(({user_agent,id,user_id,...row})=>({...row,network:Object.fromEntries(Object.entries(row.network||{}).filter(([key])=>key!=="postalCode"))})):records;
-    const personalizedMatches=viewerRank==="INSTRUCTOR"?[]:sameIpAccounts.map(row=>{const {user_agent,...safe}=row;const network=geo[row.ip_address]||{};return fullAccess?{...safe,network}:{id:safe.id,username:safe.username,email:safe.email,created_at:safe.created_at,ip_address:safe.ip_address,event_type:safe.event_type,recorded_at:safe.recorded_at,network:{country:network.country||"",region:network.region||"",city:network.city||"",networkProvider:network.networkProvider||"",asn:network.asn||"",lookupStatus:network.lookupStatus||"Unavailable"}};});
+    const personalizedRecords=viewerRank==="CHIEF_COMMISSOR"?records.map(row=>({username:row.username,email:row.email||"",network:{country:row.network?.country||"",region:row.network?.region||"",city:row.network?.city||""}})):viewerRank==="COOWNER"?records.map(({user_agent,id,user_id,...row})=>({...row,network:Object.fromEntries(Object.entries(row.network||{}).filter(([key])=>key!=="postalCode"))})):records;
+    const personalizedMatches=viewerRank==="CHIEF_COMMISSOR"?[]:sameIpAccounts.map(row=>{const {user_agent,...safe}=row;const network=geo[row.ip_address]||{};return fullAccess?{...safe,network}:{id:safe.id,username:safe.username,email:safe.email,created_at:safe.created_at,ip_address:safe.ip_address,event_type:safe.event_type,recorded_at:safe.recorded_at,network:{country:network.country||"",region:network.region||"",city:network.city||"",networkProvider:network.networkProvider||"",asn:network.asn||"",lookupStatus:network.lookupStatus||"Unavailable"}};});
     return res.json({
       accessProfile:viewerRank,
-      accessFields:viewerRank==="INSTRUCTOR"?["email","location"]:viewerRank==="COOWNER"?["email","ip_address","location","networkProvider","networkTechnical","eventTime"]:["all"],
+      accessFields:viewerRank==="CHIEF_COMMISSOR"?["email","location"]:viewerRank==="COOWNER"?["email","ip_address","location","networkProvider","networkTechnical","eventTime"]:["all"],
       vpnAccounts:fullAccess?vpnAccounts:[],
       sameIpAccounts:personalizedMatches,
       records:personalizedRecords,
@@ -4968,13 +4973,13 @@ function auditVisibilityKey(row){
 }
 function filterAuditRowsForRank(rows,user){
   const settings=db.settings?.audit_log_visibility||{};
-  const rankNames=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+  const rankNames=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
   const viewerRank=String(user?.rank||"MEMBER").toUpperCase(), viewerLevel=rankNames.indexOf(viewerRank);
   return (rows||[]).filter(row=>{
     const key=auditVisibilityKey(row), rule=settings[key]||{enabled:true,minimumRank:"ADMIN"};
     if(rule.enabled===false)return false;
     const minimum=rankNames.indexOf(String(rule.minimumRank||"ADMIN").toUpperCase());
-    return viewerRank==="DEVELOPER"||viewerRank==="OWNER"||(viewerLevel>=0&&minimum>=0&&viewerLevel>=minimum);
+    return viewerRank==="OWNER"||viewerRank==="OWNER"||(viewerLevel>=0&&minimum>=0&&viewerLevel>=minimum);
   });
 }
 app.get("/api/staff/system-center/audit",auth,async(req,res)=>{
@@ -5032,18 +5037,18 @@ app.post('/api/staff-applications',auth,async(req,res)=>{
   }catch(e){console.error('Staff application submission failed:',e);res.status(500).json({error:'Could not submit your application. Please try again.'});}
 });
 app.get('/api/staff/applications',auth,featureAllowed('view_staff_dashboard'),async(req,res)=>{
-  const actor=current(req);if(!['COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
+  const actor=current(req);if(!['COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
   try{await ensureStaffApplicationsTable();const q=await pool.query("SELECT a.id,a.user_id AS \"userId\",a.username,a.display_name AS \"displayName\",a.requested_rank AS \"requestedRank\",a.activity,a.reason,a.experience,a.status,a.created_at AS \"createdAt\",a.reviewed_at AS \"reviewedAt\",reviewer.username AS \"reviewedBy\" FROM staff_applications a LEFT JOIN users reviewer ON reviewer.id=a.reviewed_by ORDER BY CASE WHEN a.status='PENDING' THEN 0 ELSE 1 END,a.created_at DESC LIMIT 300");res.json({applications:q.rows.map(x=>({...x,id:String(x.id),userId:String(x.userId),createdAt:new Date(x.createdAt).getTime(),reviewedAt:x.reviewedAt?new Date(x.reviewedAt).getTime():null}))});}
   catch(e){console.error('Staff application list failed:',e);res.status(500).json({error:'Could not load staff applications.'});}
 });
 app.post('/api/staff/applications/:id/reject',auth,featureAllowed('view_staff_dashboard'),async(req,res)=>{
-  const actor=current(req);if(!['COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
+  const actor=current(req);if(!['COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
   try{await ensureStaffApplicationsTable();const q=await pool.query("UPDATE staff_applications SET status='REJECTED',reviewed_by=$2,reviewed_at=NOW() WHERE id=$1 AND status='PENDING' RETURNING username",[req.params.id,Number(actor.id)]);if(!q.rowCount)return res.status(404).json({error:'Pending application not found.'});await log(actor,'STAFF_APPLICATION_REJECT',q.rows[0].username,{applicationId:req.params.id});res.json({ok:true});}
   catch(e){console.error('Staff application rejection failed:',e);res.status(500).json({error:'Could not reject this application.'});}
 });
 app.delete('/api/staff/applications/:id',auth,async(req,res)=>{
   const actor=current(req);
-  if(String(actor.rank||'').toUpperCase()!=='DEVELOPER')return res.status(403).json({error:'Developer rank required to delete staff applications.'});
+  if(String(actor.rank||'').toUpperCase()!=='OWNER')return res.status(403).json({error:'Developer rank required to delete staff applications.'});
   try{
     await ensureStaffApplicationsTable();
     const q=await pool.query('DELETE FROM staff_applications WHERE id=$1 RETURNING username',[req.params.id]);
@@ -5053,9 +5058,9 @@ app.delete('/api/staff/applications/:id',auth,async(req,res)=>{
   }catch(e){console.error('Staff application deletion failed:',e);res.status(500).json({error:'Could not delete this staff application.'});}
 });
 app.post('/api/staff/applications/:id/grant',auth,featureAllowed('view_staff_dashboard'),async(req,res)=>{
-  const actor=current(req);if(!['COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
+  const actor=current(req);if(!['COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Commissor rank or higher required to review staff applications.'});
   const requested=String(req.body.rank||'').toUpperCase();
-  if(!['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','INSTRUCTOR','COOWNER'].includes(requested))return res.status(400).json({error:'Choose a valid staff rank.'});
+  if(!['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER'].includes(requested))return res.status(400).json({error:'Choose a valid staff rank.'});
   try{
     await ensureStaffApplicationsTable();
     const client=await pool.connect();
@@ -5065,7 +5070,7 @@ app.post('/api/staff/applications/:id/grant',auth,featureAllowed('view_staff_das
       if(!appResult.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'Pending application not found.'});}
       const application=appResult.rows[0],target=findUser(application.user_id);
       if(!target){await client.query('ROLLBACK');return res.status(404).json({error:'Applicant account not found.'});}
-      if(target.username==='Maleficent'||String(target.rank).toUpperCase()==='DEVELOPER'){await client.query('ROLLBACK');return res.status(403).json({error:'Protected account cannot be changed.'});}
+      if(target.username==='Maleficent'||String(target.rank).toUpperCase()==='OWNER'){await client.query('ROLLBACK');return res.status(403).json({error:'Protected account cannot be changed.'});}
       const actorRankNow=String(actor.rank||"").toUpperCase();
       const ownerPower=actorRankNow==="OWNER";
       const grantableStaffRanks=["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
@@ -5310,7 +5315,7 @@ app.post('/api/wall/:id/save',auth,async(req,res)=>{
 });
 app.post('/api/wall/:id/feature',auth,async(req,res)=>{
   const u=current(req),rank=String(u.rank||'').toUpperCase();
-  if(!hasFeature(u,'pin_news')&&!['OWNER','DEVELOPER'].includes(rank))return res.status(403).json({error:'Only authorized staff can feature community posts.'});
+  if(!hasFeature(u,'pin_news')&&!['OWNER','OWNER'].includes(rank))return res.status(403).json({error:'Only authorized staff can feature community posts.'});
   const postId=Number(req.params.id),featured=req.body?.featured===true;
   if(!Number.isSafeInteger(postId)||postId<1)return res.status(400).json({error:'Invalid post id.'});
   const result=await pool.query('UPDATE wall_posts SET featured=$2 WHERE id=$1 RETURNING id,featured',[postId,featured]);
@@ -5333,7 +5338,7 @@ app.post('/api/wall/:id/reaction',auth,async(req,res)=>{
 async function wallPostHandler(req,res){
   const u=current(req), grants=db.settings?.feature_grants?.wall_post||["OWNER","ADMIN"], rank=String(u.rank||'').toUpperCase();
   if(await checkRestrictedMediaUpload(req,res,u,req.file))return;
-  if(String(u.rank).toUpperCase()!=="DEVELOPER" && u.username!==DEFAULT_OWNER&&!grants.map(x=>String(x).toUpperCase()).includes(rank))return res.status(403).json({error:"Your rank cannot create wall posts."});
+  if(String(u.rank).toUpperCase()!=="OWNER" && u.username!==DEFAULT_OWNER&&!grants.map(x=>String(x).toUpperCase()).includes(rank))return res.status(403).json({error:"Your rank cannot create wall posts."});
   const content=cleanText(req.body.content||"").trim().slice(0,5000), media=req.file;
   if(media&&!/^(image\/(png|jpe?g|gif|webp|avif)|video\/)/i.test(media.mimetype))return res.status(400).json({error:"Only image or video files are allowed."});
   if(!content&&!media)return res.status(400).json({error:"Post cannot be empty."});
@@ -5404,15 +5409,15 @@ app.post('/api/wall/:id/pin',ownerOnly,async(req,res)=>{
 app.get('/api/history',auth,async(req,res)=>{
   const u=current(req), {rows}=await pool.query(
     `SELECT * FROM history WHERE user_id=$1 AND (is_cleared=false OR $2=true) ORDER BY created_at DESC LIMIT 500`,
-    [Number(u.id),(String(u.rank).toUpperCase()==='DEVELOPER'||u.username===DEFAULT_OWNER)]);
-  const direct=(u.username===DEFAULT_OWNER||String(u.rank).toUpperCase()==='DEVELOPER')?null:userFeatureGrant(u,'can_clear_history');
-  res.json({history:rows,clearAllowed:direct!==null?direct:(String(u.rank).toUpperCase()==='DEVELOPER' || u.username===DEFAULT_OWNER || (db.settings.clear_history_allowed_ranks||[]).map(String).map(x=>x.toUpperCase()).includes(String(u.rank).toUpperCase()))});
+    [Number(u.id),(String(u.rank).toUpperCase()==='OWNER'||u.username===DEFAULT_OWNER)]);
+  const direct=(u.username===DEFAULT_OWNER||String(u.rank).toUpperCase()==='OWNER')?null:userFeatureGrant(u,'can_clear_history');
+  res.json({history:rows,clearAllowed:direct!==null?direct:(String(u.rank).toUpperCase()==='OWNER' || u.username===DEFAULT_OWNER || (db.settings.clear_history_allowed_ranks||[]).map(String).map(x=>x.toUpperCase()).includes(String(u.rank).toUpperCase()))});
 });
 app.post('/api/history/clear',auth,async(req,res)=>{
   const u=current(req), allowed=db.settings.clear_history_allowed_ranks||["OWNER","ADMIN"];
-  const direct=(u.username===DEFAULT_OWNER||String(u.rank).toUpperCase()==='DEVELOPER')?null:userFeatureGrant(u,'can_clear_history');
-  if(direct===false||!(direct===true||String(u.rank).toUpperCase()==='DEVELOPER' || u.username===DEFAULT_OWNER || allowed.map(String).map(x=>x.toUpperCase()).includes(String(u.rank).toUpperCase()))) return res.status(403).json({error:"You cannot clear history."});
-  if(String(u.rank).toUpperCase()==='DEVELOPER' || u.username===DEFAULT_OWNER) await pool.query(`UPDATE history SET is_cleared=true`);
+  const direct=(u.username===DEFAULT_OWNER||String(u.rank).toUpperCase()==='OWNER')?null:userFeatureGrant(u,'can_clear_history');
+  if(direct===false||!(direct===true||String(u.rank).toUpperCase()==='OWNER' || u.username===DEFAULT_OWNER || allowed.map(String).map(x=>x.toUpperCase()).includes(String(u.rank).toUpperCase()))) return res.status(403).json({error:"You cannot clear history."});
+  if(String(u.rank).toUpperCase()==='OWNER' || u.username===DEFAULT_OWNER) await pool.query(`UPDATE history SET is_cleared=true`);
   else await pool.query(`UPDATE history SET is_cleared=true WHERE user_id=$1`,[Number(u.id)]);
   res.json({ok:true});
 });
@@ -5491,7 +5496,7 @@ app.get('/api/shop',auth,async(req,res)=>{
   });
 });
 app.post('/api/shop/premium/buy-diamonds',auth,async(req,res)=>{
-  const actor=current(req),blockedRanks=['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'];
+  const actor=current(req),blockedRanks=['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'];
   if(blockedRanks.includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Your current rank cannot purchase Premium.'});
   const cost=50000,client=await pool.connect();let updated;
   try{
@@ -5518,7 +5523,7 @@ app.post('/api/shop/premium/buy-diamonds',auth,async(req,res)=>{
 });
 app.post('/api/shop/premium/request',auth,async(req,res)=>{
   const u=current(req);
-  if(['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(String(u.rank).toUpperCase())) return res.status(403).json({error:'Only ranks below Premium may request Premium.'});
+  if(['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'].includes(String(u.rank).toUpperCase())) return res.status(403).json({error:'Only ranks below Premium may request Premium.'});
   await pool.query(`INSERT INTO premium_requests(user_id,status) VALUES($1,'pending')`,[Number(u.id)]);
   const owners=await pool.query(`SELECT id FROM users WHERE LOWER(rank) IN ('owner','developer')`); for(const x of owners.rows)notify(x.id,'staff','Premium requested',`${u.username} requested Premium.`);
   res.json({ok:true,message:'Premium request sent to owner.'});
@@ -5530,11 +5535,11 @@ app.post('/api/owner/premium-requests/:id/grant',ownerOnly,async(req,res)=>{
   const u=db.users.find(x=>Number(x.id)===userId); if(u){u.rank='PREMIUM';u.isPremium=true;u.is_premium=true;u.vipExpiresAt=null;} save(); res.json({ok:true,requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
 });
 app.post('/api/premium/grant',ownerOnly,async(req,res)=>{
-  const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='DEVELOPER')return res.status(403).json({error:'Cannot change Developer'});
+  const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'Cannot change Developer'});
   v.rank='PREMIUM';v.isPremium=true;v.is_premium=true;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='Premium',is_premium=true,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`UPDATE premium_requests SET status='granted' WHERE user_id=$1 AND status='pending'`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
 });
 app.post('/api/premium/cancel',ownerOnly,async(req,res)=>{
-  const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='DEVELOPER')return res.status(403).json({error:'Cannot change Developer'});
+  const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'Cannot change Developer'});
   v.rank='MEMBER';v.isPremium=false;v.is_premium=false;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='member',is_premium=false,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`DELETE FROM premium_requests WHERE user_id=$1`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
 });
 app.post('/api/shop/svip',auth,async(req,res)=>{
@@ -5563,7 +5568,7 @@ app.get('/api/community-rules',auth,(req,res)=>{
 });
 app.put('/api/owner/community-rules',auth,async(req,res)=>{
   const editor=current(req);
-  if(!editor || !["INSTRUCTOR","COMMISSOR","COOWNER","OWNER","DEVELOPER"].includes(String(editor.rank||"").toUpperCase()))return res.status(403).json({error:'Community rules editing requires Commissor rank or higher.'});
+  if(!editor || !["CHIEF_COMMISSOR","COMMISSOR","COOWNER","OWNER","OWNER"].includes(String(editor.rank||"").toUpperCase()))return res.status(403).json({error:'Community rules editing requires Commissor rank or higher.'});
   const input=Array.isArray(req.body?.rules)?req.body.rules:[];
   if(input.length>100)return res.status(400).json({error:'You can publish up to 100 rules.'});
   const rules=[];
@@ -5620,7 +5625,7 @@ function commandSettings(){
 }
 function commandAllowed(u,key){
   if(!u)return false;
-  if(String(u.rank||"").toUpperCase()==="DEVELOPER")return true;
+  if(String(u.rank||"").toUpperCase()==="OWNER")return true;
   const minimum=commandSettings()[key];
   return !!minimum&&hasRank(u,minimum);
 }
@@ -5635,7 +5640,7 @@ app.patch("/api/owner/command-settings",ownerOnly,async(req,res)=>{
 });
 
 
-const GUIDE_RANKS = ["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+const GUIDE_RANKS = ["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
 function normalizeGuideContent(value){
   const all=value&&typeof value==="object"&&!Array.isArray(value)?value:{};
   const out={};
@@ -5691,14 +5696,14 @@ app.get("/api/owner/command-management",auth,ownerOnly,(req,res)=>{ensureFeature
 app.get("/api/owner/mode-management",auth,ownerOnly,(req,res)=>{ensureFeatureGrants();res.json({modes:{...REQUESTED_MODE_RANKS,...(db.settings?.mode_management||{})}});});
 app.patch("/api/owner/settings",ownerOnly,async(req,res)=>{
   if(req.body.commandManagement!==undefined){
-    const incoming=req.body.commandManagement, commands={...(db.settings.command_management||{})}, allowed=["rose","bread","brain","welcome","ship","bank","steal","roast","aura","anonymous","abrakadabra","clear"], valid=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER"];
+    const incoming=req.body.commandManagement, commands={...(db.settings.command_management||{})}, allowed=["rose","bread","brain","welcome","ship","bank","steal","roast","aura","anonymous","abrakadabra","clear"], valid=["MEMBER","VIP","PREMIUM","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER"];
     if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Invalid command settings."});
     const seen=new Set();
     for(const key of allowed){const item=incoming[key]||commands[key]||{},name=String(item.name||key).toLowerCase().replaceAll("/","").trim(),allowedRanks=Array.isArray(item.ranks)?item.ranks.map(x=>String(x).toUpperCase()).filter(x=>valid.includes(x)):valid.slice();if(!/^[a-z0-9]{2,24}$/.test(name))return res.status(400).json({error:"Command names must be 2–24 letters or numbers."});if(seen.has(name))return res.status(400).json({error:"Command names must be unique."});seen.add(name);commands[key]={name,ranks:[...new Set(allowedRanks)]};}
     db.settings.command_management=commands;
   }
   if(req.body.modeManagement!==undefined){
-    const incoming=req.body.modeManagement,valid=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+    const incoming=req.body.modeManagement,valid=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
     if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Invalid mode settings."});
     const next={...(db.settings.mode_management||{})};for(const key of ["ghost","dead","invisible"]){const list=Array.isArray(incoming[key])?incoming[key].map(x=>String(x).toUpperCase()).filter(x=>valid.includes(x)):[];next[key]=[...new Set(list)];}db.settings.mode_management=next;
   }
@@ -5725,7 +5730,7 @@ app.patch("/api/owner/settings",ownerOnly,async(req,res)=>{
   if(req.body.auditLogVisibility!==undefined){
     const incoming=req.body.auditLogVisibility;
     const keys=["deleted_messages","edited_messages","rank_changes","account_changes","login_activity","invisible_mode","feature_permissions","moderation_actions","reports","room_changes","gold_transactions","site_settings","private_messages","file_uploads","profile_changes","staff_actions"];
-    const allowedRanks=["MEMBER","VIP","PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+    const allowedRanks=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
     if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Invalid audit log visibility settings."});
     const next={...(db.settings.audit_log_visibility||{})};
     for(const key of keys){
@@ -5776,12 +5781,12 @@ app.post('/api/settings/save',ownerOnly,async(req,res)=>{
   res.json({ok:true,settings:db.settings});
 });
 
-function normalizeFeatureRanks(v,fallback){if(!Array.isArray(v))return [...fallback];const aliases={USER:'MEMBER',STAFF:'MOD',TRUSTED:'PREMIUM'};const allowed=new Set([...GRANT_RANKS,'DEVELOPER']);return [...new Set(v.map(x=>aliases[String(x||'').toUpperCase()]||String(x||'').toUpperCase()).filter(x=>allowed.has(x)))];}
+function normalizeFeatureRanks(v,fallback){if(!Array.isArray(v))return [...fallback];const aliases={USER:'MEMBER',STAFF:'MOD',TRUSTED:'PREMIUM'};const allowed=new Set([...GRANT_RANKS,'OWNER']);return [...new Set(v.map(x=>aliases[String(x||'').toUpperCase()]||String(x||'').toUpperCase()).filter(x=>allowed.has(x)))];}
 function featureGrantAllowed(u,key){
   if(!u)return false;
   if(isUserFeatureBlocked(u,key))return false;
   const rankName=String(u.rank||'MEMBER').toUpperCase()==='USER'?'MEMBER':String(u.rank||'MEMBER').toUpperCase();
-  if(rankName==='DEVELOPER'||u.username===DEFAULT_OWNER)return true;
+  if(rankName==='OWNER'||u.username===DEFAULT_OWNER)return true;
   const granted=userFeatureGrant(u,key);if(granted!==null)return granted;
   ensureFeatureGrants();
   const aliases={wall_post:'wall_post'};
@@ -5798,7 +5803,7 @@ app.get('/api/owner/user/:id/feature-grants',ownerOnly,async(req,res)=>{
 });
 app.put('/api/owner/user/:id/feature-grants',ownerOnly,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:"User not found."});
-  if(target.username===DEFAULT_OWNER||String(target.rank).toUpperCase()==="DEVELOPER")return res.status(403).json({error:"The permanent owner account is protected."});
+  if(target.username===DEFAULT_OWNER||String(target.rank).toUpperCase()==="OWNER")return res.status(403).json({error:"The permanent owner account is protected."});
   const incoming=req.body?.grants;if(!incoming||typeof incoming!=="object"||Array.isArray(incoming))return res.status(400).json({error:"Provide feature grants."});
   const entries=Object.entries(incoming);if(entries.some(([key,value])=>!OWNER_USER_PERMISSIONS.includes(key)||typeof value!=="boolean"))return res.status(400).json({error:"Unknown permission or invalid grant value."});
   const client=await pool.connect();
@@ -5864,7 +5869,7 @@ function accountModificationAccess(req,res,next){
   if(!target)return res.status(404).json({error:'User not found.'});
   if(!featureGrantAllowed(actor,'account_modifications'))return res.status(403).json({error:'Account modifications have not been granted to your rank.'});
   if(String(target.id)===String(actor.id))return res.status(400).json({error:'Use your own profile settings for your account.'});
-  if(target.username===DEFAULT_OWNER||String(target.rank).toUpperCase()==='DEVELOPER')return res.status(403).json({error:'The permanent Developer account is protected.'});
+  if(target.username===DEFAULT_OWNER||String(target.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'The permanent Developer account is protected.'});
   if((rankOrder[target.rank]??999)>=(rankOrder[actor.rank]??-1))return res.status(403).json({error:'You cannot modify an equal or higher rank.'});
   req.profileActor=actor;req.profileTarget=target;next();
 }
@@ -5928,7 +5933,7 @@ app.patch('/api/staff/user/:id/account',auth,(req,res)=>{
     const nu=String(req.body.username).trim();
     if(!/^[A-Za-z0-9_]{3,24}$/.test(nu)) return res.status(400).json({error:'Invalid username.'});
     if(db.users.some(x=>x.id!==target.id && x.username.toLowerCase()===nu.toLowerCase())) return res.status(409).json({error:'Username already exists.'});
-    if(String(target.rank).toUpperCase()==='DEVELOPER' || target.username==='Maleficent') return res.status(403).json({error:'Developer account is protected.'});
+    if(String(target.rank).toUpperCase()==='OWNER' || target.username==='Maleficent') return res.status(403).json({error:'Developer account is protected.'});
     const previousUsername=target.username;
     target.usernameHistory ||= []; target.usernameHistory.push({from:previousUsername,to:nu,time:Date.now(),changedBy:actor.username}); target.username=nu;
     systemNotice(`@${previousUsername} has changed name to @${nu}.`);
@@ -5941,7 +5946,7 @@ app.patch('/api/staff/user/:id/account',auth,(req,res)=>{
 app.get('/api/staff/user/:id/feature-blocks',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);
   if(!target)return res.status(404).json({error:'User not found'});
-  if(String(target.rank).toUpperCase()==='DEVELOPER'||target.username===DEFAULT_OWNER)return res.status(403).json({error:'The owner account is protected.'});
+  if(String(target.rank).toUpperCase()==='OWNER'||target.username===DEFAULT_OWNER)return res.status(403).json({error:'The owner account is protected.'});
   if(!featureGrantAllowed(actor,'profile_note')||rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot manage feature blocks for this account.'});
   db.settings ||= {};db.settings.user_feature_blocks ||= {};
   res.json({user:{id:target.id,username:target.username},features:USER_BLOCKABLE_FEATURES,blocked:db.settings.user_feature_blocks[String(target.id)]||{}});
@@ -5949,7 +5954,7 @@ app.get('/api/staff/user/:id/feature-blocks',auth,async(req,res)=>{
 app.put('/api/staff/user/:id/feature-blocks',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);
   if(!target)return res.status(404).json({error:'User not found'});
-  if(String(target.rank).toUpperCase()==='DEVELOPER'||target.username===DEFAULT_OWNER)return res.status(403).json({error:'The owner account is protected.'});
+  if(String(target.rank).toUpperCase()==='OWNER'||target.username===DEFAULT_OWNER)return res.status(403).json({error:'The owner account is protected.'});
   if(!featureGrantAllowed(actor,'profile_note')||rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot manage feature blocks for this account.'});
   const incoming=req.body?.blocked;
   if(!incoming||typeof incoming!=='object'||Array.isArray(incoming))return res.status(400).json({error:'Provide a feature block list.'});
@@ -5967,7 +5972,7 @@ app.put('/api/staff/user/:id/feature-blocks',auth,async(req,res)=>{
 app.get('/api/staff/user/:id/note',auth,async(req,res)=>{const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});if(!featureGrantAllowed(actor,'profile_note')||!canAccessStaffTarget(actor,target))return res.status(403).json({error:'You cannot view this staff note.'});const q=await pool.query(`SELECT n.note,n.created_at,u.username AS author FROM profile_notes n LEFT JOIN users u ON u.id=n.added_by WHERE n.user_id=$1 ORDER BY n.created_at DESC,n.id DESC LIMIT 1`,[Number(target.id)]);const row=q.rows[0];res.json({note:row?.note||'',updatedAt:row?.created_at||null,updatedBy:row?.author||null,hasNote:!!row});});
 app.patch('/api/staff/user/:id/note',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});
-  if(String(target.rank).toUpperCase()==='DEVELOPER'||target.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+  if(String(target.rank).toUpperCase()==='OWNER'||target.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
   if(!featureGrantAllowed(actor,'profile_note'))return res.status(403).json({error:'Profile notes require the granted staff rank.'});
   if(!canAccessStaffTarget(actor,target))return res.status(403).json({error:'You cannot modify an equal or higher rank.'});
   const note=String(req.body.note||'').trim().slice(0,4000);if(!note)return res.status(400).json({error:'A note is required.'});
@@ -5976,7 +5981,7 @@ app.patch('/api/staff/user/:id/note',auth,async(req,res)=>{
 });
 app.patch('/api/staff/user/:id/password',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});
-  if(String(target.rank).toUpperCase()==='DEVELOPER'||target.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+  if(String(target.rank).toUpperCase()==='OWNER'||target.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
   if(!featureGrantAllowed(actor,'change_password'))return res.status(403).json({error:'Password change permission has not been granted.'});
   if(rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot modify an equal or higher rank.'});
   const password=String(req.body.password||'');if(password.length<8)return res.status(400).json({error:'New password must be at least 8 characters.'});
@@ -5985,7 +5990,7 @@ app.patch('/api/staff/user/:id/password',auth,async(req,res)=>{
 app.get('/api/staff/user/:id/email-history',auth,(req,res)=>{const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});if(!featureGrantAllowed(actor,'edit_email')||rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'Email history permission required.'});res.json({email:target.email||'',history:target.emailHistory||[]});});
 app.patch('/api/staff/user/:id/email',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});
-  if(String(target.rank).toUpperCase()==='DEVELOPER'||target.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+  if(String(target.rank).toUpperCase()==='OWNER'||target.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
   if(!featureGrantAllowed(actor,'edit_email'))return res.status(403).json({error:'Email edit permission has not been granted.'});
   if(rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot modify an equal or higher rank.'});
   const email=String(req.body.email||'').trim().slice(0,160);if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({error:'Enter a valid email address.'});
@@ -5996,7 +6001,7 @@ app.patch('/api/staff/user/:id/rank',auth,async(req,res)=>{
   const actor=current(req), target=findUser(req.params.id), nr=String(req.body.rank||'');
   if(!target) return res.status(404).json({error:'User not found'});
   if(!hasFeature(actor,'staff_rank_assignment')) return res.status(403).json({error:`Rank assignment requires ${featureRank('staff_rank_assignment')} or higher.`});
-  if(String(target.rank).toUpperCase()==='DEVELOPER' || target.username==='Maleficent') return res.status(403).json({error:'Developer account is protected.'});
+  if(String(target.rank).toUpperCase()==='OWNER' || target.username==='Maleficent') return res.status(403).json({error:'Developer account is protected.'});
   if(!ranks.includes(nr)) return res.status(400).json({error:'Invalid rank.'});
   const actorRank=String(actor.rank||'MEMBER').toUpperCase();
   const ownerPower=actorRank==='OWNER';
@@ -6075,7 +6080,7 @@ app.patch(
         error:"User not found"
       });
     }
-    if(String(v.rank).toUpperCase()==="DEVELOPER") return res.status(403).json({error:"Cannot act on Developer"});
+    if(String(v.rank).toUpperCase()==="OWNER") return res.status(403).json({error:"Cannot act on Developer"});
 
     const amount=
       Number(req.body.amount);
@@ -6125,12 +6130,12 @@ app.patch(
 );
 
 app.patch('/api/owner/user/:id/diamonds',ownerOnly,async(req,res)=>{
- const v=findUser(req.params.id);if(!v)return res.status(404).json({error:'User not found'});if(String(v.rank).toUpperCase()==='DEVELOPER'||v.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+ const v=findUser(req.params.id);if(!v)return res.status(404).json({error:'User not found'});if(String(v.rank).toUpperCase()==='OWNER'||v.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
  const amount=Number(req.body?.amount);if(!Number.isSafeInteger(amount)||amount<0||amount>2147483647)return res.status(400).json({error:'Enter a valid non-negative Diamond balance.'});
  try{const updated=await pool.query('UPDATE users SET diamonds=$1 WHERE id=$2 RETURNING diamonds,gold',[amount,Number(v.id)]);if(!updated.rowCount)return res.status(404).json({error:'User not found'});v.diamonds=Number(updated.rows[0].diamonds||0);v.gold=Number(updated.rows[0].gold||0);io.to('user:'+v.id).emit('wallet:update',{userId:v.id,diamonds:v.diamonds,gold:v.gold});log(current(req),'DIAMONDS_EDIT',v.username,{after:v.diamonds});save();return res.json({ok:true,user:safeUser(v)});}catch(error){console.error('Owner Diamond edit failed:',error);return res.status(500).json({error:'Could not update Diamonds.'});}
 });
 app.patch('/api/owner/user/:id/progress',ownerOnly,async(req,res)=>{
- const v=findUser(req.params.id);if(!v)return res.status(404).json({error:'User not found'});if(String(v.rank).toUpperCase()==='DEVELOPER'||v.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+ const v=findUser(req.params.id);if(!v)return res.status(404).json({error:'User not found'});if(String(v.rank).toUpperCase()==='OWNER'||v.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
  const xp=Number(req.body.xp),level=Number(req.body.level);if(!Number.isFinite(xp)||!Number.isFinite(level)||xp<0||level<1||xp>2147483647||level>1000000)return res.status(400).json({error:'Enter valid XP and level values.'});v.xp=Math.floor(xp);v.level=Math.floor(level);await pool.query('UPDATE users SET xp=$1 WHERE id=$2',[v.xp,Number(v.id)]);save();res.json({ok:true,user:safeUser(v)});
 });
 
@@ -6140,7 +6145,7 @@ app.delete(
   async (req,res)=>{
     const v=findUser(req.params.id);
 
-    if(!v || v.username===DEFAULT_OWNER || String(v.rank).toUpperCase()==="DEVELOPER"){
+    if(!v || v.username===DEFAULT_OWNER || String(v.rank).toUpperCase()==="OWNER"){
       return res.status(400).json({error:"Cannot delete permanent owner"});
     }
 
@@ -7473,7 +7478,7 @@ app.get('/api/me/account',auth,async(req,res)=>{
     for (const u of db.users) ensureUserSchema(u);
     const developer = db.users.find(u => String(u.username).toLowerCase() === "maleficent");
     if (developer) {
-      developer.rank = "DEVELOPER";
+      developer.rank = "OWNER";
       developer.passwordHash = developer.password && String(developer.password).startsWith("$2") ? developer.password : developer.passwordHash;
     }
 
@@ -7502,7 +7507,7 @@ async function ensureSuggestionsTable(){
   await pool.query('ALTER TABLE feature_suggestions ADD COLUMN IF NOT EXISTS awarded_user_id TEXT');
   await pool.query('ALTER TABLE feature_suggestions ADD COLUMN IF NOT EXISTS awarded_points INTEGER NOT NULL DEFAULT 0');
 }
-function isSuggestionsDeveloper(u){return String(u?.username||'').toLowerCase()==='maleficent'||String(u?.rank||'').toUpperCase()==='DEVELOPER';}
+function isSuggestionsDeveloper(u){return String(u?.username||'').toLowerCase()==='maleficent'||String(u?.rank||'').toUpperCase()==='OWNER';}
 app.get('/api/suggestions',auth,async(req,res)=>{
   try{
     await ensureSuggestionsTable();const u=current(req);
@@ -7544,11 +7549,11 @@ app.patch('/api/suggestions/:id',auth,async(req,res)=>{
 app.get('/api/staff-points/:id',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found.'});
   if(String(actor.id)!==String(target.id)&&!hasRank(actor,'MOD'))return res.status(403).json({error:'Staff points are visible only to the account owner and staff.'});
-  res.json({staffPoints:Math.max(0,Math.floor(Number(target.staffPoints)||0)),canEdit:['OWNER','DEVELOPER'].includes(String(actor.rank||'').toUpperCase())});
+  res.json({staffPoints:Math.max(0,Math.floor(Number(target.staffPoints)||0)),canEdit:['OWNER','OWNER'].includes(String(actor.rank||'').toUpperCase())});
 });
 app.patch('/api/staff-points/:id',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found.'});
-  if(!['OWNER','DEVELOPER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Only Owner and Developer can edit staff points.'});
+  if(!['OWNER','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Only Owner and Developer can edit staff points.'});
   const value=Number(req.body.points);if(!Number.isSafeInteger(value)||value<0||value>1000000)return res.status(400).json({error:'Enter a whole number from 0 to 1,000,000.'});
   try{const q=await pool.query("UPDATE users SET profile_data=jsonb_set(COALESCE(profile_data,'{}'::jsonb),'{staffPoints}',to_jsonb($1::int),true) WHERE id=$2 RETURNING id",[value,Number(target.id)]);if(!q.rowCount)return res.status(404).json({error:'User not found.'});target.staffPoints=value;save();res.json({ok:true,staffPoints:value});}
   catch(e){console.error('[STAFF POINTS] update:',e?.message||e);res.status(500).json({error:'Could not update staff points.'});}
@@ -7611,7 +7616,7 @@ app.post('/api/admin/private-search',auth,ownerOnly,async(req,res)=>{
     res.json({messages,users});
   }catch(error){console.error('Owner private-message inspection failed:',error);res.status(500).json({error:'Could not inspect private messages. Please retry.'});}
 });
-app.put('/api/admin/edit-email',auth,async(req,res)=>{const actor=current(req);const target=findUser(req.body.userId);if(!target)return res.status(404).json({error:'User not found'});if(target.username===DEFAULT_OWNER||String(target.rank).toUpperCase()==='DEVELOPER')return res.status(403).json({error:'The permanent owner account is protected.'});if(actor.username!==DEFAULT_OWNER&&String(actor.rank).toUpperCase()!=='DEVELOPER'&&rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot edit an equal or higher rank.'});if(!(hasFeature(actor,'edit_email')||actor?.username===DEFAULT_OWNER||String(actor?.rank).toUpperCase()==='DEVELOPER'))return res.status(403).json({error:'Email editing permission required.'});const id=Number(req.body.userId),email=String(req.body.newEmail||'').trim().toLowerCase();if(!Number.isInteger(id)||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({error:'Enter a valid email address.'});try{const q=await pool.query('UPDATE users SET email=$1 WHERE id=$2 RETURNING id,email',[email,id]);if(!q.rowCount)return res.status(404).json({error:'User not found'});res.json({ok:true,user:q.rows[0]});}catch(e){if(e.code==='23505')return res.status(409).json({error:'Email already in use'});throw e;}});
+app.put('/api/admin/edit-email',auth,async(req,res)=>{const actor=current(req);const target=findUser(req.body.userId);if(!target)return res.status(404).json({error:'User not found'});if(target.username===DEFAULT_OWNER||String(target.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'The permanent owner account is protected.'});if(actor.username!==DEFAULT_OWNER&&String(actor.rank).toUpperCase()!=='OWNER'&&rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot edit an equal or higher rank.'});if(!(hasFeature(actor,'edit_email')||actor?.username===DEFAULT_OWNER||String(actor?.rank).toUpperCase()==='OWNER'))return res.status(403).json({error:'Email editing permission required.'});const id=Number(req.body.userId),email=String(req.body.newEmail||'').trim().toLowerCase();if(!Number.isInteger(id)||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({error:'Enter a valid email address.'});try{const q=await pool.query('UPDATE users SET email=$1 WHERE id=$2 RETURNING id,email',[email,id]);if(!q.rowCount)return res.status(404).json({error:'User not found'});res.json({ok:true,user:q.rows[0]});}catch(e){if(e.code==='23505')return res.status(409).json({error:'Email already in use'});throw e;}});
 app.post('/api/admin/profile-note',auth,async(req,res)=>{const actor=current(req);if(!featureGrantAllowed(actor,'profile_note'))return res.status(403).json({error:'Staff profile-note permission required.'});const userId=Number(req.body.userId),note=cleanText(req.body.note||'').trim().slice(0,2000);const target=findUser(String(userId));if(!userId||!target||!note)return res.status(400).json({error:'User and note are required'});if(!canAccessStaffTarget(actor,target))return res.status(403).json({error:'You cannot add a note to an equal or higher rank.'});await pool.query('INSERT INTO profile_notes(user_id,added_by,note) VALUES($1,$2,$3)',[userId,actor.id,note]);log(actor,'PROFILE_NOTE_ADD',String(userId),{note});res.json({ok:true});});
 app.get('/api/admin/profile-note/:userId',auth,async(req,res)=>{const actor=current(req),target=findUser(req.params.userId);if(!target)return res.status(404).json({error:'User not found'});if(!featureGrantAllowed(actor,'profile_note')||!canAccessStaffTarget(actor,target))return res.status(403).json({error:'You cannot view this staff note.'});const q=await pool.query('SELECT n.*,u.username AS added_by_username FROM profile_notes n LEFT JOIN users u ON u.id=n.added_by WHERE n.user_id=$1 ORDER BY n.created_at DESC LIMIT 20',[Number(target.id)]);res.json({notes:q.rows});});
 app.delete('/api/admin/history/:historyId',auth,ownerOnly,async(req,res)=>{const q=await pool.query('DELETE FROM history WHERE id=$1 RETURNING id',[req.params.historyId]);if(!q.rowCount)return res.status(404).json({error:'History entry not found'});res.json({ok:true});});
