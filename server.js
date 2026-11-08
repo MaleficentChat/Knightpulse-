@@ -379,7 +379,7 @@ const FEATURE_GRANT_DEFAULTS={
   chat_file_upload:GRANT_RANKS,
   clear_history_button:GRANT_RANKS,
   view_online_users:GRANT_RANKS,
-  invisible_mode:["OWNER"],
+  invisible_mode:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
   manage_filter_words:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
   premium_granting:["ELITE","OWNER"],
   reports_management:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
@@ -398,7 +398,7 @@ const FEATURE_GRANT_DEFAULTS={
   manage_staff_accounts:["OWNER"],staff_rank_assignment:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],profile_like:GRANT_RANKS,enter_private_club:GRANT_RANKS,wall_post:GRANT_RANKS,room_rank_assign:["OWNER","COOWNER","COMMISSOR"],room_moderate:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],room_manage_staff:["OWNER","COOWNER","COMMISSOR"],room_edit_own:["OWNER","COOWNER","COMMISSOR"],room_delete_messages:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],room_clear_own:["OWNER","COOWNER","COMMISSOR"],
   // Extended catalog: site, account, community, media, moderation and owner tools.
   account_register:GRANT_RANKS,account_login:GRANT_RANKS,account_settings:GRANT_RANKS,change_own_password:GRANT_RANKS,change_own_email:GRANT_RANKS,account_export:GRANT_RANKS,manage_sessions:["OWNER"],view_login_history:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],manage_device_sessions:["OWNER"],manage_push_notifications:GRANT_RANKS,
-  search_users:GRANT_RANKS,view_profiles:GRANT_RANKS,friend_requests:GRANT_RANKS,manage_friends:GRANT_RANKS,block_users:GRANT_RANKS,nickname_users:GRANT_RANKS,profile_status:GRANT_RANKS,profile_frames:GRANT_RANKS,profile_backgrounds:GRANT_RANKS,profile_colors:GRANT_RANKS,profile_pronouns:GRANT_RANKS,profile_showcase:GRANT_RANKS,presence_modes:GRANT_RANKS,ghost_mode:GRANT_RANKS,dead_mode:GRANT_RANKS,
+  search_users:GRANT_RANKS,view_profiles:GRANT_RANKS,friend_requests:GRANT_RANKS,manage_friends:GRANT_RANKS,block_users:GRANT_RANKS,nickname_users:GRANT_RANKS,profile_status:GRANT_RANKS,profile_frames:GRANT_RANKS,profile_backgrounds:GRANT_RANKS,profile_colors:GRANT_RANKS,profile_pronouns:GRANT_RANKS,profile_showcase:GRANT_RANKS,presence_modes:GRANT_RANKS,ghost_mode:["OWNER"],dead_mode:["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
   search_rooms:GRANT_RANKS,leave_rooms:GRANT_RANKS,room_passwords:GRANT_RANKS,room_member_limits:GRANT_RANKS,room_rank_restrictions:GRANT_RANKS,room_friends_only:GRANT_RANKS,room_topics:GRANT_RANKS,room_rules:GRANT_RANKS,room_staff_list:GRANT_RANKS,room_mute_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],room_kick_users:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],room_block_users:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],room_edit_rules:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],room_persistence:GRANT_RANKS,room_themes:GRANT_RANKS,room_message_search:GRANT_RANKS,
   reply_messages:GRANT_RANKS,quote_messages:GRANT_RANKS,delete_own_messages:GRANT_RANKS,copy_messages:GRANT_RANKS,hide_messages:GRANT_RANKS,mention_users:GRANT_RANKS,chat_unread_counts:GRANT_RANKS,chat_attachments:GRANT_RANKS,chat_image_upload:GRANT_RANKS,chat_video_upload:GRANT_RANKS,chat_audio_upload:GRANT_RANKS,chat_youtube_music:GRANT_RANKS,chat_message_search:GRANT_RANKS,chat_message_expiry:GRANT_RANKS,chat_scheduled_messages:GRANT_RANKS,chat_doodle_share:GRANT_RANKS,chat_doodle_save:GRANT_RANKS,chat_aurora_announcements:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
   dm_search:GRANT_RANKS,dm_unread_counts:GRANT_RANKS,dm_previews:GRANT_RANKS,dm_reply:GRANT_RANKS,dm_pin:GRANT_RANKS,dm_mute:GRANT_RANKS,dm_archive:GRANT_RANKS,dm_filters:GRANT_RANKS,dm_nicknames:GRANT_RANKS,dm_preferences:GRANT_RANKS,dm_report:GRANT_RANKS,inspect_private_messages:["OWNER"],manage_dm_reports:["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],
@@ -1093,7 +1093,7 @@ app.get("/api/under-construction/status",async(req,res)=>{
       db.settings.under_construction=stored.rows[0].value;
     }
     const setting=db.settings?.under_construction||{};
-    // Maintenance stays enabled until the owner/developer explicitly switches it off.
+    // Maintenance stays enabled until the Owner explicitly switches it off.
     const enabled=setting.enabled===true;
     const u=current(req),rankName=String(u?.rank||"").toUpperCase();
     const exempt=rankName==="OWNER";
@@ -2308,7 +2308,7 @@ app.get("/api/rooms",auth,async(req,res)=>{
   const {rows}=await pool.query(`SELECT r.*,u.username AS creator FROM rooms r LEFT JOIN users u ON r.created_by=u.id ORDER BY r.is_default DESC,r.created_at ASC,r.id ASC`);
   if(!rows.length) return res.status(503).json({error:'Rooms are not initialized yet. Please retry in a moment.',rooms:[]});
   const viewer=current(req);
-  const canSeeRoomPins=["COOWNER","CO-OWNER","CO_OWNER","ELITE","OWNER"].includes(String(viewer.rank||"").toUpperCase().replace(/\s+/g,""));
+  const canSeeRoomPins=["COOWNER","ELITE","OWNER"].includes(String(viewer.rank||"").toUpperCase().replace(/\s+/g,""));
    const allRooms=rows.map(r=>{const room={id:String(r.id),name:r.name,icon:r.icon||"💬",description:r.description||"",category:r.category||"Community",public:r.is_public!==false,passwordHash:r.password_hash||null,rankRequired:String(r.rank_required||"MEMBER").toUpperCase(),limit:Number(r.room_limit||100),slowMode:Number(r.slow_mode||0),announcement:r.announcement||"",ownerId:r.created_by?String(r.created_by):null,banner:r.banner||"",inviteToken:r.invite_token||"",creator:r.creator||null,isDefault:!!r.is_default,minAge:Number(r.min_age??0),maxAge:Number(r.max_age??120),friendsOnly:!!(db.settings?.room_access?.[String(r.id)]?.friendsOnly),roomTheme:String(db.settings?.room_themes?.[String(r.id)]||"obsidian"),locked:!!r.password_hash,roomCode:r.is_public===false?formatRoomCode(r.room_code):null,onlineCount:visibleRoomOnlineCount(r.id),...(canSeeRoomPins?{pinned:!!db.settings?.room_pins?.[String(r.id)]}:{})};return room;});
   db.rooms=allRooms;
   const joinToken=String(req.headers["x-room-join-token"]||"");
@@ -2323,7 +2323,7 @@ app.get("/api/rooms",auth,async(req,res)=>{
 });
 
 function roomAgeAllowed(user,room){
-  const staff=["MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(user?.rank||"").toUpperCase());
+  const staff=["MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(user?.rank||"").toUpperCase());
   // Staff may enter any room; the age-appropriate shortcut still routes them to Teen Chat.
   if(staff)return true;
   const minAge=Number(room?.minAge??room?.min_age??0),maxAge=Number(room?.maxAge??room?.max_age??120);
@@ -2357,7 +2357,7 @@ async function createRoomHandler(req,res){
   // Keep server authorization aligned with the room-creation UI.
   // Premium and designated staff ranks may create rooms; explicit feature grants
   // remain available for other accounts configured by the Owner.
-  const roomCreatorRanks=["PREMIUM","MOD","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
+  const roomCreatorRanks=["PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
   if(!roomCreatorRanks.includes(String(u.rank||"").toUpperCase()) && !(featureGrantAllowed(u,"create_rooms")||hasFeature(u,"create_room"))) {
     return res.status(403).json({error:`Create room requires ${featureRank("create_room")} or an explicit create-room permission.`});
   }
@@ -4194,7 +4194,7 @@ app.post('/api/staff/system-notifications',auth,featureAllowed('view_staff_dashb
   if(!allowedRanges.includes(targetRange))return res.status(400).json({error:'Choose a valid recipient range.'});
   try{
     const q=await pool.query('SELECT id,rank FROM users ORDER BY id');
-    const rankLevels={MEMBER:0,USER:0,VIP:1,SVIP:2,PREMIUM:3,MOD:4,MODERATOR:4,ADMIN:5,SUPER_ADMIN:6,COMMISSOR:7,CHIEF_COMMISSOR:8,COOWNER:9,ELITE:10,OWNER:11}
+    const rankLevels={MEMBER:0,VIP:1,SVIP:2,PREMIUM:3,MOD:4,ADMIN:5,SUPER_ADMIN:6,COMMISSOR:7,CHIEF_COMMISSOR:8,COOWNER:9,ELITE:10,OWNER:11}
     const selectedLevel=rankLevels[targetRank];
     const audience=q.rows.filter(row=>{
       if(targetRank==='ALL')return true;
@@ -5496,7 +5496,7 @@ app.get('/api/shop',auth,async(req,res)=>{
   });
 });
 app.post('/api/shop/premium/buy-diamonds',auth,async(req,res)=>{
-  const actor=current(req),blockedRanks=['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'];
+  const actor=current(req),blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER'];
   if(blockedRanks.includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Your current rank cannot purchase Premium.'});
   const cost=50000,client=await pool.connect();let updated;
   try{
@@ -5523,9 +5523,9 @@ app.post('/api/shop/premium/buy-diamonds',auth,async(req,res)=>{
 });
 app.post('/api/shop/premium/request',auth,async(req,res)=>{
   const u=current(req);
-  if(['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER','OWNER'].includes(String(u.rank).toUpperCase())) return res.status(403).json({error:'Only ranks below Premium may request Premium.'});
+  if(['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER'].includes(String(u.rank).toUpperCase())) return res.status(403).json({error:'Only ranks below Premium may request Premium.'});
   await pool.query(`INSERT INTO premium_requests(user_id,status) VALUES($1,'pending')`,[Number(u.id)]);
-  const owners=await pool.query(`SELECT id FROM users WHERE LOWER(rank) IN ('owner','developer')`); for(const x of owners.rows)notify(x.id,'staff','Premium requested',`${u.username} requested Premium.`);
+  const owners=await pool.query(`SELECT id FROM users WHERE LOWER(rank)='owner'`); for(const x of owners.rows)notify(x.id,'staff','Premium requested',`${u.username} requested Premium.`);
   res.json({ok:true,message:'Premium request sent to owner.'});
 });
 app.get('/api/owner/premium-requests',ownerOnly,async(req,res)=>{const {rows}=await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`);res.json({requests:rows});});
