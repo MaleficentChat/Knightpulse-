@@ -636,7 +636,7 @@ console.log("KnightPulse staff command center, permission audit, activity log an
 
 assert.match(staffUi,/function auditCategoryFor\(row\)[\s\S]*?function renderAuditCollection\(target,rows/,
   "admin activity logs must be grouped into understandable categories");
-assert.match(staffUi,/data-audit-filter="moderation"[\s\S]*?Accounts & ranks[\s\S]*?System & security/,
+assert.match(staffUi,/\[\[\x27all\x27,\x27All activity\x27\],\[\x27moderation\x27,\x27Moderation\x27\],\[\x27accounts\x27,\x27Accounts & ranks\x27\],\[\x27system\x27,\x27System & security\x27\]/,
   "audit log categories must include moderation, accounts/ranks and system/security");
 assert.match(staffUi,/kp-staff-groups[\s\S]*?Overview[\s\S]*?Moderation & review[\s\S]*?Team management[\s\S]*?Account & system controls/,
   "staff tools must be grouped into clear functional sections");
