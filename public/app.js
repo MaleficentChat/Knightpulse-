@@ -3353,7 +3353,7 @@ function renderUserProfileModal(user,data={}){
   const bannerStyle=user.banner?`style="--profile-cover:url('${esc(user.banner)}')"`:'';
   const isSelf=user.id===state.user.id;
   const liked=!!data.likedByMe;
-  modal(`<div class="profile-modal" data-sf-user-id="${esc(user.id)}" data-sf-is-self="${isSelf?'true':'false'}" data-sf-show-scrapbook="${user.privacy?.showScrapbook===false?'false':'true'}">
+  modal(`<div class="profile-modal kp-public-profile" data-sf-user-id="${esc(user.id)}" data-sf-is-self="${isSelf?'true':'false'}" data-sf-show-scrapbook="${user.privacy?.showScrapbook===false?'false':'true'}">
     <div class="profile-banner" ${bannerStyle}>
       <div class="equipped-profile-frame ${frame?esc(frame.id):''}" title="${frame?esc(frame.name):'Profile avatar'}">${avatar(user,'big-avatar')}</div>
       ${user.profileMusicUrl?`<div class="profile-music-pill"><button type="button" class="profile-music-toggle" id="profileMusicToggle" aria-label="Play profile music">▶</button><span class="profile-music-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="profile-music-title">${esc(user.profileMusicTitle||'Profile music')}</span><audio id="profileMusicAudio" preload="none" src="${esc(safeProfileUrl(user.profileMusicUrl))}"></audio></div>`:''}
