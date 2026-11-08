@@ -554,7 +554,7 @@ $("authForm").onsubmit = async e => {
           gender: $("gender")?.value,
           password: $("password").value,
           confirmPassword: $("confirmPassword")?.value,
-          deviceFingerprint: login ? undefined : await browserDeviceFingerprint()
+          deviceFingerprint: login ? undefined : await browserDeviceFingerprint().catch(()=>("fallback:"+[navigator.userAgent,screen.width,Intl.DateTimeFormat().resolvedOptions().timeZone].join("|")))
         })
       }
     );
@@ -1630,7 +1630,7 @@ function maleficentUserAge(user=state.user) {
   return age>=0&&age<=120?age:null;
 }
 function isMaleficentStaff(user=state.user) {
-  return ["MODERATOR","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(String(user?.rank||"").toUpperCase());
+  return ["MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(String(user?.rank||"").toUpperCase());
 }
 function roomForAgeRouting() {
   const staff=isMaleficentStaff();
@@ -2703,7 +2703,7 @@ function openPresenceModes(){
 }
 function canUsePartyMode(){
   const rank=String(state.user?.rank||"").toUpperCase();
-  return ["SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"].includes(rank)||state.user?.username==="Maleficent";
+  return ["SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(rank)||state.user?.username==="Maleficent";
 }
 function isPartyModeActive(){return document.body.classList.contains("party-mode-active");}
 function setPartyMode(enabled){
