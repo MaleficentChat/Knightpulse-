@@ -534,3 +534,23 @@ html[data-theme] body{background-image:radial-gradient(ellipse at 48% -18%,rgba(
  #staff .site-hard-refresh-card .primary{width:100%}
 }
 @media(max-width:390px){.staff-space-hero-seal{display:none}.staff-space-hero p{max-width:100%}.staff-space-hero h2{font-size:21px}}
+
+
+/* KnightPulse staff command center */
+.kp-command-center,.kp-staff-inbox{border:1px solid rgba(190,151,255,.25);background:linear-gradient(135deg,rgba(34,24,54,.96),rgba(14,13,25,.98));box-shadow:0 14px 38px rgba(0,0,0,.2)}
+.kp-command-head,.kp-inbox-head{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.kp-command-head small,.kp-inbox-head small{letter-spacing:.16em;color:#c6a7ff;font-size:.68rem;font-weight:800}
+.kp-command-head h3,.kp-inbox-head h3{margin:5px 0}
+.kp-command-mark{font-size:2rem;color:#e7c77a;text-shadow:0 0 20px rgba(231,199,122,.35)}
+.kp-command-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.kp-command-actions button{border:1px solid rgba(198,167,255,.3);background:rgba(130,91,190,.14);border-radius:999px;padding:8px 12px;color:inherit}
+.kp-permission-audit{border-top:1px solid rgba(198,167,255,.16);padding-top:10px}
+.kp-permission-audit summary{cursor:pointer;font-weight:700;color:#e5d5ff}
+.kp-permission-list{display:grid;gap:6px;margin-top:10px}
+.kp-permission-row{display:flex;justify-content:space-between;gap:12px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.035);font-size:.84rem}
+.kp-permission-row b{text-transform:capitalize}.kp-permission-row span{text-align:right;color:#d4c1f0}
+.kp-inbox-list{display:grid;gap:8px;margin-top:12px}
+.kp-inbox-item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border:1px solid rgba(198,167,255,.13);border-radius:12px;background:rgba(255,255,255,.035)}
+.kp-inbox-item p{margin:4px 0;font-size:.9rem;white-space:pre-wrap;overflow-wrap:anywhere}
+.kp-inbox-item small{color:var(--muted,#aaa);font-size:.72rem}
+@media(max-width:600px){.kp-inbox-item{align-items:flex-start;flex-direction:column}.kp-permission-row{flex-direction:column;gap:3px}.kp-permission-row span{text-align:left}}
