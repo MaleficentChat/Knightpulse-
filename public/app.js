@@ -74,23 +74,7 @@ dmReplyText: null,
 
 
 
-const rankIcon = {
-  MEMBER: "⚡",
-  VIP: "💎",
-  SVIP: "💠",
-  PREMIUM: "🏅",
-  ELITE: "✨",
-  PREMIUM: "⚜️",
-  MOD: "🛡️",
-  ADMIN: "⭐",
-  SUPER_ADMIN: "🌟",
-  COMMISSOR: "👻",
-  CHIEF_COMMISSOR: "⚔️",
-  CHIEF_COMMISSOR: "⚔️",
-  COOWNER: "🦉",
-  OWNER: "👑",
-  OWNER: "🛠️"
-};
+const rankIcon={MEMBER:"⚡",VIP:"💎",SVIP:"💠",PREMIUM:"🏅",MOD:"🛡️",ADMIN:"⭐",SUPER_ADMIN:"🌟",COMMISSOR:"👻",CHIEF_COMMISSOR:"⚔️",COOWNER:"🦉",ELITE:"✨",OWNER:"👑"};
 
 const rankOrder = {MEMBER:0,VIP:1,SVIP:2,PREMIUM:3,MOD:4,ADMIN:5,SUPER_ADMIN:6,COMMISSOR:7,CHIEF_COMMISSOR:8,COOWNER:9,ELITE:10,OWNER:11};
 const ranks = ["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
@@ -5059,7 +5043,7 @@ async function loadStaffApplication(){
     const data=await api('/api/staff-applications/mine');
     const existing=data.application;
     const locked=!!existing&&['PENDING','APPROVED'].includes(String(existing.status).toUpperCase());
-    const rankOptions=['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','COOWNER'];
+    const rankOptions=['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER'];
     root.innerHTML=`<section class="card staff-application-card">
       <div class="staff-application-heading"><span class="staff-application-icon">🛡️</span><div><h3>Join the Staff Team</h3><p class="muted">Answer every question thoughtfully. Staff applications are reviewed by the team.</p></div></div>
       ${existing?`<div class="staff-application-status"><b>Latest application: ${esc(existing.status||'PENDING')}</b><span>${esc(existing.status==='REJECTED'?'You may submit a new application.':existing.status==='APPROVED'?'Your application was approved.':'Your application is waiting for review.')}</span></div>`:''}
@@ -6905,7 +6889,7 @@ async function showInvite(roomOrId=state.currentRoom) {
 
 function openRoomCreationModal() {
   const ranks=["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
-  const rankLabels={MEMBER:"Member",VIP:"VIP",PREMIUM:"Premium",PREMIUM:"Royal",MOD:"Moderator",ADMIN:"Admin",SUPER_ADMIN:"Super Admin",COMMISSOR:"Commissor",CHIEF_COMMISSOR:"Instructor",COOWNER:"Co-owner",OWNER:"Owner",OWNER:"Developer"};
+  const rankLabels={MEMBER:"Member",VIP:"VIP",SVIP:"SVIP",PREMIUM:"Premium",MOD:"Moderator",ADMIN:"Admin",SUPER_ADMIN:"Super Admin",COMMISSOR:"Commissor",CHIEF_COMMISSOR:"Chief Commissor",COOWNER:"Co-owner",ELITE:"Elite",OWNER:"Owner"};
   modal(`
     <div class="room-editor room-editor-create">
       <header class="room-editor-hero"><span class="room-editor-hero-icon">🌙</span><div><p class="room-editor-eyebrow">MAKE YOUR SPACE</p><h2>Create a room</h2><p>Set up a new corner of Cloud Chat.</p></div></header>
