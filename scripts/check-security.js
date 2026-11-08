@@ -494,7 +494,7 @@ for (const policy of grantCeilingExpressions) {
   for (const [actorRank, expectedCeiling] of Object.entries(expectedGrantCeilings)) {
     const context = {ownerPower:actorRank==='OWNER'};
     context[policy.rankVariable] = actorRank;
-    vm.runInNewContext(policy.source, context);
+    vm.runInNewContext(policy.source+';globalThis.grantCeiling=grantCeiling;', context);
     assert.equal(context.grantCeiling, expectedCeiling, policy.name+': '+actorRank+' must be capped at '+expectedCeiling);
   }
 }
