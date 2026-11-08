@@ -7330,3 +7330,26 @@ html[data-theme] .settings-tab.active {
 .brand-news-file-name{font-size:10px;color:#9d91aa}
 .brand-news-compose-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:8px}
 @media(max-width:650px){.brand-news-masthead{margin:12px 12px 0;padding:25px 20px;border-radius:17px}.brand-news-toolbar{margin:16px 13px 8px}.brand-news-feed{padding:10px 12px 24px}.brand-news-story-grid{grid-template-columns:1fr!important;padding:15px}.brand-news-story-media{order:-1}.brand-news-art{max-height:210px}.brand-news-compose-grid{grid-template-columns:1fr}.brand-news-composer{width:94vw}.brand-news-story-top{padding:12px 14px 0}.brand-news-story-foot{padding:10px 14px}}
+
+
+/* Party Mode 2.0: lightweight floating sparks, avatar halos and a brighter composer. */
+.party-mode-fx{position:fixed;inset:0;z-index:4;overflow:hidden;pointer-events:none;contain:layout paint}
+.party-mode-fx span{position:absolute;left:var(--party-x);top:110%;font-size:clamp(12px,2vw,22px);line-height:1;color:#fff;text-shadow:0 0 8px currentColor,0 0 18px currentColor;opacity:0;animation:party-spark-rise var(--party-speed) linear var(--party-delay) infinite;will-change:transform,opacity}
+.party-mode-fx span:nth-child(1){--party-x:5%;--party-speed:10s;--party-delay:-2s;color:#ff4fd8}
+.party-mode-fx span:nth-child(2){--party-x:13%;--party-speed:13s;--party-delay:-8s;color:#9b5cff}
+.party-mode-fx span:nth-child(3){--party-x:22%;--party-speed:11s;--party-delay:-5s;color:#5cffb0}
+.party-mode-fx span:nth-child(4){--party-x:31%;--party-speed:14s;--party-delay:-11s;color:#ffd166}
+.party-mode-fx span:nth-child(5){--party-x:40%;--party-speed:12s;--party-delay:-4s;color:#55d6ff}
+.party-mode-fx span:nth-child(6){--party-x:49%;--party-speed:15s;--party-delay:-9s;color:#ff8adf}
+.party-mode-fx span:nth-child(7){--party-x:58%;--party-speed:11s;--party-delay:-6s;color:#b8ff65}
+.party-mode-fx span:nth-child(8){--party-x:67%;--party-speed:14s;--party-delay:-12s;color:#ffbd59}
+.party-mode-fx span:nth-child(9){--party-x:76%;--party-speed:12s;--party-delay:-3s;color:#55d6ff}
+.party-mode-fx span:nth-child(10){--party-x:84%;--party-speed:15s;--party-delay:-10s;color:#ff4fd8}
+.party-mode-fx span:nth-child(11){--party-x:92%;--party-speed:11s;--party-delay:-7s;color:#9b5cff}
+.party-mode-fx span:nth-child(12){--party-x:98%;--party-speed:13s;--party-delay:-1s;color:#5cffb0}
+@keyframes party-spark-rise{0%{transform:translate3d(0,0,0) rotate(0deg) scale(.65);opacity:0}12%{opacity:.72}82%{opacity:.58}100%{transform:translate3d(22px,-115vh,0) rotate(300deg) scale(1.12);opacity:0}}
+.party-mode-active .user-avatar,.party-mode-active .avatar,.party-mode-active .profile-avatar,.party-mode-active .online-avatar{box-shadow:0 0 0 2px rgba(255,255,255,.22),0 0 12px rgba(255,79,216,.55),0 0 22px rgba(92,255,176,.28)!important}
+.party-mode-active #messageInput,.party-mode-active #dmInput,.party-mode-active .chat-composer textarea{border-color:rgba(255,79,216,.72)!important;box-shadow:0 0 0 1px rgba(155,92,255,.25),0 0 16px rgba(255,79,216,.18)!important}
+.party-mode-active #messages .msg{border-color:rgba(255,79,216,.24)}
+.party-mode-active .system-message,.party-mode-active .system-notice{filter:drop-shadow(0 0 7px rgba(155,92,255,.38))}
+@media(prefers-reduced-motion:reduce){.party-mode-fx span{animation-duration:24s!important;opacity:.28}}
