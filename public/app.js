@@ -1073,7 +1073,7 @@ function updateNav() {
     $("topProfile").innerHTML = avatar(state.user, "top-avatar");
   }
 
-  const staffSpaceLabels={MOD:"Moderator Space",ADMIN:"Admin Space",SUPER_ADMIN:"Superadmin Space",COMMISSOR:"Commissor Space",INSTRUCTOR:"Instructor Space",COOWNER:"Coowner Space",OWNER:"Owner Space",DEVELOPER:"Developer Space"};
+  const staffSpaceLabels={MOD:"Moderator Space",ADMIN:"Admin Space",SUPER_ADMIN:"Superadmin Space",COMMISSOR:"Commissor Space",CHIEF_COMMISSOR:"Chief Commissor Space",COOWNER:"Co-Owner Space",ELITE:"Elite Space",OWNER:"Owner Space"};
   const currentStaffRank=String(state.user?.rank||"").toUpperCase();
   const canOpenStaffSpace=Object.prototype.hasOwnProperty.call(staffSpaceLabels,currentStaffRank)||canFeature("view_staff_dashboard");
   document.querySelectorAll(".staff-only").forEach(el =>
@@ -1109,7 +1109,7 @@ function updateNav() {
   if(brandNewsPublishButton)brandNewsPublishButton.classList.toggle("hidden",!canFeature("publish_news"));
 
   // Room creation is Premium+ by default; staff ranks are explicitly eligible too.
-  const roomCreatorRanks=["PREMIUM","ROYAL","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"];
+  const roomCreatorRanks=["PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
   const mayCreateRooms=roomCreatorRanks.includes(String(state.user?.rank||"").toUpperCase())||canFeature("create_room")||canFeature("create_rooms");
   document.querySelectorAll("#newRoom, .room-create-button").forEach(el=>el.classList.toggle("hidden",!mayCreateRooms));
   document.querySelectorAll(".coowner-only").forEach(el=>{
@@ -1485,7 +1485,7 @@ async function loadRankShop(){
   const d=await api('/api/shop'); const c=$('rankShop'); if(!c)return;
   const rank=String(state.user?.rank||'').toUpperCase();
   const canBuySvip=['MEMBER','VIP'].includes(rank);
-  const canBuyPremium=!['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(rank);
+  const canBuyPremium=!['PREMIUM','MOD','MODERATOR','ADMIN','SUPER_ADMIN','SUPERADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(rank);
   c.innerHTML=`<div class="panel shop-item"><div class="shop-icon">🏅</div><h3>Premium — $6 lifetime</h3><p>Request Premium from the owner, or unlock it instantly for 50,000 Diamonds.</p>${canBuyPremium?'<button class="primary" id="requestPremium">Request Premium — $6</button>':'<p class="muted">Premium purchase is unavailable for your current rank.</p>'}${canBuyPremium?'<button class="mini" id="buyPremiumDiamonds" style="margin-top:8px">💎 Buy with 50,000 Diamonds</button>':'<p class="muted">Premium purchase is unavailable for your current rank.</p>'}</div>${canBuySvip?d.vip.map(v=>`<div class="panel shop-item"><div class="shop-icon">💠</div><h3>SVIP — ${v.label}</h3><p>${v.price} gold</p><button class="mini" data-svip-plan="${v.label.includes('7')?'7':v.label.includes('month')&&v.label.includes('3')?'90':v.label.includes('year')?'365':'30'}">${v.price} gold</button></div>`).join(''):'<div class="panel shop-item"><div class="shop-icon">💠</div><h3>SVIP</h3><p>Higher ranks cannot buy SVIP</p></div>'}`;
   $('requestPremium').onclick=async()=>{try{await api('/api/shop/premium/request',{method:'POST'});toast('Premium request sent to owner.')}catch(e){toast(e.message)}};
   const diamondPremiumButton=$('buyPremiumDiamonds'); if(diamondPremiumButton)diamondPremiumButton.onclick=async()=>{if(!confirm('Spend 50,000 Diamonds to activate lifetime Premium?'))return;diamondPremiumButton.disabled=true;try{const result=await api('/api/shop/premium/buy-diamonds',{method:'POST'});state.user.rank='PREMIUM';state.user.is_premium=true;state.user.isPremium=true;state.user.diamonds=Number(result.diamonds);toast('Premium activated! 50,000 Diamonds spent.');updateNav();await loadRankShop();}catch(e){toast(e.message);diamondPremiumButton.disabled=false;}};
@@ -2630,7 +2630,7 @@ function appendMessage(message) {
 function canUsePresenceMode(mode){
   const rank=String(state.user?.rank||"").toUpperCase();
   if(rank==="DEVELOPER"||state.user?.username==="Maleficent")return true;
-  const fallback={ghost:["OWNER"],dead:["INSTRUCTOR","COOWNER","OWNER"],invisible:["COMMISSOR","INSTRUCTOR","COOWNER","OWNER"]};
+  const fallback={ghost:["OWNER"],dead:["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],invisible:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]};
   const configured=state.modeManagement?.[mode];
   const allowed=Array.isArray(configured)?configured:fallback[mode]||[];
   return allowed.map(x=>String(x||"").toUpperCase()).includes(rank);
@@ -2720,7 +2720,7 @@ function openPresenceModes(){
 }
 function canUsePartyMode(){
   const rank=String(state.user?.rank||"").toUpperCase();
-  return ["SUPER_ADMIN","COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(rank)||state.user?.username==="Maleficent";
+  return ["SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"].includes(rank)||state.user?.username==="Maleficent";
 }
 function isPartyModeActive(){return document.body.classList.contains("party-mode-active");}
 function setPartyMode(enabled){
@@ -3515,7 +3515,7 @@ function renderUserProfileModal(user,data={}){
         const gifts=giftData.gifts||[],catalog=catalogData.gifts||[];
         box.innerHTML='<div class="about-card"><h3>🎁 Gifts</h3><p class="muted">Gifts received by @'+esc(user.username)+'.</p>'+
           (isSelf?'<label class="gift-visibility-toggle"><input type="checkbox" id="giftVisibilityToggle" '+(user.privacy?.showGifts===false?'':'checked')+'> Show my gifts on my public profile</label>':'')+
-          (!isSelf&&['SVIP','PREMIUM','ROYAL','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','INSTRUCTOR','COOWNER','ELITE','OWNER','DEVELOPER'].includes(String(state.user?.rank||'').toUpperCase())?'<button class="primary gift-open-send" id="sendGiftFromProfile">🎁 Send a gift · Use gold</button>':'')+
+          (!isSelf&&['SVIP','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(String(state.user?.rank||'').toUpperCase())?'<button class="primary gift-open-send" id="sendGiftFromProfile">🎁 Send a gift · Use gold</button>':'')+
           '<div class="gift-profile-list">'+(gifts.length?gifts.map(g=>'<article class="gift-profile-item"><span class="gift-profile-icon">'+esc(g.gift_icon||'🎁')+'</span><div class="gift-profile-copy"><b>'+esc(g.gift_name)+'</b><small>From @'+esc(g.sender_username||'deleted')+' · 🪙 '+Number(g.goldCost||0).toLocaleString()+'</small>'+(g.message?'<p>'+esc(g.message)+'</p>':'')+'</div></article>').join(''):'<p class="muted">No gifts yet. Send the first one! 💜</p>')+'</div></div>';
         $('giftVisibilityToggle')?.addEventListener('change',async e=>{try{await api('/api/users/me/gift-visibility',{method:'PATCH',body:JSON.stringify({showGifts:e.target.checked})});user.privacy={...(user.privacy||{}),showGifts:e.target.checked};if(state.user&&String(state.user.id)===String(user.id))state.user.privacy={...(state.user.privacy||{}),showGifts:e.target.checked};toast(e.target.checked?'Gifts are visible on your profile.':'Gifts are now hidden from your profile.');}catch(err){e.target.checked=!e.target.checked;toast(err.message)}});
         $('sendGiftFromProfile')?.addEventListener('click',()=>openGiftPicker(user,catalog));
@@ -5232,8 +5232,8 @@ async function loadStaff() {
     const filterWords=await api('/api/staff/filter-word');
     const systemCenter=await api('/api/staff/system-center').catch(()=>null);
     const canUseAdminPanel=['ADMIN','SUPER_ADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'].includes(staffRank);
-    const staffRankOrder=['MEMBER','VIP','PREMIUM','ROYAL','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','INSTRUCTOR','COOWNER','OWNER','DEVELOPER'];
-    const canHardRefreshSite=staffRankOrder.indexOf(String(state.user?.rank||'').toUpperCase())>=staffRankOrder.indexOf('INSTRUCTOR');
+    const staffRankOrder=['MEMBER','VIP','SVIP','PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'];
+    const canHardRefreshSite=staffRankOrder.indexOf(String(state.user?.rank||'').toUpperCase())>=staffRankOrder.indexOf('CHIEF_COMMISSOR');
 
 
 
