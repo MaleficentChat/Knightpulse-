@@ -984,7 +984,7 @@ async function networkAccessDecision(req,userOverride=null){
   const config=await getDeveloperNetworkSecurity();
   const ip=clientIp(req);
   const matchingRule=(config.ipRules||[]).find(rule=>rule.enabled!==false&&networkRuleMatches(ip,rule.pattern));
-  if(matchingRule)return {allowed:false,reason:matchingRule.reason||"Network address is blocked by the Developer.",rule:matchingRule,ip};
+  if(matchingRule)return {allowed:false,reason:matchingRule.reason||"Network address is blocked by the Owner.",rule:matchingRule,ip};
   let network=null;
   if(config.blockVpn||config.allowedCountries?.length||config.blockedCountries?.length||config.blockedVpnCountries?.length||config.blockedRegions?.length){
     if(ip&&ip!=="unknown")network=await lookupIpNetworkDetails(ip);
@@ -992,20 +992,20 @@ async function networkAccessDecision(req,userOverride=null){
   const country=String(network?.countryCode||network?.country||"").trim().toUpperCase();
   const region=String(network?.region||"").trim().toUpperCase();
   if(config.allowedCountries?.length&&network?.lookupStatus==="Success"&&!config.allowedCountries.some(v=>country===v||String(network?.country||"").toUpperCase()===v)){
-    return {allowed:false,reason:"Access is restricted to the countries allowed by the Developer.",ip,network};
+    return {allowed:false,reason:"Access is restricted to the countries allowed by the Owner.",ip,network};
   }
   if(config.blockedCountries?.length&&config.blockedCountries.some(v=>country===v||String(network?.country||"").toUpperCase()===v)){
-    return {allowed:false,reason:"Access from this country is blocked by the Developer.",ip,network};
+    return {allowed:false,reason:"Access from this country is blocked by the Owner.",ip,network};
   }
   if(config.blockedRegions?.length&&config.blockedRegions.some(v=>region===v||String(network?.region||"").toUpperCase()===v)){
-    return {allowed:false,reason:"Access from this region is blocked by the Developer.",ip,network};
+    return {allowed:false,reason:"Access from this region is blocked by the Owner.",ip,network};
   }
   if(config.blockVpn&&!network?.vpnDetected&&network){
     const networkName=[network.networkProvider,network.organization,network.asn,network.hostname,network.networkType].join(" ").toLowerCase();
     if(/\b(vpn|proxy|tor exit|nordvpn|expressvpn|surfshark|proton vpn|mullvad|private internet access|cyberghost|torguard|windscribe|datacenter|data center|hosting|vps|dedicated server|cloud server)\b/i.test(networkName))network={...network,vpnDetected:true,vpnSignals:["Possible VPN / proxy / hosting network"]};
   }
-  if(config.blockedVpnCountries?.length&&network?.vpnDetected&&config.blockedVpnCountries.some(v=>country===v||String(network?.country||"").toUpperCase()===v))return {allowed:false,reason:"VPN / proxy access from this country is blocked by the Developer.",ip,network};
-  if(config.blockVpn&&network?.vpnDetected)return {allowed:false,reason:"VPN, proxy, Tor, or hosting-network access is blocked by the Developer.",ip,network};
+  if(config.blockedVpnCountries?.length&&network?.vpnDetected&&config.blockedVpnCountries.some(v=>country===v||String(network?.country||"").toUpperCase()===v))return {allowed:false,reason:"VPN / proxy access from this country is blocked by the Owner.",ip,network};
+  if(config.blockVpn&&network?.vpnDetected)return {allowed:false,reason:"VPN, proxy, Tor, or hosting-network access is blocked by the Owner.",ip,network};
   return {allowed:true,ip,network};
 }
 async function enforceNetworkAccess(req,res,userOverride=null){
@@ -1085,7 +1085,7 @@ app.post("/api/under-construction/disable",express.json(),async(req,res)=>{
     const existing=stored.rows[0]?.value||db.settings?.under_construction||{};
     if(existing.enabled!==true)return res.json({enabled:false,alreadyDisabled:true});
     if(!existing.codeSalt||!existing.codeHash){
-      return res.status(409).json({error:"This maintenance session has no saved shutdown code. An Owner or Developer must sign in to secure it first."});
+      return res.status(409).json({error:"This maintenance session has no saved shutdown code. An Owner or Owner must sign in to secure it first."});
     }
     const expected=Buffer.from(String(existing.codeHash),"hex");
     const actual=crypto.scryptSync(suppliedCode,String(existing.codeSalt),64);
@@ -1168,7 +1168,7 @@ function staff(r){
 function ownerOnly(req,res,next){
   const u=current(req);
   if(!u || !(String(u.rank).toUpperCase()==="OWNER" || String(u.rank).toUpperCase()==="OWNER")){
-    return res.status(403).json({error:"Owner/Developer only"});
+    return res.status(403).json({error:"Owner/Owner only"});
   }
   next();
 }
@@ -1176,7 +1176,7 @@ function ownerOnly(req,res,next){
 function developerOnly(req,res,next){
   const u=current(req);
   if(!u || String(u.rank).toUpperCase()!=="OWNER" || u.username!=="Maleficent"){
-    return res.status(403).json({error:"Permanent Developer account only"});
+    return res.status(403).json({error:"Permanent Owner account only"});
   }
   next();
 }
@@ -1661,7 +1661,7 @@ app.post(
 
     if(!(await enforceNetworkAccess(req,res,null)))return;
     const registrationIp=clientIp(req);
-    try{const p=await evaluateDeveloperNetworkPolicy(registrationIp);if(p.blocked)return res.status(403).json({error:"Registration blocked by Developer network security.",reason:p.reason});}catch(e){console.error("Developer network policy check failed:",e?.message||e);}
+    try{const p=await evaluateDeveloperNetworkPolicy(registrationIp);if(p.blocked)return res.status(403).json({error:"Registration blocked by Owner network security.",reason:p.reason});}catch(e){console.error("Owner network policy check failed:",e?.message||e);}
     const ipHash=crypto.createHmac("sha256",TOKEN_SECRET).update(registrationIp||"unknown").digest("hex");
     const fingerprintHash = deviceFingerprint ? crypto.createHash("sha256").update(String(deviceFingerprint).slice(0, 2000)).digest("hex") : "ip:"+ipHash;
     const fingerprintTaken = await pool.query(`SELECT id FROM device_fingerprints WHERE fingerprint_hash=$1`,[fingerprintHash]);
@@ -1810,7 +1810,7 @@ app.post(
     if(u.banned===true){
       return res.status(403).json({error:"You have been banned",reason:u.banReason||"Community rules"});
     }
-    try{const p=await evaluateDeveloperNetworkPolicy(clientIp(req));if(p.blocked)return res.status(403).json({error:"Access blocked by Developer network security.",reason:p.reason});}catch(e){console.error("Developer network policy check failed:",e?.message||e);}
+    try{const p=await evaluateDeveloperNetworkPolicy(clientIp(req));if(p.blocked)return res.status(403).json({error:"Access blocked by Owner network security.",reason:p.reason});}catch(e){console.error("Owner network policy check failed:",e?.message||e);}
 
     u.online=true;
     u.lastSeen=Date.now();
@@ -2099,7 +2099,7 @@ app.delete(
     const u=current(req);
     if(!u)return res.status(401).json({error:"Login required"});
     if(u.username===DEFAULT_OWNER||String(u.rank||"").toUpperCase()==="OWNER"||String(u.rank||"").toUpperCase()==="OWNER"){
-      return res.status(400).json({error:"The permanent Owner/Developer account cannot be deleted."});
+      return res.status(400).json({error:"The permanent Owner/Owner account cannot be deleted."});
     }
     try{
       log(u,"ACCOUNT_DELETE",u.username,{userId:String(u.id)});
@@ -2127,7 +2127,7 @@ app.delete("/api/staff/users/:id",auth,async(req,res)=>{
   const target=findUser(req.params.id);
   if(!target)return res.status(404).json({error:"User not found."});
   if(!canAccessStaffTarget(actor,target)){
-    return res.status(403).json({error:"You may only delete accounts ranked below you. The permanent owner and Developer are protected."});
+    return res.status(403).json({error:"You may only delete accounts ranked below you. The permanent owner and Owner are protected."});
   }
   const confirmUsername=String(req.body?.confirmUsername||"").trim();
   if(confirmUsername!==String(target.username||"")){
@@ -2303,7 +2303,7 @@ app.get("/api/rooms",auth,async(req,res)=>{
     if(!roomIsPrivate(room))return true;
     if(roomOwnerOrGlobal(viewer,room)||roomRole(room.id,viewer.id)!=="USER")return true;
     return verifyRoomJoinToken(joinToken,viewer.id,room);
-  }).map(room=>{const safe={...room,passwordHash:undefined,inviteToken:undefined};if(room.public===false&&String(room.ownerId||"")!==String(viewer.id)&&!["OWNER","OWNER"].includes(String(viewer.rank||"").toUpperCase()))delete safe.roomCode;return safe;});
+  }).map(room=>{const safe={...room,passwordHash:undefined,inviteToken:undefined};if(room.public===false&&String(room.ownerId||"")!==String(viewer.id)&&!["OWNER"].includes(String(viewer.rank||"").toUpperCase()))delete safe.roomCode;return safe;});
   res.json({rooms});
 });
 
@@ -2341,8 +2341,8 @@ async function createRoomHandler(req,res){
   const u=current(req); if(!u)return res.status(401).json({error:"Login required"});
   // Keep server authorization aligned with the room-creation UI.
   // Premium/Royal and designated staff ranks may create rooms; explicit feature grants
-  // remain available for other accounts configured by the Owner/Developer.
-  const roomCreatorRanks=["PREMIUM","ROYAL","MODERATOR","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"];
+  // remain available for other accounts configured by the Owner/Owner.
+  const roomCreatorRanks=["PREMIUM","MODERATOR","ADMIN","SUPER_ADMIN","SUPERADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"];
   if(!roomCreatorRanks.includes(String(u.rank||"").toUpperCase()) && !(featureGrantAllowed(u,"create_rooms")||hasFeature(u,"create_room"))) {
     return res.status(403).json({error:`Create room requires ${featureRank("create_room")} or an explicit create-room permission.`});
   }
@@ -2509,7 +2509,7 @@ app.put("/api/rooms/:id/staff/:userId",auth,(req,res)=>{
   const permissionNeeded=role==="USER"?"manage_staff":"assign_ranks";
   if(!roomOwnerOrGlobal(actor,room)&&!roomRoleCan(room.id,actor.id,permissionNeeded))return res.status(403).json({error:"Your room role does not have permission to "+(role==="USER"?"manage or remove room staff.":"assign room ranks.")});
   if(role!=="USER"&&(!Array.isArray(db.settings?.feature_grants?.room_rank_assign)||!db.settings.feature_grants.room_rank_assign.length))return res.status(403).json({error:"Room-rank assignment is disabled in Feature Granting."});
-  if(String(target.rank||"").toUpperCase()==="OWNER"&&String(actor.rank||"").toUpperCase()!=="OWNER")return res.status(403).json({error:"Only the Developer can change this account's room rank."});
+  if(String(target.rank||"").toUpperCase()==="OWNER"&&String(actor.rank||"").toUpperCase()!=="OWNER")return res.status(403).json({error:"Only the Owner can change this account's room rank."});
   const targetGlobalRank=String(target.rank||"MEMBER").toUpperCase();
   const targetIsStaff=(rankOrder[targetGlobalRank]??-1)>=(rankOrder["MODERATOR"]??4)||String(target.username||"").toLowerCase()==="maleficent";
   if(targetIsStaff&&!canAccessStaffTarget(actor,target))return res.status(403).json({error:"You cannot change room ranks for an equal or higher-ranked staff account. Room rank never overrides global staff hierarchy."});
@@ -2589,7 +2589,7 @@ app.put("/api/rooms/:id",auth,async(req,res)=>{
 app.put("/api/rooms/:id/pin",auth,(req,res)=>{
   const actor=current(req),room=db.rooms.find(item=>String(item.id)===String(req.params.id));
   if(!room)return res.status(404).json({error:"Room not found"});
-  if(!["COOWNER","CO-OWNER","CO_OWNER","OWNER","OWNER"].includes(String(actor.rank||"").toUpperCase().replace(/\s+/g,"")))return res.status(403).json({error:"Only Co-owner, Owner, and Developer can pin rooms."});
+  if(!["COOWNER","CO-OWNER","CO_OWNER","OWNER","OWNER"].includes(String(actor.rank||"").toUpperCase().replace(/\s+/g,"")))return res.status(403).json({error:"Only Co-owner, Owner, and Owner can pin rooms."});
   const pinned=typeof req.body?.pinned==="boolean"?req.body.pinned:!db.settings?.room_pins?.[String(room.id)];
   db.settings ||= {};db.settings.room_pins ||= {};db.settings.room_pins[String(room.id)]=pinned;
   save();log(actor,pinned?"ROOM_PIN":"ROOM_UNPIN",room.name,{roomId:String(room.id)});
@@ -4132,7 +4132,7 @@ app.post('/api/wallet/convert',auth,async(req,res)=>{
 });
 app.post('/api/wallet/reward',auth,async(req,res)=>{
   const actor=current(req),rank=String(actor.rank||'').toUpperCase();
-  if(!['COOWNER','OWNER','OWNER'].includes(rank))return res.status(403).json({error:'Only Coowner, Owner and Developer can grant Gold or Diamond rewards.'});
+  if(!['COOWNER','OWNER','OWNER'].includes(rank))return res.status(403).json({error:'Only Coowner, Owner and Owner can grant Gold or Diamond rewards.'});
   const currency=String(req.body?.currency||'DIAMONDS').toUpperCase();
   if(!['DIAMONDS','GOLD'].includes(currency))return res.status(400).json({error:'Choose Gold or Diamonds.'});
   const target=findUser(req.body?.userId||req.body?.username),amount=Number(req.body?.amount),reason=cleanText(req.body?.reason||'').trim().slice(0,240);
@@ -4736,7 +4736,7 @@ app.get("/api/developer/network-security",auth,developerOnly,async(req,res)=>{
       }
     }
     res.json({config,account,timeline,deviceSignals,risk,disclaimer:"Risk is a local heuristic, not a third-party global blacklist. IP geolocation and VPN flags can be inaccurate; shared IPs do not prove shared ownership."});
-  }catch(error){console.error("[DEV_NETWORK_SECURITY] read failed:",error?.stack||error);res.status(500).json({error:"Could not load Developer network security data."});}
+  }catch(error){console.error("[DEV_NETWORK_SECURITY] read failed:",error?.stack||error);res.status(500).json({error:"Could not load Owner network security data."});}
 });
 app.put("/api/developer/network-security",auth,developerOnly,async(req,res)=>{
   try{
@@ -4748,9 +4748,9 @@ app.put("/api/developer/network-security",auth,developerOnly,async(req,res)=>{
     if(body.blockedVpnCountries!==undefined)next.blockedVpnCountries=normalizedList(body.blockedVpnCountries);
     if(body.blockedRegions!==undefined)next.blockedRegions=normalizedList(body.blockedRegions);
     const saved=await saveDeveloperNetworkSecurity(next,current(req));
-    log(current(req),"DEV_NETWORK_POLICY_UPDATE","Developer network access policy",{blockVpn:saved.blockVpn,allowedCountries:saved.allowedCountries,blockedCountries:saved.blockedCountries,blockedVpnCountries:saved.blockedVpnCountries,blockedRegions:saved.blockedRegions});
+    log(current(req),"DEV_NETWORK_POLICY_UPDATE","Owner network access policy",{blockVpn:saved.blockVpn,allowedCountries:saved.allowedCountries,blockedCountries:saved.blockedCountries,blockedVpnCountries:saved.blockedVpnCountries,blockedRegions:saved.blockedRegions});
     res.json({ok:true,config:saved});
-  }catch(error){console.error("[DEV_NETWORK_SECURITY] update failed:",error?.stack||error);res.status(500).json({error:"Could not save Developer network policy."});}
+  }catch(error){console.error("[DEV_NETWORK_SECURITY] update failed:",error?.stack||error);res.status(500).json({error:"Could not save Owner network policy."});}
 });
 app.post("/api/developer/network-security/ip-rules",auth,developerOnly,async(req,res)=>{
   try{
@@ -4759,7 +4759,7 @@ app.post("/api/developer/network-security/ip-rules",auth,developerOnly,async(req
     if(!networkRuleIsValid(pattern))return res.status(400).json({error:"Use an IPv4 address, wildcard such as 45.67.1.*, or CIDR range such as 45.67.0.0/16."});
     const config=await getDeveloperNetworkSecurity();
     if((config.ipRules||[]).some(rule=>rule.pattern===pattern))return res.status(409).json({error:"That IP/range rule already exists."});
-    config.ipRules=[...(config.ipRules||[]),{id:crypto.randomUUID(),pattern,reason:reason||"Blocked by Developer",createdAt:Date.now(),createdBy:current(req).username}].slice(-500);
+    config.ipRules=[...(config.ipRules||[]),{id:crypto.randomUUID(),pattern,reason:reason||"Blocked by Owner",createdAt:Date.now(),createdBy:current(req).username}].slice(-500);
     const saved=await saveDeveloperNetworkSecurity(config,current(req));
     log(current(req),"DEV_NETWORK_RULE_ADD",pattern,{reason});
     res.json({ok:true,config:saved});
@@ -4785,7 +4785,7 @@ app.get("/api/developer/network-security/lookup",auth,developerOnly,async(req,re
 
 function developerNetworkAccess(req,res){
  const actor=current(req);
- if(String(actor?.rank||"").toUpperCase()!=="OWNER"){res.status(403).json({error:"Developer account access required."});return null;}
+ if(String(actor?.rank||"").toUpperCase()!=="OWNER"){res.status(403).json({error:"Owner account access required."});return null;}
  db.settings ||= {}; db.settings.developer_network_security ||= {ipRules:[],blockVpn:false,allowedCountries:[],blockedCountries:[],blockedRegions:[]};
  const cfg=db.settings.developer_network_security;cfg.ipRules||=[];cfg.allowedCountries||=[];cfg.blockedCountries||=[];cfg.blockedRegions||=[];
  return {actor,cfg};
@@ -4812,7 +4812,7 @@ app.post("/api/developer/network-security/rules",auth,(req,res)=>{
  const valid=networkRuleIsValid(pattern);
  if(!valid)return res.status(400).json({error:"Enter an IPv4 address, wildcard such as 45.67.1.*, or CIDR such as 45.67.0.0/16."});
  if(a.cfg.ipRules.some(r=>r.pattern===pattern&&r.enabled!==false))return res.status(409).json({error:"That rule already exists."});
- a.cfg.ipRules.unshift({id:crypto.randomUUID(),pattern,reason:String(req.body?.reason||"Developer network ban").slice(0,240),enabled:true,createdAt:Date.now(),createdBy:a.actor.username});save();log(a.actor,"DEVELOPER_IP_RANGE_BAN",pattern);res.json({ok:true,config:a.cfg});
+ a.cfg.ipRules.unshift({id:crypto.randomUUID(),pattern,reason:String(req.body?.reason||"Owner network ban").slice(0,240),enabled:true,createdAt:Date.now(),createdBy:a.actor.username});save();log(a.actor,"DEVELOPER_IP_RANGE_BAN",pattern);res.json({ok:true,config:a.cfg});
 });
 app.delete("/api/developer/network-security/rules/:id",auth,(req,res)=>{const a=developerNetworkAccess(req,res);if(!a)return;const old=a.cfg.ipRules.length;a.cfg.ipRules=a.cfg.ipRules.filter(r=>String(r.id)!==String(req.params.id));if(old===a.cfg.ipRules.length)return res.status(404).json({error:"Rule not found."});save();log(a.actor,"DEVELOPER_IP_RANGE_UNBAN",String(req.params.id));res.json({ok:true,config:a.cfg});});
 app.put("/api/developer/network-security/policy",auth,(req,res)=>{const a=developerNetworkAccess(req,res);if(!a)return;const b=req.body||{};a.cfg.blockVpn=b.blockVpn===true;a.cfg.allowedCountries=networkPolicyList(b.allowedCountries);a.cfg.blockedCountries=networkPolicyList(b.blockedCountries);a.cfg.blockedRegions=networkPolicyList(b.blockedRegions);save();log(a.actor,"DEVELOPER_NETWORK_POLICY_UPDATE","network policy");res.json({ok:true,config:a.cfg});});
@@ -5028,7 +5028,7 @@ app.post('/api/staff/applications/:id/reject',auth,featureAllowed('view_staff_da
 });
 app.delete('/api/staff/applications/:id',auth,async(req,res)=>{
   const actor=current(req);
-  if(String(actor.rank||'').toUpperCase()!=='OWNER')return res.status(403).json({error:'Developer rank required to delete staff applications.'});
+  if(String(actor.rank||'').toUpperCase()!=='OWNER')return res.status(403).json({error:'Owner rank required to delete staff applications.'});
   try{
     await ensureStaffApplicationsTable();
     const q=await pool.query('DELETE FROM staff_applications WHERE id=$1 RETURNING username',[req.params.id]);
@@ -5517,11 +5517,11 @@ app.post('/api/owner/premium-requests/:id/grant',ownerOnly,async(req,res)=>{
   const u=db.users.find(x=>Number(x.id)===userId); if(u){u.rank='PREMIUM';u.isPremium=true;u.is_premium=true;u.vipExpiresAt=null;} save(); res.json({ok:true,requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
 });
 app.post('/api/premium/grant',ownerOnly,async(req,res)=>{
-  const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'Cannot change Developer'});
+  const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'Cannot change Owner'});
   v.rank='PREMIUM';v.isPremium=true;v.is_premium=true;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='Premium',is_premium=true,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`UPDATE premium_requests SET status='granted' WHERE user_id=$1 AND status='pending'`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
 });
 app.post('/api/premium/cancel',ownerOnly,async(req,res)=>{
-  const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'Cannot change Developer'});
+  const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'Cannot change Owner'});
   v.rank='MEMBER';v.isPremium=false;v.is_premium=false;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='member',is_premium=false,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`DELETE FROM premium_requests WHERE user_id=$1`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
 });
 app.post('/api/shop/vip',auth,async(req,res)=>{
@@ -5851,7 +5851,7 @@ function accountModificationAccess(req,res,next){
   if(!target)return res.status(404).json({error:'User not found.'});
   if(!featureGrantAllowed(actor,'account_modifications'))return res.status(403).json({error:'Account modifications have not been granted to your rank.'});
   if(String(target.id)===String(actor.id))return res.status(400).json({error:'Use your own profile settings for your account.'});
-  if(target.username===DEFAULT_OWNER||String(target.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'The permanent Developer account is protected.'});
+  if(target.username===DEFAULT_OWNER||String(target.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'The permanent Owner account is protected.'});
   if((rankOrder[target.rank]??999)>=(rankOrder[actor.rank]??-1))return res.status(403).json({error:'You cannot modify an equal or higher rank.'});
   req.profileActor=actor;req.profileTarget=target;next();
 }
@@ -5915,7 +5915,7 @@ app.patch('/api/staff/user/:id/account',auth,(req,res)=>{
     const nu=String(req.body.username).trim();
     if(!/^[A-Za-z0-9_]{3,24}$/.test(nu)) return res.status(400).json({error:'Invalid username.'});
     if(db.users.some(x=>x.id!==target.id && x.username.toLowerCase()===nu.toLowerCase())) return res.status(409).json({error:'Username already exists.'});
-    if(String(target.rank).toUpperCase()==='OWNER' || target.username==='Maleficent') return res.status(403).json({error:'Developer account is protected.'});
+    if(String(target.rank).toUpperCase()==='OWNER' || target.username==='Maleficent') return res.status(403).json({error:'Owner account is protected.'});
     const previousUsername=target.username;
     target.usernameHistory ||= []; target.usernameHistory.push({from:previousUsername,to:nu,time:Date.now(),changedBy:actor.username}); target.username=nu;
     systemNotice(`@${previousUsername} has changed name to @${nu}.`);
@@ -5954,7 +5954,7 @@ app.put('/api/staff/user/:id/feature-blocks',auth,async(req,res)=>{
 app.get('/api/staff/user/:id/note',auth,async(req,res)=>{const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});if(!featureGrantAllowed(actor,'profile_note')||!canAccessStaffTarget(actor,target))return res.status(403).json({error:'You cannot view this staff note.'});const q=await pool.query(`SELECT n.note,n.created_at,u.username AS author FROM profile_notes n LEFT JOIN users u ON u.id=n.added_by WHERE n.user_id=$1 ORDER BY n.created_at DESC,n.id DESC LIMIT 1`,[Number(target.id)]);const row=q.rows[0];res.json({note:row?.note||'',updatedAt:row?.created_at||null,updatedBy:row?.author||null,hasNote:!!row});});
 app.patch('/api/staff/user/:id/note',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});
-  if(String(target.rank).toUpperCase()==='OWNER'||target.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+  if(String(target.rank).toUpperCase()==='OWNER'||target.username==='Maleficent')return res.status(403).json({error:'Owner account is protected.'});
   if(!featureGrantAllowed(actor,'profile_note'))return res.status(403).json({error:'Profile notes require the granted staff rank.'});
   if(!canAccessStaffTarget(actor,target))return res.status(403).json({error:'You cannot modify an equal or higher rank.'});
   const note=String(req.body.note||'').trim().slice(0,4000);if(!note)return res.status(400).json({error:'A note is required.'});
@@ -5963,7 +5963,7 @@ app.patch('/api/staff/user/:id/note',auth,async(req,res)=>{
 });
 app.patch('/api/staff/user/:id/password',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});
-  if(String(target.rank).toUpperCase()==='OWNER'||target.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+  if(String(target.rank).toUpperCase()==='OWNER'||target.username==='Maleficent')return res.status(403).json({error:'Owner account is protected.'});
   if(!featureGrantAllowed(actor,'change_password'))return res.status(403).json({error:'Password change permission has not been granted.'});
   if(rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot modify an equal or higher rank.'});
   const password=String(req.body.password||'');if(password.length<8)return res.status(400).json({error:'New password must be at least 8 characters.'});
@@ -5972,7 +5972,7 @@ app.patch('/api/staff/user/:id/password',auth,async(req,res)=>{
 app.get('/api/staff/user/:id/email-history',auth,(req,res)=>{const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});if(!featureGrantAllowed(actor,'edit_email')||rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'Email history permission required.'});res.json({email:target.email||'',history:target.emailHistory||[]});});
 app.patch('/api/staff/user/:id/email',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found'});
-  if(String(target.rank).toUpperCase()==='OWNER'||target.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+  if(String(target.rank).toUpperCase()==='OWNER'||target.username==='Maleficent')return res.status(403).json({error:'Owner account is protected.'});
   if(!featureGrantAllowed(actor,'edit_email'))return res.status(403).json({error:'Email edit permission has not been granted.'});
   if(rankOrder[target.rank]>=rankOrder[actor.rank])return res.status(403).json({error:'You cannot modify an equal or higher rank.'});
   const email=String(req.body.email||'').trim().slice(0,160);if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return res.status(400).json({error:'Enter a valid email address.'});
@@ -5983,7 +5983,7 @@ app.patch('/api/staff/user/:id/rank',auth,async(req,res)=>{
   const actor=current(req), target=findUser(req.params.id), nr=String(req.body.rank||'');
   if(!target) return res.status(404).json({error:'User not found'});
   if(!hasFeature(actor,'staff_rank_assignment')) return res.status(403).json({error:`Rank assignment requires ${featureRank('staff_rank_assignment')} or higher.`});
-  if(String(target.rank).toUpperCase()==='OWNER' || target.username==='Maleficent') return res.status(403).json({error:'Developer account is protected.'});
+  if(String(target.rank).toUpperCase()==='OWNER' || target.username==='Maleficent') return res.status(403).json({error:'Owner account is protected.'});
   if(!ranks.includes(nr)) return res.status(400).json({error:'Invalid rank.'});
   const actorRank=String(actor.rank||'MEMBER').toUpperCase();
   const coownerPower=actorRank==='COOWNER';
@@ -6020,7 +6020,7 @@ app.patch(
     ){
       return res.status(400).json({
         error:
-          "Developer rank cannot be changed."
+          "Owner rank cannot be changed."
       });
     }
 
@@ -6059,7 +6059,7 @@ app.patch(
         error:"User not found"
       });
     }
-    if(String(v.rank).toUpperCase()==="OWNER") return res.status(403).json({error:"Cannot act on Developer"});
+    if(String(v.rank).toUpperCase()==="OWNER") return res.status(403).json({error:"Cannot act on Owner"});
 
     const amount=
       Number(req.body.amount);
@@ -6109,12 +6109,12 @@ app.patch(
 );
 
 app.patch('/api/owner/user/:id/diamonds',ownerOnly,async(req,res)=>{
- const v=findUser(req.params.id);if(!v)return res.status(404).json({error:'User not found'});if(String(v.rank).toUpperCase()==='OWNER'||v.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+ const v=findUser(req.params.id);if(!v)return res.status(404).json({error:'User not found'});if(String(v.rank).toUpperCase()==='OWNER'||v.username==='Maleficent')return res.status(403).json({error:'Owner account is protected.'});
  const amount=Number(req.body?.amount);if(!Number.isSafeInteger(amount)||amount<0||amount>2147483647)return res.status(400).json({error:'Enter a valid non-negative Diamond balance.'});
  try{const updated=await pool.query('UPDATE users SET diamonds=$1 WHERE id=$2 RETURNING diamonds,gold',[amount,Number(v.id)]);if(!updated.rowCount)return res.status(404).json({error:'User not found'});v.diamonds=Number(updated.rows[0].diamonds||0);v.gold=Number(updated.rows[0].gold||0);io.to('user:'+v.id).emit('wallet:update',{userId:v.id,diamonds:v.diamonds,gold:v.gold});log(current(req),'DIAMONDS_EDIT',v.username,{after:v.diamonds});save();return res.json({ok:true,user:safeUser(v)});}catch(error){console.error('Owner Diamond edit failed:',error);return res.status(500).json({error:'Could not update Diamonds.'});}
 });
 app.patch('/api/owner/user/:id/progress',ownerOnly,async(req,res)=>{
- const v=findUser(req.params.id);if(!v)return res.status(404).json({error:'User not found'});if(String(v.rank).toUpperCase()==='OWNER'||v.username==='Maleficent')return res.status(403).json({error:'Developer account is protected.'});
+ const v=findUser(req.params.id);if(!v)return res.status(404).json({error:'User not found'});if(String(v.rank).toUpperCase()==='OWNER'||v.username==='Maleficent')return res.status(403).json({error:'Owner account is protected.'});
  const xp=Number(req.body.xp),level=Number(req.body.level);if(!Number.isFinite(xp)||!Number.isFinite(level)||xp<0||level<1||xp>2147483647||level>1000000)return res.status(400).json({error:'Enter valid XP and level values.'});v.xp=Math.floor(xp);v.level=Math.floor(level);await pool.query('UPDATE users SET xp=$1 WHERE id=$2',[v.xp,Number(v.id)]);save();res.json({ok:true,user:safeUser(v)});
 });
 
@@ -7475,7 +7475,7 @@ app.get('/api/me/account',auth,async(req,res)=>{
 // Master repair APIs: privacy-aware admin controls and persistent records.
 app.post('/api/private-nickname',auth,async(req,res)=>{try{const u=current(req),target=String(req.body.targetId||''),nickname=cleanText(req.body.nickname||'').trim().slice(0,50);if(!target||target===String(u.id))return res.status(400).json({error:'Choose another user.'});const exists=await pool.query('SELECT id FROM users WHERE id=$1',[target]);if(!exists.rowCount)return res.status(404).json({error:'User not found'});if(!nickname){await pool.query('DELETE FROM private_nicknames WHERE owner_id=$1 AND target_user_id=$2',[u.id,target]);return res.json({ok:true,nickname:''});}await pool.query(`INSERT INTO private_nicknames(owner_id,target_user_id,nickname) VALUES($1,$2,$3) ON CONFLICT(owner_id,target_user_id) DO UPDATE SET nickname=EXCLUDED.nickname`,[u.id,target,nickname]);res.json({ok:true,nickname});}catch(e){console.error(e);res.status(500).json({error:'Could not save nickname'});}});
 app.get('/api/private-nicknames',auth,async(req,res)=>{const u=current(req);const q=await pool.query('SELECT target_user_id,nickname FROM private_nicknames WHERE owner_id=$1',[u.id]);res.json({nicknames:Object.fromEntries(q.rows.map(x=>[String(x.target_user_id),x.nickname]))});});
-// Suggestions: PostgreSQL-backed, private to the submitter and Developer.
+// Suggestions: PostgreSQL-backed, private to the submitter and Owner.
 async function ensureSuggestionsTable(){
   await pool.query(`CREATE TABLE IF NOT EXISTS feature_suggestions (
     id BIGSERIAL PRIMARY KEY,
@@ -7512,7 +7512,7 @@ app.post('/api/suggestions',auth,async(req,res)=>{
   catch(e){console.error('[SUGGESTIONS] submit:',e?.message||e);res.status(500).json({error:'Could not save your suggestion.'});}
 });
 app.patch('/api/suggestions/:id',auth,async(req,res)=>{
-  const actor=current(req);if(!isSuggestionsDeveloper(actor))return res.status(403).json({error:'Only the Developer account can review suggestions.'});
+  const actor=current(req);if(!isSuggestionsDeveloper(actor))return res.status(403).json({error:'Only the Owner account can review suggestions.'});
   const status=String(req.body.status||'').trim();if(!['Rejected','Feature added','Approved'].includes(status))return res.status(400).json({error:'Invalid suggestion status.'});
   const pointsByStatus={Rejected:0,'Feature added':5,Approved:10},newPoints=pointsByStatus[status],client=await pool.connect();
   try{
@@ -7540,7 +7540,7 @@ app.get('/api/staff-points/:id',auth,async(req,res)=>{
 });
 app.patch('/api/staff-points/:id',auth,async(req,res)=>{
   const actor=current(req),target=findUser(req.params.id);if(!target)return res.status(404).json({error:'User not found.'});
-  if(!['OWNER','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Only Owner and Developer can edit staff points.'});
+  if(!['OWNER','OWNER'].includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Only Owner and Owner can edit staff points.'});
   const value=Number(req.body.points);if(!Number.isSafeInteger(value)||value<0||value>1000000)return res.status(400).json({error:'Enter a whole number from 0 to 1,000,000.'});
   try{const q=await pool.query("UPDATE users SET profile_data=jsonb_set(COALESCE(profile_data,'{}'::jsonb),'{staffPoints}',to_jsonb($1::int),true) WHERE id=$2 RETURNING id",[value,Number(target.id)]);if(!q.rowCount)return res.status(404).json({error:'User not found.'});target.staffPoints=value;save();res.json({ok:true,staffPoints:value});}
   catch(e){console.error('[STAFF POINTS] update:',e?.message||e);res.status(500).json({error:'Could not update staff points.'});}
