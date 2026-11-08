@@ -572,6 +572,11 @@ assert.ok(activeClient.includes("const canGrantPremium=canFeature('premium_grant
   "the staff dashboard must expose Premium granting controls to authorized ranks");
 assert.ok(activeClient.includes("const canManageMultiAccount=canFeature('manage_multi_account_rules');") && activeClient.includes('staffMultiAccountRuleForm'),
   "the staff dashboard must expose multi-account rule controls to authorized ranks");
+assert.ok(server.includes('premium_granting:["ELITE","OWNER"]') && server.includes('manage_multi_account_rules:["ELITE","OWNER"]'),
+  "Premium granting and multi-account rule management must default to Elite and Owner");
+assert.ok(server.includes("if(!canAccessStaffTarget(actor,target))return {status:403,error:'You can only grant Premium to an account below your own rank.'};") &&
+  server.includes("if((rankOrder[targetRank]??999)>rankOrder.PREMIUM)"),
+  "Premium grants must never modify equal or higher staff ranks or demote ranks above Premium");
 assert.ok(server.includes("const FEATURE_GRANT_POLICY_VERSION=8;"),
   "rank and feature-grant policy migration must be versioned");
 assert.ok(server.includes("blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER']"),
