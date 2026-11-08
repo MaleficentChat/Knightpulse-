@@ -82,7 +82,7 @@
       
       <select id="gender" class="register-only hidden" aria-label="Gender"><option value="">Select gender</option><option value="Male">Male</option><option value="Female">Female</option><option value="Non-binary">Non-binary</option><option value="Other">Other</option><option value="Prefer not to say">Prefer not to say</option></select>
       <input id="password" type="password" placeholder="Password" required autocomplete="current-password"><input id="confirmPassword" class="register-only hidden" type="password" placeholder="Confirm password" autocomplete="new-password"><div id="passwordStrength" class="muted register-only hidden"></div>
-      <button class="primary" id="authSubmit">Login</button>
+      <button class="primary" id="authSubmit" type="submit">Login</button>
       <div id="authMsg" class="error"></div>
     </form>
   </div>
@@ -298,14 +298,14 @@
       const button=document.getElementById("authSubmit");
       if(msg)msg.textContent="Knight Pulse is still loading. Please wait a moment, then tap Login again.";
       if(button){
-        button.disabled=true;
-        button.textContent="Loading…";
+        // Never permanently disable the only authentication control when the
+        // main bundle fails to initialize. Let the user retry after loading.
+        button.disabled=false;
+        button.textContent="Retry";
         setTimeout(function(){
-          if(window.__MC_APP_READY__){
-            button.disabled=false;
-            button.textContent="Login";
-            if(msg)msg.textContent="";
-          }
+          button.disabled=false;
+          button.textContent=register.classList.contains("active")?"Register":"Login";
+          if(window.__MC_APP_READY__&&msg)msg.textContent="";
         },1200);
       }
     },true);
@@ -442,7 +442,7 @@
   },true);
 })();
 </script>
-<script src="/app.js?v=socket-live-20261107-3"></script>
+<script src="/app.js?v=knight-pulse-auth-retry-20261108-1"></script>
 <script src="/social-features.js?v=1"></script>
 <script src="/entertainment.js?v=20261106-7"></script>
 </body>
