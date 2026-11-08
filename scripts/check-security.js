@@ -491,7 +491,7 @@ assert.ok(server.includes("const FEATURE_GRANT_POLICY_VERSION=8;"),
   "rank and feature-grant policy migration must be versioned");
 assert.ok(server.includes("blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER']"),
   "Elite and higher ranks must be blocked from purchasing Premium on the server");
-assert.ok(indexHtml.includes("/app.js?v=rank-schema-20261108-3"),
+assert.ok(indexHtml.includes("/app.js?v=rank-schema-20261108-5"),
   "the HTML must point at the current rank-schema app bundle");
 
 console.log("Room history, private-room access, invitations, private-message deletion, Shadow Feed, Friends Activity, bootstrap privacy, capacity, and slow-mode regression checks passed.");
