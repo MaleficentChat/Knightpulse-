@@ -237,8 +237,8 @@ const rankIcons={
 const rankOrder=Object.fromEntries(ranks.map((r,i)=>[r,i]));
 // Legacy role aliases keep existing permission checks compatible while old
 // account records are migrated to the Knight Pulse rank names.
-Object.assign(rankOrder,{ROYAL:rankOrder.PREMIUM,MODERATOR:rankOrder.MODERATOR,CHIEF_COMMISSOR:rankOrder.CHIEF_COMMISSOR,OWNER:rankOrder.OWNER});
-function normalizedRank(value){const key=String(value||"").toUpperCase();return ({ROYAL:"PREMIUM",MODERATOR:"MODERATOR",CHIEF_COMMISSOR:"CHIEF_COMMISSOR",OWNER:"OWNER"})[key]||key;}
+Object.assign(rankOrder,{ROYAL:rankOrder.PREMIUM,MOD:rankOrder.MODERATOR,INSTRUCTOR:rankOrder.CHIEF_COMMISSOR,DEVELOPER:rankOrder.OWNER});
+function normalizedRank(value){const key=String(value||"").toUpperCase();return ({ROYAL:"PREMIUM",MOD:"MODERATOR",INSTRUCTOR:"CHIEF_COMMISSOR",DEVELOPER:"OWNER"})[key]||key;}
 function hasRank(u,r){return !!u&&(rankOrder[normalizedRank(u.rank)]??-1)>=(rankOrder[normalizedRank(r)]??999);}
 
 // Staff may inspect or manage staff-only records only for accounts strictly below their rank.
@@ -1744,7 +1744,7 @@ app.post(
     db.users.push(u);
 
     req.session.userId=u.id;
-    await recordUserIp(req,u,"register");
+    try{await recordUserIp(req,u,"register");}catch(ipError){console.warn("Registration succeeded; login-history recording skipped:",ipError?.message||ipError);}
 
     save();
 
