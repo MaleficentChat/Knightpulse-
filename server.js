@@ -244,7 +244,7 @@ function hasRank(u,r){return !!u&&(rankOrder[normalizedRank(u.rank)]??-1)>=(rank
 // Staff may inspect or manage staff-only records only for accounts strictly below their rank.
 function canAccessStaffTarget(actor,target){
   if(!actor||!target||String(actor.id)===String(target.id))return false;
-  const actorRank=String(actor.rank||"").toUpperCase(), targetRank=String(target.rank||"").toUpperCase();
+  const actorRank=normalizedRank(actor.rank), targetRank=normalizedRank(target.rank);
   if(targetRank==="OWNER"||target.username===DEFAULT_OWNER)return false;
   return (rankOrder[targetRank]??999)<(rankOrder[actorRank]??-1);
 }
@@ -392,8 +392,8 @@ const FEATURE_GRANT_DEFAULTS={
   news_read:GRANT_RANKS,news_comment:GRANT_RANKS,news_react:GRANT_RANKS,news_report:GRANT_RANKS,news_pin:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],wall_read:GRANT_RANKS,wall_search:GRANT_RANKS,wall_comment:GRANT_RANKS,wall_react:GRANT_RANKS,wall_report:GRANT_RANKS,wall_pin:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],suggestions_submit:GRANT_RANKS,suggestions_review:["OWNER"],suggestions_set_status:["OWNER"],suggestions_notify_submitter:["OWNER"],
   games_access:GRANT_RANKS,gravity_run:GRANT_RANKS,doodle_studio_save:GRANT_RANKS,doodle_studio_share:GRANT_RANKS,gif_search:GRANT_RANKS,media_embeds:GRANT_RANKS,
   premium_access:GRANT_RANKS,vip_access:GRANT_RANKS,gold_wallet:GRANT_RANKS,gold_catalogue:GRANT_RANKS,gold_purchase:GRANT_RANKS,gold_equip:GRANT_RANKS,gold_transaction_history:GRANT_RANKS,daily_rewards:GRANT_RANKS,achievement_access:GRANT_RANKS,premium_requests:GRANT_RANKS,grant_premium:["OWNER"],
-  view_rules:GRANT_RANKS,submit_reports:GRANT_RANKS,manage_reports:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_assign:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_resolve:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],edit_site_rules:["CHIEF_COMMISSOR","COMMISSOR","COOWNER","OWNER","OWNER"],edit_room_rules:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
-  leaderboard_access:GRANT_RANKS,saved_messages:GRANT_RANKS,advanced_search:GRANT_RANKS,staff_application_submit:GRANT_RANKS,staff_application_review:["OWNER","COOWNER","COMMISSOR"],staff_dashboard_access:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],staff_notifications:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],system_notifications:["COOWNER","OWNER","OWNER"],audit_log_access:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],audit_log_settings:["OWNER"],under_construction_control:["OWNER"],site_hard_refresh:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  view_rules:GRANT_RANKS,submit_reports:GRANT_RANKS,manage_reports:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_assign:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],report_resolve:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],edit_site_rules:["CHIEF_COMMISSOR","COMMISSOR","COOWNER","ELITE","OWNER"],edit_room_rules:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
+  leaderboard_access:GRANT_RANKS,saved_messages:GRANT_RANKS,advanced_search:GRANT_RANKS,staff_application_submit:GRANT_RANKS,staff_application_review:["OWNER","COOWNER","COMMISSOR"],staff_dashboard_access:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],staff_notifications:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],system_notifications:["COOWNER","ELITE","OWNER"],audit_log_access:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],audit_log_settings:["OWNER"],under_construction_control:["OWNER"],site_hard_refresh:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],
   inspect_ip_details:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],inspect_similar_ips:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_user_history:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],view_username_history:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_profile_notes:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_account_locks:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_avatar:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],delete_accounts:["COOWNER","OWNER"],manage_bans:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_mutes:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_kicks:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_warnings:["MODERATOR","ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_automated_filters:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_vpn_proxy_rules:["OWNER"],manage_multi_account_rules:["OWNER"],manage_spam_flood_rules:["ADMIN","SUPER_ADMIN","COMMISSOR","COOWNER","OWNER"],manage_user_feature_exceptions:["OWNER"],manage_rank_feature_grants:["OWNER"],manage_individual_feature_grants:["OWNER"],manage_owner_space:["OWNER"],manage_site_refresh:["OWNER"],view_system_diagnostics:["OWNER"],manage_site_themes:["OWNER"],manage_economy_settings:["OWNER"],manage_premium_settings:["OWNER"],manage_notifications_settings:["OWNER"],manage_room_permissions:["OWNER"],manage_room_themes:["OWNER"],manage_room_staff:["OWNER","COOWNER","COMMISSOR"],manage_suggestions_settings:["OWNER"],manage_feature_granting:["OWNER"]
 };
 
@@ -417,7 +417,7 @@ view_online_users:RANK_TIERS.all,manage_push_notifications:RANK_TIERS.all,modera
 };
 
 const REQUESTED_COMMAND_RANKS={clear:RANK_TIERS.admin,abrakadabra:RANK_TIERS.all,aura:RANK_TIERS.all,roast:RANK_TIERS.all,anonymous:RANK_TIERS.superAdmin,bank:RANK_TIERS.all,convert:RANK_TIERS.all,ship:RANK_TIERS.vip,welcome:RANK_TIERS.vip,steal:RANK_TIERS.premium,bread:RANK_TIERS.premium,rose:RANK_TIERS.premium,brain:RANK_TIERS.premium};
-const REQUESTED_MODE_RANKS={invisible:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"],dead:["CHIEF_COMMISSOR","COOWNER","OWNER","OWNER"],ghost:["OWNER","OWNER"]};
+const REQUESTED_MODE_RANKS={invisible:["COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],dead:["CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"],ghost:["OWNER"]};
 function modeRankAllowed(mode,rank){
   const normalized=String(rank||"").toUpperCase();
   if(normalized==="OWNER")return true;
@@ -1393,7 +1393,7 @@ async function ensureOwner(){
     q = await pool.query(`INSERT INTO users(username,password,rank,gold,xp) VALUES('Maleficent',$1,'Owner',999999,999999) ON CONFLICT(username) DO UPDATE SET rank='Owner',password=EXCLUDED.password RETURNING *`, [hash]);
   } else {
     q = await pool.query(`UPDATE users SET rank='Owner' WHERE username='Maleficent' RETURNING *`);
-    if (!q.rowCount) throw new Error('OWNER_PASSWORD is required to initialize the permanent Developer account.');
+    if (!q.rowCount) throw new Error('OWNER_PASSWORD is required to initialize the permanent Owner account.');
   }
   const row=q.rows[0]; let u=findUser('Maleficent');
   if(!u){ u={id:String(row.id),username:'Maleficent',displayName:'Maleficent',password:row.password,passwordHash:row.password,rank:'OWNER',gold:999999,xp:999999,verified:true,createdAt:Date.now(),lastSeen:Date.now(),online:false,level:999999,bio:'Permanent Owner of Knight Pulse.',settings:{rememberLogin:true,theme:'obsidian',notificationPrefs:{messages:true,mentions:true,replies:true,security:true,staff:true,gamification:true,other:true}}}; db.users.push(u); }
