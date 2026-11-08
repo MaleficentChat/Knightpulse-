@@ -5496,7 +5496,7 @@ app.get('/api/shop',auth,async(req,res)=>{
   });
 });
 app.post('/api/shop/premium/buy-diamonds',auth,async(req,res)=>{
-  const actor=current(req),blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER'];
+  const actor=current(req),blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'];
   if(blockedRanks.includes(String(actor.rank||'').toUpperCase()))return res.status(403).json({error:'Your current rank cannot purchase Premium.'});
   const cost=50000,client=await pool.connect();let updated;
   try{
@@ -5523,7 +5523,7 @@ app.post('/api/shop/premium/buy-diamonds',auth,async(req,res)=>{
 });
 app.post('/api/shop/premium/request',auth,async(req,res)=>{
   const u=current(req);
-  if(['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','OWNER'].includes(String(u.rank).toUpperCase())) return res.status(403).json({error:'Only ranks below Premium may request Premium.'});
+  if(['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(String(u.rank).toUpperCase())) return res.status(403).json({error:'Only ranks below Premium may request Premium.'});
   await pool.query(`INSERT INTO premium_requests(user_id,status) VALUES($1,'pending')`,[Number(u.id)]);
   const owners=await pool.query(`SELECT id FROM users WHERE LOWER(rank)='owner'`); for(const x of owners.rows)notify(x.id,'staff','Premium requested',`${u.username} requested Premium.`);
   res.json({ok:true,message:'Premium request sent to owner.'});
