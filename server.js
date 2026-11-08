@@ -7473,6 +7473,7 @@ app.get('/api/me/account',auth,async(req,res)=>{
     ensureFeaturePermissions();
     ensureFeatureGrants();
     for (const u of db.users) ensureUserSchema(u);
+    save();
     const owner = db.users.find(u => String(u.username).toLowerCase() === "maleficent");
     if (owner) {
       owner.rank = "OWNER";
