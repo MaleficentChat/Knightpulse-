@@ -124,7 +124,17 @@ const LEGACY_RANK_MIGRATION={USER:"MEMBER",MODERATOR:"MOD",SUPERADMIN:"SUPER_ADM
 const CANONICAL_RANKS=new Set(["MEMBER","VIP","SVIP","PREMIUM","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]);
 function migrateRankSettings(value){
   if(Array.isArray(value))return value.map(migrateRankSettings);
-  if(value&&typeof value==="object"){for(const key of Object.keys(value))value[key]=migrateRankSettings(value[key]);return value;}
+  if(value&&typeof value==="object"){
+    const migrated={};
+    for(const [key,entry] of Object.entries(value)){
+      const normalizedKey=LEGACY_RANK_MIGRATION[key.toUpperCase()]||key;
+      const normalizedValue=migrateRankSettings(entry);
+      if(Array.isArray(migrated[normalizedKey])&&Array.isArray(normalizedValue))migrated[normalizedKey].push(...normalizedValue);
+      else if(migrated[normalizedKey]===undefined)migrated[normalizedKey]=normalizedValue;
+      else if(normalizedValue&&typeof normalizedValue==="object"&&!Array.isArray(normalizedValue))migrated[normalizedKey]={...migrated[normalizedKey],...normalizedValue};
+    }
+    return migrated;
+  }
   return typeof value==="string"?(LEGACY_RANK_MIGRATION[value.toUpperCase()]||value):value;
 }
 
