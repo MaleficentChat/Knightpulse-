@@ -5950,6 +5950,44 @@ app.put('/api/owner/feature-grants',ownerOnly,async(req,res)=>{
   }catch(e){console.error("Feature grant settings save failed:",e);res.status(500).json({error:"Could not save feature grants."});}
 });
 
+app.get('/api/owner/permission-audit',auth,ownerOnly,(req,res)=>{
+  ensureFeatureGrants();
+  const canonicalRanks=GRANT_RANKS.slice();
+  const ordered=value=>canonicalRanks.filter(rank=>(Array.isArray(value)?value:[]).map(x=>String(x).toUpperCase()).includes(rank));
+  const policies=[
+    {key:'grant_premium',label:'Grant Premium',expected:['ELITE','OWNER']},
+    {key:'premium_granting',label:'Premium granting',expected:['ELITE','OWNER']},
+    {key:'manage_multi_account_rules',label:'Multi-account rules',expected:['ELITE','OWNER']},
+    {key:'inspect_private_messages',label:'Private-message inspection',expected:['OWNER']},
+    {key:'staff_rank_assignment',label:'Staff rank assignment',expected:['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER']}
+  ];
+  const checks=policies.map(item=>{
+    const configured=db.settings?.feature_grants?.[item.key];
+    const actual=ordered(configured===undefined?FEATURE_GRANT_DEFAULTS[item.key]:configured);
+    const expected=ordered(item.expected);
+    const passed=actual.length===expected.length&&actual.every((rank,index)=>rank===expected[index]);
+    return {...item,actual,passed,status:passed?'PASS':'REVIEW'};
+  });
+  const grantCeilings={MOD:'MOD',ADMIN:'MOD',SUPER_ADMIN:'MOD',COMMISSOR:'MOD',CHIEF_COMMISSOR:'MOD',COOWNER:'CHIEF_COMMISSOR',ELITE:'COOWNER',OWNER:'OWNER'};
+  const invalidGrantRanks=[];
+  for(const [feature,allowed] of Object.entries(db.settings?.feature_grants||{})){
+    for(const rank of Array.isArray(allowed)?allowed:[]){
+      if(!canonicalRanks.includes(String(rank).toUpperCase()))invalidGrantRanks.push({feature,rank:String(rank)});
+    }
+  }
+  const rankSchemaMatches=JSON.stringify(ranks)===JSON.stringify(canonicalRanks);
+  res.json({
+    generatedAt:Date.now(),
+    ranks:canonicalRanks,
+    rankSchemaMatches,
+    grantCeilings,
+    checks,
+    invalidGrantRanks,
+    featureCount:Object.keys(FEATURE_GRANT_DEFAULTS).length,
+    configuredFeatureCount:Object.keys(db.settings?.feature_grants||{}).length,
+    overall:checks.every(x=>x.passed)&&rankSchemaMatches&&!invalidGrantRanks.length?'PASS':'REVIEW'
+  });
+});
 app.get('/api/owner/feature-permissions',ownerOnly,(req,res)=>{
   ensureFeaturePermissions();
   const controls=[...FEATURE_CONTROLS.map(f=>({...f,implemented:true})),{key:'wall_posting',name:'Friend Wall Posting',category:'Social',specialGrant:true},];
