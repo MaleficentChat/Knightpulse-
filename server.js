@@ -5541,19 +5541,38 @@ app.post('/api/shop/premium/request',auth,async(req,res)=>{
   const owners=await pool.query(`SELECT id FROM users WHERE LOWER(rank)='owner'`); for(const x of owners.rows)notify(x.id,'staff','Premium requested',`${u.username} requested Premium.`);
   res.json({ok:true,message:'Premium request sent to owner.'});
 });
-app.get('/api/owner/premium-requests',ownerOnly,async(req,res)=>{const {rows}=await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`);res.json({requests:rows});});
+app.get('/api/owner/premium-requests',ownerOnly,async(req,res)=>{const {rows}=await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' AND UPPER(COALESCE(u.rank,'MEMBER')) IN ('MEMBER','VIP','SVIP','PREMIUM') ORDER BY pr.created_at DESC`);res.json({requests:rows});});
 app.post('/api/owner/premium-requests/:id/grant',ownerOnly,async(req,res)=>{
-  const q=await pool.query(`SELECT user_id FROM premium_requests WHERE id=$1 AND status='pending'`,[req.params.id]); if(!q.rowCount)return res.status(404).json({error:'Request not found'});
-  const userId=Number(q.rows[0].user_id); await pool.query(`UPDATE users SET rank='PREMIUM',is_premium=true,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`UPDATE premium_requests SET status='granted' WHERE user_id=$1 AND status='pending'`,[userId]);
-  const u=db.users.find(x=>Number(x.id)===userId); if(u){u.rank='PREMIUM';u.isPremium=true;u.is_premium=true;u.vipExpiresAt=null;} save(); res.json({ok:true,requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
+  const actor=current(req);
+  try{
+    const q=await pool.query(`SELECT user_id FROM premium_requests WHERE id=$1 AND status='pending'`,[req.params.id]);
+    if(!q.rowCount)return res.status(404).json({error:'Request not found'});
+    const target=findUser(q.rows[0].user_id);
+    const result=await grantPremiumToStaffTarget(actor,target);
+    if(result.status!==200)return res.status(result.status).json({error:result.error});
+    const {rows}=await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' AND UPPER(COALESCE(u.rank,'MEMBER')) IN ('MEMBER','VIP','SVIP','PREMIUM') ORDER BY pr.created_at DESC`);
+    res.json({ok:true,user:result.user,requests:rows});
+  }catch(error){console.error('Owner Premium request grant failed:',error);res.status(500).json({error:'Could not grant this Premium request.'});}
 });
 app.post('/api/premium/grant',ownerOnly,async(req,res)=>{
-  const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'Cannot change Owner'});
-  v.rank='PREMIUM';v.isPremium=true;v.is_premium=true;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='PREMIUM',is_premium=true,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`UPDATE premium_requests SET status='granted' WHERE user_id=$1 AND status='pending'`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
+  const actor=current(req),userId=Number(req.body.userId||0),target=findUser(userId);
+  try{
+    const result=await grantPremiumToStaffTarget(actor,target);
+    if(result.status!==200)return res.status(result.status).json({error:result.error});
+    const {rows}=await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' AND UPPER(COALESCE(u.rank,'MEMBER')) IN ('MEMBER','VIP','SVIP','PREMIUM') ORDER BY pr.created_at DESC`);
+    res.json({ok:true,user:result.user,requests:rows});
+  }catch(error){console.error('Owner Premium grant failed:',error);res.status(500).json({error:'Could not grant Premium.'});}
 });
 app.post('/api/premium/cancel',ownerOnly,async(req,res)=>{
-  const userId=Number(req.body.userId||0); const v=findUser(userId); if(!v)return res.status(404).json({error:'User not found'}); if(String(v.rank).toUpperCase()==='OWNER')return res.status(403).json({error:'Cannot change Owner'});
-  v.rank='MEMBER';v.isPremium=false;v.is_premium=false;v.vipExpiresAt=null; await pool.query(`UPDATE users SET rank='MEMBER',is_premium=false,vip_expires_at=NULL WHERE id=$1`,[userId]); await pool.query(`DELETE FROM premium_requests WHERE user_id=$1`,[userId]); save(); res.json({ok:true,user:safeUser(v),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' ORDER BY pr.created_at DESC`)).rows});
+  const actor=current(req),userId=Number(req.body.userId||0),target=findUser(userId);
+  if(!target)return res.status(404).json({error:'User not found'});
+  if(!canAccessStaffTarget(actor,target))return res.status(403).json({error:'You cannot change an equal- or higher-ranked account.'});
+  if(String(target.rank||'').toUpperCase()!=='PREMIUM')return res.status(403).json({error:'Only Premium accounts can have Premium cancelled; staff ranks are protected.'});
+  target.rank='MEMBER';target.isPremium=false;target.is_premium=false;target.vipExpiresAt=null;target.vip_expires_at=null;
+  await pool.query(`UPDATE users SET rank='MEMBER',is_premium=false,vip_expires_at=NULL WHERE id=$1`,[userId]);
+  await pool.query(`DELETE FROM premium_requests WHERE user_id=$1`,[userId]);
+  save();await log(actor,'OWNER_PREMIUM_CANCEL',target.username,{previousRank:'PREMIUM',rank:'MEMBER'});
+  res.json({ok:true,user:safeUser(target),requests:(await pool.query(`SELECT pr.id,pr.user_id,pr.status,pr.created_at,u.username,u.rank FROM premium_requests pr JOIN users u ON u.id=pr.user_id WHERE pr.status='pending' AND UPPER(COALESCE(u.rank,'MEMBER')) IN ('MEMBER','VIP','SVIP','PREMIUM') ORDER BY pr.created_at DESC`)).rows});
 });
 app.post('/api/shop/svip',auth,async(req,res)=>{
   const u=current(req), options={7:{price:200,interval:"7 days",days:7},30:{price:2000,interval:"1 month",days:30},90:{price:5000,interval:"3 months",days:90},365:{price:10000,interval:"1 year",days:365}};
@@ -6254,15 +6273,23 @@ app.delete(
 );
 
 app.get("/api/owner/dms",ownerOnly,async(req,res)=>{
-  const u1=String(req.query.username1||"").trim(),u2=String(req.query.username2||"").trim();
-  let sql=`SELECT data FROM private_messages`; let params=[]; let where="";
-  const x=u1?findUser(u1):null, y=u2?findUser(u2):null;
-  if(u1 && !x)return res.status(404).json({error:"Username 1 not found"});
-  if(u2 && !y)return res.status(404).json({error:"Username 2 not found"});
-  if(x&&y){where=` WHERE (sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1)`;params=[Number(x.id),Number(y.id)];}
-  else if(x){where=` WHERE sender_id=$1 OR receiver_id=$1`;params=[Number(x.id)];}
-  const q=await pool.query(sql+where+` ORDER BY created_at DESC LIMIT 2000`,params);
+  const actor=current(req);
+  const u1=String(req.query.username1||"").trim().replace(/^@/,"");
+  const u2=String(req.query.username2||"").trim().replace(/^@/,"");
+  if(!u1)return res.status(400).json({error:"Select at least one account to inspect."});
+  const x=findUser(u1),y=u2?findUser(u2):null;
+  if(!x)return res.status(404).json({error:"Username 1 not found"});
+  if(u2&&!y)return res.status(404).json({error:"Username 2 not found"});
+  const canInspectTarget=target=>String(actor.id)===String(target.id)||
+    (rankOrder[String(target.rank||"").toUpperCase()]??999)<(rankOrder[String(actor.rank||"").toUpperCase()]??-1);
+  if(!canInspectTarget(x))return res.status(403).json({error:"You can only inspect your own messages or messages belonging to users strictly below your rank."});
+  if(y&&!canInspectTarget(y))return res.status(403).json({error:"You cannot inspect messages involving an equal-rank or higher-rank staff member."});
+  const params=[];let where="";
+  if(x&&y){where=" WHERE (sender_id=$1 AND receiver_id=$2) OR (sender_id=$2 AND receiver_id=$1)";params.push(Number(x.id),Number(y.id));}
+  else{where=" WHERE sender_id=$1 OR receiver_id=$1";params.push(Number(x.id));}
+  const q=await pool.query("SELECT data FROM private_messages"+where+" ORDER BY created_at DESC LIMIT 2000",params);
   const usersById=new Map(db.users.map(u=>[String(u.id),u]));
+  res.set("Cache-Control","no-store");
   res.json({privateMessages:q.rows.map(r=>{const m=r.data||{};const fu=usersById.get(String(m.from)),tu=usersById.get(String(m.to));return {...m,fromUsername:fu?.username||m.from,toUsername:tu?.username||m.to,fromDisplayName:fu?.displayName||'',toDisplayName:tu?.displayName||''};})});
 });
 
