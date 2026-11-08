@@ -1261,8 +1261,8 @@ async function renderView() {
       const labels={
         MOD:["🛡️","Moderator Space"], ADMIN:["⭐","Admin Space"],
         SUPER_ADMIN:["🌟","Superadmin Space"], COMMISSOR:["👻","Commissor Space"],
-        INSTRUCTOR:["⚔️","Instructor Space"], COOWNER:["🦉","Coowner Space"],
-        OWNER:["👑","Owner Space"], DEVELOPER:["🛠️","Developer Space"]
+        CHIEF_COMMISSOR:["⚔️","Chief Commissor Space"], COOWNER:["🦉","Co-Owner Space"],
+        ELITE:["✨","Elite Space"], OWNER:["👑","Owner Space"]
       };
       if(!Object.prototype.hasOwnProperty.call(labels,rank)){
         toast("Management Spaces are available only to staff ranks.");
@@ -1274,7 +1274,7 @@ async function renderView() {
       if(title)title.textContent=icon+" "+label;
       if(navLabel)navLabel.textContent=label;
       if(description)description.textContent="Staff Dashboard tools and rank-authorized controls, all in one place.";
-      const ownerEligible=["OWNER","DEVELOPER"].includes(rank);
+      const ownerEligible=rank==="OWNER";
       $("owner")?.classList.toggle("hidden",!ownerEligible);
       await loadStaff();
       if(ownerEligible) await loadOwner();
