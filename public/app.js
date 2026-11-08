@@ -5291,16 +5291,8 @@ async function loadStaff() {
     staffRoot?.querySelector("#staffGuideManagementDropdown")?.remove();
     staffRoot?.querySelector("#staffFilterManagementDropdown")?.remove();
     const canManageGuidesAndFilters=["COMMISSOR","INSTRUCTOR","COOWNER","OWNER","DEVELOPER"].includes(staffRank);
-    const canManageGuides=["COOWNER","OWNER","DEVELOPER"].includes(staffRank);
     if(canManageGuidesAndFilters&&staffRoot){
       const clearedSection=staffRoot.querySelector(".cleared-room-evidence-card")?.closest("details");
-      if(canManageGuides){
-        const guideDropdown=document.createElement("details");
-        guideDropdown.id="staffGuideManagementDropdown";guideDropdown.className="staff-compact-dropdown filter-words-details";
-        guideDropdown.innerHTML='<summary>📘 Guide Management <span class="muted">— click to open</span></summary><div class="owner-filter-management-content"><div id="staffGuideManagement" class="stack"></div></div>';
-        if(clearedSection)staffRoot.insertBefore(guideDropdown,clearedSection);else staffRoot.append(guideDropdown);
-        loadOwnerGuideManagement();
-      }
       const filterDropdown=document.createElement("details");
       filterDropdown.id="staffFilterManagementDropdown";filterDropdown.className="staff-compact-dropdown filter-words-details";
       filterDropdown.innerHTML='<summary>🧩 Filter Management <span class="muted">— click to open</span></summary><div class="owner-filter-management-content" id="staffFilterManagement"></div>';
@@ -5314,12 +5306,11 @@ async function loadStaff() {
       [staffRoot?.querySelector("#systemNotificationsDropdown"),"staff-order-2"],
       [staffRoot?.querySelector(".ip-inspection-card")?.closest("details"),"staff-order-3"],
       [filterCard,"staff-order-4"],
-      [staffRoot?.querySelector("#staffGuideManagementDropdown"),"staff-order-5"],
-      [staffRoot?.querySelector("#staffFilterManagementDropdown"),"staff-order-6"],
-      [staffRoot?.querySelector(".cleared-room-evidence-card")?.closest("details"),"staff-order-7"],
-      [staffRoot?.querySelector(".under-construction-admin-card")?.closest("details"),"staff-order-8"],
-      [staffRoot?.querySelector("#staffApplicationsDropdown"),"staff-order-9"],
-      [staffRoot?.querySelector(".site-hard-refresh-card"),"staff-order-10"]
+      [staffRoot?.querySelector("#staffFilterManagementDropdown"),"staff-order-5"],
+      [staffRoot?.querySelector(".cleared-room-evidence-card")?.closest("details"),"staff-order-6"],
+      [staffRoot?.querySelector(".under-construction-admin-card")?.closest("details"),"staff-order-7"],
+      [staffRoot?.querySelector("#staffApplicationsDropdown"),"staff-order-8"],
+      [staffRoot?.querySelector(".site-hard-refresh-card"),"staff-order-9"]
     ];
     orderedStaffSections.forEach(([node,cls])=>{if(node){node.classList.add(cls);staffRoot.appendChild(node);}});
     if(statsGrid&&!statsGrid.children.length)statsGrid.remove();
