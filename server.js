@@ -5017,7 +5017,7 @@ app.post('/api/staff-applications',auth,async(req,res)=>{
     await ensureStaffApplicationsTable();
     const u=current(req),requestedRank=String(req.body.requestedRank||'').toUpperCase();
     const activity=String(req.body.activity||'').trim().slice(0,180),reason=String(req.body.reason||'').trim().slice(0,2500),experience=String(req.body.experience||'').trim().slice(0,2000);
-    if(!['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','COOWNER'].includes(requestedRank))return res.status(400).json({error:'Choose a rank from Moderator to Co-owner.'});
+    if(!['MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER'].includes(requestedRank))return res.status(400).json({error:'Choose a valid staff rank.'});
     if(!activity||!reason||!experience)return res.status(400).json({error:'Please complete every question before submitting.'});
     const pending=await pool.query("SELECT id FROM staff_applications WHERE user_id=$1 AND status IN ('PENDING','APPROVED') LIMIT 1",[Number(u.id)]);
     if(pending.rowCount)return res.status(409).json({error:'You already have a pending or approved staff application.'});
