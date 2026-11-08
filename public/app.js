@@ -4489,8 +4489,8 @@ function rankFromProfile(user){
   if(user.username==="Maleficent" && !isOwner){toast("The permanent owner is protected.");return;}
   const ceiling=isOwner?rankOrder.OWNER:(actorRank==="ELITE"?rankOrder.COOWNER:(actorRank==="COOWNER"?rankOrder.CHIEF_COMMISSOR:rankOrder.MOD));
   const targetRank=String(user.rank||"MEMBER").toUpperCase();
-  const targetBelowActor=rankOrder[targetRank]<rankOrder[actorRank];
-  const allowed=ranks.filter(r=>rankOrder[r]<=ceiling && (isOwner?targetBelowActor:rankOrder[r]<rankOrder[actorRank]));
+  const targetBelowActor=(rankOrder[targetRank]??-1)<(rankOrder[actorRank]??-1);
+  const allowed=ranks.filter(r=>rankOrder[r]<=ceiling && targetBelowActor);
   const ceilingLabel=isOwner?"Owner":actorRank==="ELITE"?"Co-owner":actorRank==="COOWNER"?"Chief Commissor":"Moderator";
   modal(`<h2>🏅 Change rank for @${esc(user.username)}</h2><p class="muted">${isOwner?"Owner control: you may assign ranks up to Owner.":`You may assign ranks up to ${ceilingLabel}.`}</p><select id="profileRankSelect">${allowed.map(r=>`<option value="${r}" ${r===user.rank?'selected':''}>${rankIcon[r]||''} ${r.replace(/_/g," ")}</option>`).join('')}</select><div class="toolbar"><button class="primary" id="saveProfileRank">Save rank</button></div>`);
   $('saveProfileRank').onclick=async()=>{
