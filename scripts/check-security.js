@@ -584,7 +584,7 @@ assert.ok(server.includes("const FEATURE_GRANT_POLICY_VERSION=8;"),
   "rank and feature-grant policy migration must be versioned");
 assert.ok(server.includes("blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER']"),
   "Elite and higher ranks must be blocked from purchasing Premium on the server");
-assert.ok(indexHtml.includes("/app.js?v=staff-dashboard-20261108-3"),
+assert.ok(indexHtml.includes("/app.js?v=staff-command-center-20261108-4"),
   "the HTML must point at the current rank-schema app bundle");
 
 
@@ -633,3 +633,17 @@ assert.match(staffUi, /adminActivityLogsDropdown[\s\S]*Admin Activity Logs/,
 assert.match(staffCss, /\.kp-command-center[\s\S]*\.kp-staff-inbox/,
   "the new command center and staff inbox must have dedicated responsive styling");
 console.log("KnightPulse staff command center, permission audit, activity log and notification inbox checks passed.");
+
+assert.match(staffUi,/function auditCategoryFor\(row\)[\s\S]*?function renderAuditCollection\(target,rows/,
+  "admin activity logs must be grouped into understandable categories");
+assert.match(staffUi,/\[\[\x27all\x27,\x27All activity\x27\],\[\x27moderation\x27,\x27Moderation\x27\],\[\x27accounts\x27,\x27Accounts & ranks\x27\],\[\x27system\x27,\x27System & security\x27\]/,
+  "audit log categories must include moderation, accounts/ranks and system/security");
+assert.match(staffUi,/kp-staff-groups[\s\S]*?Overview[\s\S]*?Moderation & review[\s\S]*?Team management[\s\S]*?Account & system controls/,
+  "staff tools must be grouped into clear functional sections");
+assert.match(staffUi,/kp-profile-quick-stats[\s\S]*?kp-profile-tabs-label/,
+  "member profiles must use the refreshed identity and navigation layout");
+assert.match(staffCss,/\.kp-staff-groups[\s\S]*\.kp-audit-filters[\s\S]*\.kp-profile-tabs-label/,
+  "profile, staff workspace and audit category layouts must be styled");
+assert.ok(indexHtml.includes("knightpulse-complete.css?v=profile-staff-logs-20261108-2"),
+  "the HTML must request the refreshed profile, staff and audit styles");
+
