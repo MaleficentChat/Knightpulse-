@@ -1,0 +1,19 @@
+{
+  "name": "cloud-chat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Independent Cloud Chat application and API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "pg": "^8.13.1",
+    "socket.io": "^4.8.1"
+  }
+}
