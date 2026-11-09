@@ -7477,3 +7477,40 @@ body.party-mode-active .msg.dm-msg .message-avatar-button{
   animation:party-spin 4.5s linear infinite!important;
   will-change:transform;
 }
+
+/* Keep leaderboard columns independently scrollable on desktop and mobile. */
+#leaderboard { align-items: start; }
+#leaderboard > .card {
+  max-height: min(68vh, 720px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #8054ad #130f1d;
+}
+#leaderboard > .card > h3 {
+  position: sticky;
+  top: -1px;
+  z-index: 3;
+  margin-top: 0;
+  padding: 10px 0;
+  background: #101b27;
+}
+#leaderboard > .card::-webkit-scrollbar { width: 7px; }
+#leaderboard > .card::-webkit-scrollbar-thumb { background: #8054ad; border-radius: 20px; }
+.bot-join-chat-message .bot-welcome-bubble {
+  border: 1px solid #75d8cb;
+  background: linear-gradient(145deg, rgba(18,39,49,.98), rgba(10,18,27,.98));
+  box-shadow: 0 0 18px rgba(117,216,203,.18);
+}
+.bot-join-chat-message .bot-welcome-glow {
+  color: #a6fff1;
+  text-shadow: 0 0 12px rgba(117,216,203,.7);
+}
+.bot-join-chat-link {
+  display:flex;align-items:center;justify-content:center;width:100%;min-height:42px;
+  margin-top:14px;border:1px solid #75d8cb;border-radius:12px;
+  background:linear-gradient(100deg,#174d5a,#237b83);color:#fff!important;
+  font-weight:800;letter-spacing:.06em;text-decoration:none!important;
+}
+.bot-join-chat-link:focus-visible { outline:2px solid #fff; outline-offset:3px; }
+.bot-join-chat-footnote { margin-top:9px;color:#a9c9cf;font-size:11px;text-align:center; }
