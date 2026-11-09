@@ -70,3 +70,4 @@
     if (event.target.closest(".profile-tab")) queueMicrotask(decorateProfile);
   }, true);
 })();
+// Keep the legacy XP client checked in the current branch workflow.
