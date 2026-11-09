@@ -352,7 +352,7 @@ async function refreshCurrentRoomOnly(){
 
 function openParallelRoomLayout(parentId,splitId,code,layout,dimensionName="Alternate Dimension",ownerId,portalEnabled=true){
   const existing=document.getElementById("parallelRoomOverlay");existing?.remove();
-  const side=layout==="side-by-side";
+  const side=false;
   const overlay=document.createElement("section");
   overlay.id="parallelRoomOverlay";overlay.className="parallel-room-overlay "+(side?"side-by-side-mode":"separate-view-mode");
   if(!document.getElementById("dimension-portal-inline-style")){const style=document.createElement("style");style.id="dimension-portal-inline-style";style.textContent=".parallel-portal-open,.parallel-portal-toggle{border:1px solid rgba(70,190,220,.38);background:rgba(25,100,140,.2);color:inherit;border-radius:9px;padding:7px 10px;font-weight:700;cursor:pointer;font-size:12px}.parallel-portal-toggle{border-color:rgba(72,210,205,.35)}.parallel-portal-toggle.portal-off{opacity:.7;border-color:rgba(255,120,120,.35)}.parallel-portal-open:disabled{opacity:.45;cursor:not-allowed}";document.head.appendChild(style);}
@@ -434,13 +434,7 @@ function openParallelSplits(){
           <small>2–40 characters. This name appears inside the dimension, not in the room list.</small>
           <label for="parallelCreateCode">Your custom Split Code</label>
           <input id="parallelCreateCode" maxlength="24" autocomplete="off" autocapitalize="characters" placeholder="E.G. NIGHTOWL24">
-          <small>4–24 letters or numbers. Codes are unique within this parent room.</small>
-          <label>Choose layout</label>
-          <div class="parallel-layout-options">
-            <label><input type="radio" name="parallelLayout" value="side-by-side" checked><span><b>▥ Side-by-Side</b><small>Keep both rooms visible together.</small></span></label>
-            <label><input type="radio" name="parallelLayout" value="separate"><span><b>▣ Separate View</b><small>Open the split as its own full room.</small></span></label>
-          </div>
-          <button type="button" class="primary-btn" id="parallelCreateBtn">Create Split</button>
+          <small>4–24 letters or numbers. Codes are unique within this parent room.</small><button type="button" class="primary-btn" id="parallelCreateBtn">Create Split</button>
         `:`<p class="parallel-rank-note">Creating a split requires ${threshold} rank or above.</p>`}
       </section>
       <section class="parallel-split-card">
@@ -459,7 +453,7 @@ function openParallelSplits(){
 async function createParallelSplit(){
   const dimensionName=String(document.getElementById("parallelCreateName")?.value||"").trim();
   const code=String(document.getElementById("parallelCreateCode")?.value||"").trim().toUpperCase();
-  const layout=document.querySelector('input[name="parallelLayout"]:checked')?.value||"separate";
+  const layout="separate";
   if(dimensionName.length<2||dimensionName.length>40){toast("Name your dimension using 2–40 characters.");return;}
   if(!/^[A-Z0-9]{4,24}$/.test(code)){toast("Use 4–24 letters or numbers for your Split Code.");return;}
   const parentId=String(state.currentRoom||"");
@@ -2243,8 +2237,7 @@ function messageHTML(message) {
     return `<div class="message bot-welcome-message bot-join-chat-message" data-mid="${esc(message.id)}">
       <div class="bot-welcome-bubble">
         <div class="bot-welcome-byline">🤖 SYSTEM BOT</div>
-        <div class="bot-welcome-glow">🖤 JOIN MALEFICENT CHAT</div>
-        <a class="bot-join-chat-link" href="${esc(joinUrl)}" target="_blank" rel="noopener noreferrer">JOIN MALEFICENT CHAT ↗</a>
+        <a class="bot-welcome-glow bot-join-chat-glow" href="${esc(joinUrl)}" target="_blank" rel="noopener noreferrer">🖤 JOIN MALEFICENT CHAT</a>
       </div>
     </div>`;
   }
