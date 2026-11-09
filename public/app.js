@@ -439,7 +439,7 @@ function openParallelSplits(){
       </section>
       <section class="parallel-split-card dimension-management-card">
         <h3>✧ Dimensions</h3>
-        <p>Your dimensions appear here. You can delete dimensions you created; Owner and Developer can manage every dimension.</p>
+        <p>Your dimensions appear here. You can delete dimensions you created.</p>
         <div id="parallelDimensionsList" class="parallel-dimensions-list"><small>Loading dimensions…</small></div>
       </section>
       <section class="parallel-split-card">
