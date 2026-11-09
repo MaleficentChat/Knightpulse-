@@ -172,18 +172,27 @@
       </div>
       <div class="kp-room-primary-actions">
         <button class="kp-main-room primary age-chat-open-button" id="refreshRoomsBtn" type="button" title="Open Main Room" aria-label="Open Main Room" onclick="goToMainRoomFromRoomRefresh()"><span>↗</span> Join Main Room</button>
+        <button class="kp-browse-rooms primary" id="openRoomsPanel" type="button" aria-haspopup="dialog" aria-controls="kpRoomsPanel"><span>☷</span> Browse All Rooms <span class="kp-browse-arrow">↗</span></button>
         <button class="kp-create-room primary hidden room-create-button" id="newRoom" type="button"><span>＋</span> Create a room</button>
       </div>
-      <div class="kp-room-tools">
-        <label class="kp-room-search"><span aria-hidden="true">⌕</span><input id="roomSearch" type="search" placeholder="Search rooms, topics or interests…" aria-label="Search rooms"><kbd>⌕</kbd></label>
-        <button class="kp-hidden-rooms mini hidden" id="hiddenRoomsToggle" type="button" onclick="toggleHiddenRoomsView()" aria-pressed="false"><span>▣</span> Hidden rooms</button>
-      </div>
-      <div class="kp-room-access">
-        <div class="kp-access-copy"><span class="kp-access-icon">⌑</span><div><b>Have an invite code?</b><small>Enter a private room code to find your space.</small></div></div>
-        <label class="kp-room-code"><span>ROOM CODE</span><input id="roomCodeSearch" inputmode="numeric" autocomplete="off" maxlength="11" placeholder="00000 00000" aria-label="Enter secret room code"><small id="roomCodeFeedback">10-digit invite code</small></label>
+    </section>
+    <section class="kp-rooms-overlay hidden" id="kpRoomsPanel" role="dialog" aria-modal="true" aria-labelledby="kpRoomsPanelTitle">
+      <div class="kp-rooms-panel">
+        <header class="kp-rooms-panel-head">
+          <div><span class="kp-rooms-panel-eyebrow">THE KNIGHTPULSE NETWORK</span><h2 id="kpRoomsPanelTitle">Explore rooms</h2><p>Find your corner of the network.</p></div>
+          <button type="button" class="kp-rooms-panel-close" id="closeRoomsPanel" aria-label="Close rooms panel">×</button>
+        </header>
+        <div class="kp-room-tools">
+          <label class="kp-room-search"><span aria-hidden="true">⌕</span><input id="roomSearch" type="search" placeholder="Search rooms, topics or interests…" aria-label="Search rooms"><kbd>⌕</kbd></label>
+          <button class="kp-hidden-rooms mini hidden" id="hiddenRoomsToggle" type="button" onclick="toggleHiddenRoomsView()" aria-pressed="false"><span>▣</span> Hidden rooms</button>
+        </div>
+        <div class="kp-room-access">
+          <div class="kp-access-copy"><span class="kp-access-icon">⌑</span><div><b>Have an invite code?</b><small>Enter a private room code to find your space.</small></div></div>
+          <label class="kp-room-code"><span>ROOM CODE</span><input id="roomCodeSearch" inputmode="numeric" autocomplete="off" maxlength="11" placeholder="00000 00000" aria-label="Enter secret room code"><small id="roomCodeFeedback">10-digit invite code</small></label>
+        </div>
+        <div id="rooms" class="room-grid"></div>
       </div>
     </section>
-    <div id="rooms" class="room-grid"></div>
     <div id="chatWrap" class="chat-wrap hidden">
 <section class="chat-card">
         <div class="chat-head">
@@ -454,6 +463,21 @@
     event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
     openCenter();
   },true);
+})();
+</script>
+<script>
+/* Dedicated, full-height room browser panel. */
+(function(){
+  var panel=document.getElementById("kpRoomsPanel");
+  var open=document.getElementById("openRoomsPanel");
+  var close=document.getElementById("closeRoomsPanel");
+  if(!panel||!open||!close)return;
+  function show(){panel.classList.remove("hidden");document.body.classList.add("kp-rooms-panel-open");var search=document.getElementById("roomSearch");if(search)search.focus({preventScroll:true});}
+  function hide(){panel.classList.add("hidden");document.body.classList.remove("kp-rooms-panel-open");open.focus({preventScroll:true});}
+  open.addEventListener("click",show);
+  close.addEventListener("click",hide);
+  panel.addEventListener("click",function(event){if(event.target===panel)hide();});
+  document.addEventListener("keydown",function(event){if(event.key==="Escape"&&!panel.classList.contains("hidden"))hide();});
 })();
 </script>
 <script src="/app.js?v=staff-command-center-20261108-4"></script>
