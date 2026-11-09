@@ -792,3 +792,59 @@ html[data-theme] body{background-image:radial-gradient(ellipse at 48% -18%,rgba(
  .profile-modal.kp-public-profile .profile-info{padding:12px!important}
  .profile-modal.kp-public-profile .profile-photo-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 }
+
+
+/* Dedicated room browser: keep the landing page compact and show the entire list in its own panel. */
+#viewRooms .kp-room-primary-actions{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:12px!important}
+#viewRooms .kp-room-primary-actions>.kp-main-room,
+#viewRooms .kp-room-primary-actions>.kp-browse-rooms,
+#viewRooms .kp-room-primary-actions>.kp-create-room{width:100%!important;max-width:none!important;min-width:0!important;box-sizing:border-box!important}
+#viewRooms .kp-room-primary-actions>.kp-browse-rooms{
+  display:flex!important;align-items:center!important;justify-content:center!important;gap:10px!important;
+  min-height:58px!important;padding:15px 20px!important;border:1px solid rgba(153,184,224,.28)!important;
+  border-radius:17px!important;background:linear-gradient(135deg,#1b3552,#142941)!important;
+  color:#edf4ff!important;font-size:15px!important;font-weight:850!important;
+  box-shadow:0 10px 26px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.06)!important;
+}
+#viewRooms .kp-browse-rooms>span:first-child{font-size:20px!important;color:#e5c98e!important}
+#viewRooms .kp-browse-arrow{margin-left:auto!important;color:#e5c98e!important}
+body.kp-rooms-panel-open{overflow:hidden!important}
+.kp-rooms-overlay{
+  position:fixed!important;inset:0!important;z-index:100000!important;display:flex!important;
+  align-items:center!important;justify-content:center!important;padding:14px!important;box-sizing:border-box!important;
+  background:rgba(3,9,18,.86)!important;backdrop-filter:blur(13px)!important;
+  -webkit-backdrop-filter:blur(13px)!important;
+}
+.kp-rooms-overlay.hidden{display:none!important}
+.kp-rooms-panel{
+  display:flex!important;flex-direction:column!important;gap:18px!important;
+  width:min(100%,980px)!important;height:100%!important;max-height:min(940px,calc(100dvh - 28px))!important;
+  min-height:0!important;overflow-y:auto!important;overscroll-behavior:contain!important;
+  padding:clamp(16px,3vw,28px)!important;box-sizing:border-box!important;
+  border:1px solid rgba(153,184,224,.24)!important;border-radius:24px!important;
+  background:radial-gradient(ellipse at 90% 0%,rgba(48,103,145,.22),transparent 42%),linear-gradient(155deg,#102139,#0a1728 62%,#091321)!important;
+  box-shadow:0 28px 90px rgba(0,0,0,.58),inset 0 1px rgba(255,255,255,.05)!important;
+}
+.kp-rooms-panel-head{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:16px!important;flex:none!important}
+.kp-rooms-panel-eyebrow{color:#9ab8d9!important;font-size:10px!important;font-weight:900!important;letter-spacing:.19em!important}
+.kp-rooms-panel-head h2{margin:7px 0 4px!important;color:#f2f6fc!important;font-family:Georgia,serif!important;font-size:clamp(25px,5vw,34px)!important}
+.kp-rooms-panel-head p{margin:0!important;color:#9fb1c8!important;font-size:13px!important}
+.kp-rooms-panel-close{
+  display:grid!important;place-items:center!important;flex:none!important;width:42px!important;height:42px!important;
+  border:1px solid rgba(166,192,222,.22)!important;border-radius:13px!important;
+  background:rgba(27,48,72,.8)!important;color:#eaf2fc!important;font-size:27px!important;line-height:1!important;
+}
+.kp-rooms-panel .kp-room-tools{display:flex!important;align-items:center!important;gap:10px!important;flex:none!important}
+.kp-rooms-panel .kp-room-search{flex:1 1 auto!important;min-width:0!important}
+.kp-rooms-panel .kp-room-access{flex:none!important}
+.kp-rooms-panel #rooms{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;align-content:start!important;gap:14px!important;width:100%!important;min-width:0!important;margin:0!important;padding:0 0 8px!important}
+.kp-rooms-panel #rooms>*{min-width:0!important;max-width:100%!important}
+@media(max-width:640px){
+ .kp-rooms-overlay{padding:0!important;align-items:stretch!important}
+ .kp-rooms-panel{width:100%!important;max-height:100dvh!important;height:100dvh!important;border-radius:0!important;padding:calc(16px + env(safe-area-inset-top)) 14px calc(16px + env(safe-area-inset-bottom))!important;gap:14px!important}
+ .kp-rooms-panel .kp-room-tools{align-items:stretch!important;flex-direction:column!important}
+ .kp-rooms-panel .kp-room-search{width:100%!important;box-sizing:border-box!important}
+ .kp-rooms-panel .kp-hidden-rooms{width:100%!important}
+ .kp-rooms-panel #rooms{grid-template-columns:minmax(0,1fr)!important;gap:11px!important}
+ .kp-rooms-panel .kp-room-access{padding:14px!important}
+}
