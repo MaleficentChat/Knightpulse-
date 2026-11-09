@@ -2313,6 +2313,7 @@ async function ensureParallelSplitColumns(){
   await pool.query(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS split_parent_id INT REFERENCES rooms(id) ON DELETE CASCADE`);
   await pool.query(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS split_code TEXT`);
   await pool.query(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS split_layout TEXT DEFAULT 'separate'`);
+  await pool.query(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS split_name TEXT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS rooms_parallel_split_code_unique_idx ON rooms(split_parent_id,LOWER(split_code)) WHERE split_parent_id IS NOT NULL`);
 }
 function parallelSplitRankAllowed(user){
@@ -2320,7 +2321,8 @@ function parallelSplitRankAllowed(user){
   return Number.isInteger(rankOrder[rank]) && Number.isInteger(rankOrder["SVIP"]) && rankOrder[rank]>=rankOrder["SVIP"];
 }
 function parallelSplitRoomShape(row,parent,user){
-  return {id:String(row.id),name:"⧉ "+String(parent.name||"Room")+" — Split",icon:"⧉",description:"Private parallel room linked to "+String(parent.name||"the parent room")+".",category:"Parallel",public:false,passwordHash:null,rankRequired:"MEMBER",limit:100,slowMode:0,announcement:"",ownerId:String(row.created_by||user.id),banner:"",inviteToken:row.invite_token||"",creator:user.username||"Member",isDefault:false,minAge:0,maxAge:120,friendsOnly:false,roomTheme:"obsidian",locked:false,roomCode:null,onlineCount:visibleRoomOnlineCount(row.id),splitParentId:String(parent.id),splitLayout:String(row.split_layout||"separate"),isParallelSplit:true};
+  const splitName=String(row.split_name||"Alternate Dimension").trim()||"Alternate Dimension";
+  return {id:String(row.id),name:"⧉ "+splitName,splitName,icon:"⧉",description:"Private alternate dimension linked to "+String(parent.name||"the parent room")+".",category:"Parallel",public:false,passwordHash:null,rankRequired:"MEMBER",limit:100,slowMode:0,announcement:"",ownerId:String(row.created_by||user.id),banner:"",inviteToken:row.invite_token||"",creator:user.username||"Member",isDefault:false,minAge:0,maxAge:120,friendsOnly:false,roomTheme:"obsidian",locked:false,roomCode:null,onlineCount:visibleRoomOnlineCount(row.id),splitParentId:String(parent.id),splitLayout:String(row.split_layout||"separate"),isParallelSplit:true};
 }
 app.post("/api/rooms/:id/splits/create",auth,async(req,res)=>{
   try{
@@ -2332,18 +2334,20 @@ app.post("/api/rooms/:id/splits/create",auth,async(req,res)=>{
     if(!parallelSplitRankAllowed(actor))return res.status(403).json({error:"Creating a split requires SVIP rank or above on KnightPulse."});
     const code=String(req.body?.code||"").trim().toUpperCase();
     if(!/^[A-Z0-9]{4,24}$/.test(code))return res.status(400).json({error:"Choose a 4–24 character code using letters and numbers only."});
+    const splitName=cleanText(req.body?.name||"").trim().slice(0,40);
+    if(splitName.length<2)return res.status(400).json({error:"Give your Alternate Dimension a name (2–40 characters)."});
     const layout=["side-by-side","separate"].includes(String(req.body?.layout))?String(req.body.layout):"separate";
     const roomName="parallel-"+String(parent.id)+"-"+crypto.randomBytes(10).toString("hex");
     const inviteToken=crypto.randomBytes(32).toString("hex");
-    const inserted=await pool.query(`INSERT INTO rooms(name,created_by,icon,description,category,is_public,rank_required,room_limit,slow_mode,invite_token,is_default,min_age,max_age,split_parent_id,split_code,split_layout)
-      VALUES($1,$2,'⧉',$3,'Parallel',false,'MEMBER',100,0,$4,false,0,120,$5,$6,$7) RETURNING *`,
-      [roomName,Number(actor.id),"Private parallel room linked to "+String(parent.name||"the parent room"),inviteToken,Number(parent.id),code,layout]);
+    const inserted=await pool.query(`INSERT INTO rooms(name,created_by,icon,description,category,is_public,rank_required,room_limit,slow_mode,invite_token,is_default,min_age,max_age,split_parent_id,split_code,split_layout,split_name)
+      VALUES($1,$2,'⧉',$3,'Parallel',false,'MEMBER',100,0,$4,false,0,120,$5,$6,$7,$8) RETURNING *`,
+      [roomName,Number(actor.id),"Private alternate dimension: "+splitName,inviteToken,Number(parent.id),code,layout,splitName]);
     const row=inserted.rows[0],room=parallelSplitRoomShape(row,parent,actor);
     db.rooms=db.rooms||[];
     db.rooms=db.rooms.filter(x=>String(x.id)!==String(row.id));
     db.rooms.push(room);
     const joinToken=makeRoomJoinToken(actor.id,room);
-    return res.json({room,joinToken,layout,code});
+    return res.json({room,joinToken,layout,code,dimensionName:splitName});
   }catch(error){
     if(error?.code==="23505")return res.status(409).json({error:"That Split Code is already in use in this room. Choose another."});
     console.error("Parallel split creation failed:",error);
@@ -2369,7 +2373,7 @@ app.post("/api/rooms/:id/splits/join",auth,async(req,res)=>{
     db.rooms=db.rooms.filter(x=>String(x.id)!==String(row.id));
     db.rooms.push(room);
     const joinToken=makeRoomJoinToken(actor.id,room);
-    return res.json({room,joinToken,layout:String(row.split_layout||"separate")});
+    return res.json({room,joinToken,layout:String(row.split_layout||"separate"),dimensionName:String(row.split_name||"Alternate Dimension")});
   }catch(error){
     console.error("Parallel split join failed:",error);
     return res.status(500).json({error:"Could not join that split."});
@@ -2377,19 +2381,21 @@ app.post("/api/rooms/:id/splits/join",auth,async(req,res)=>{
 });
 
 app.get("/api/rooms",auth,async(req,res)=>{
-  // Ensure all system rooms exist without changing existing room data.
+  // Ensure all system rooms and additive Split metadata exist without changing existing room data.
   await ensureSystemRooms();
+  await ensureParallelSplitColumns();
   await pool.query("UPDATE rooms SET room_code=LPAD(FLOOR(RANDOM()*10000000000)::BIGINT::TEXT,10,$$0$$) WHERE is_public=false AND room_code IS NULL");
   const {rows}=await pool.query(`SELECT r.*,u.username AS creator FROM rooms r LEFT JOIN users u ON r.created_by=u.id ORDER BY r.is_default DESC,r.created_at ASC,r.id ASC`);
   if(!rows.length) return res.status(503).json({error:'Rooms are not initialized yet. Please retry in a moment.',rooms:[]});
   const viewer=current(req);
   const canSeeRoomPins=["COOWNER","ELITE","OWNER"].includes(String(viewer.rank||"").toUpperCase().replace(/\s+/g,""));
-   const allRooms=rows.map(r=>{const room={id:String(r.id),name:r.name,icon:r.icon||"💬",description:r.description||"",category:r.category||"Community",public:r.is_public!==false,passwordHash:r.password_hash||null,rankRequired:String(r.rank_required||"MEMBER").toUpperCase(),limit:Number(r.room_limit||100),slowMode:Number(r.slow_mode||0),announcement:r.announcement||"",ownerId:r.created_by?String(r.created_by):null,banner:r.banner||"",inviteToken:r.invite_token||"",creator:r.creator||null,isDefault:!!r.is_default,minAge:Number(r.min_age??0),maxAge:Number(r.max_age??120),friendsOnly:!!(db.settings?.room_access?.[String(r.id)]?.friendsOnly),roomTheme:String(db.settings?.room_themes?.[String(r.id)]||"obsidian"),locked:!!r.password_hash,roomCode:r.is_public===false?formatRoomCode(r.room_code):null,onlineCount:visibleRoomOnlineCount(r.id),...(canSeeRoomPins?{pinned:!!db.settings?.room_pins?.[String(r.id)]}:{})};return room;});
+   const allRooms=rows.map(r=>{const room={id:String(r.id),name:r.name,icon:r.icon||"💬",description:r.description||"",category:r.category||"Community",public:r.is_public!==false,passwordHash:r.password_hash||null,rankRequired:String(r.rank_required||"MEMBER").toUpperCase(),limit:Number(r.room_limit||100),slowMode:Number(r.slow_mode||0),announcement:r.announcement||"",ownerId:r.created_by?String(r.created_by):null,banner:r.banner||"",inviteToken:r.invite_token||"",creator:r.creator||null,isDefault:!!r.is_default,minAge:Number(r.min_age??0),maxAge:Number(r.max_age??120),friendsOnly:!!(db.settings?.room_access?.[String(r.id)]?.friendsOnly),roomTheme:String(db.settings?.room_themes?.[String(r.id)]||"obsidian"),locked:!!r.password_hash,roomCode:r.is_public===false?formatRoomCode(r.room_code):null,onlineCount:visibleRoomOnlineCount(r.id),isParallelSplit:!!r.split_parent_id,splitParentId:r.split_parent_id?String(r.split_parent_id):null,splitName:r.split_name||"",...(canSeeRoomPins?{pinned:!!db.settings?.room_pins?.[String(r.id)]}:{})};return room;});
   db.rooms=allRooms;
   const joinToken=String(req.headers["x-room-join-token"]||"");
   const rooms=allRooms.filter(room=>{
     // Do not expose the retired Main Room, even if an old database row remains.
     if(String(room.name||"").trim().toLowerCase()==="main room")return false;
+    if(room.isParallelSplit)return false;
     if(!roomIsPrivate(room))return true;
     if(roomOwnerOrGlobal(viewer,room)||roomRole(room.id,viewer.id)!=="USER")return true;
     return verifyRoomJoinToken(joinToken,viewer.id,room);

@@ -350,7 +350,7 @@ async function refreshCurrentRoomOnly(){
 }
 
 
-function openParallelRoomLayout(parentId,splitId,code,layout){
+function openParallelRoomLayout(parentId,splitId,code,layout,dimensionName="Alternate Dimension"){
   const existing=document.getElementById("parallelRoomOverlay");existing?.remove();
   const side=layout==="side-by-side";
   const overlay=document.createElement("section");
@@ -369,6 +369,10 @@ function openParallelRoomLayout(parentId,splitId,code,layout){
       <div class="parallel-room-pane split-pane ${side?"":"active"}"><iframe title="Split Room" loading="eager" allow="clipboard-read; clipboard-write; autoplay; fullscreen"></iframe></div>
     </div>`;
   document.body.appendChild(overlay);
+  const splitTab=overlay.querySelector('[data-parallel-tab="split"]');
+  if(splitTab)splitTab.textContent=String(dimensionName||"Alternate Dimension").slice(0,40);
+  const toolbarTitle=overlay.querySelector(".parallel-room-toolbar-title b");
+  if(toolbarTitle)toolbarTitle.textContent="⫶ "+String(dimensionName||"Alternate Dimension").slice(0,40);
   const query=(role)=>{const u=new URL(location.href);u.search="";u.hash="";u.searchParams.set("parallelEmbed","1");u.searchParams.set("parallelRole",role);u.searchParams.set("parallelParent",String(parentId));u.searchParams.set("parallelCode",String(code));return u.toString();};
   overlay.querySelector(".parent-pane iframe").src=query("parent");
   overlay.querySelector(".split-pane iframe").src=query("split");
@@ -419,11 +423,14 @@ function openParallelSplits(){
   if(!room){toast("Current room details are unavailable.");return;}
   modal(`
     <div class="parallel-split-panel">
-      <div class="parallel-split-heading"><div><small>PRIVATE PARALLEL CHAT</small><h2>⫶ Parallel Rooms</h2></div><span class="parallel-private-pill">PRIVATE</span></div>
+      <div class="parallel-split-heading"><div><small>PRIVATE PARALLEL CHAT</small><h2>⫶ Alternate Dimensions</h2></div><span class="parallel-private-pill">PRIVATE</span></div>
       <section class="parallel-split-card">
-        <h3>＋ Create a Split</h3>
-        <p>A separate room linked to <strong>${esc(room.name)}</strong>, with its own messages and members.</p>
+        <h3>＋ Create an Alternate Dimension</h3>
+        <p>A private parallel conversation linked to <strong>${esc(room.name)}</strong>, with its own members and message history.</p>
         ${canCreate?`
+          <label for="parallelCreateName">Dimension Name</label>
+          <input id="parallelCreateName" maxlength="40" autocomplete="off" placeholder="E.G. Midnight Realm">
+          <small>2–40 characters. This name appears inside the dimension, not in the room list.</small>
           <label for="parallelCreateCode">Your custom Split Code</label>
           <input id="parallelCreateCode" maxlength="24" autocomplete="off" autocapitalize="characters" placeholder="E.G. NIGHTOWL24">
           <small>4–24 letters or numbers. Codes are unique within this parent room.</small>
@@ -436,7 +443,7 @@ function openParallelSplits(){
         `:`<p class="parallel-rank-note">Creating a split requires ${threshold} rank or above.</p>`}
       </section>
       <section class="parallel-split-card">
-        <h3>↗ Join a Split</h3>
+        <h3>↗ Enter an Alternate Dimension</h3>
         <p>Enter the code shared by its creator.</p>
         <label for="parallelJoinCode">Split Code</label>
         <input id="parallelJoinCode" maxlength="24" autocomplete="off" autocapitalize="characters" placeholder="Enter Split Code">
@@ -449,8 +456,10 @@ function openParallelSplits(){
   document.getElementById("parallelJoinBtn")?.addEventListener("click",joinParallelSplit);
 }
 async function createParallelSplit(){
+  const dimensionName=String(document.getElementById("parallelCreateName")?.value||"").trim();
   const code=String(document.getElementById("parallelCreateCode")?.value||"").trim().toUpperCase();
   const layout=document.querySelector('input[name="parallelLayout"]:checked')?.value||"separate";
+  if(dimensionName.length<2||dimensionName.length>40){toast("Name your dimension using 2–40 characters.");return;}
   if(!/^[A-Z0-9]{4,24}$/.test(code)){toast("Use 4–24 letters or numbers for your Split Code.");return;}
   const parentId=String(state.currentRoom||"");
   const parentAccess=JSON.parse(safeStorage.getItem("mc_room_join")||"null");
@@ -459,10 +468,10 @@ async function createParallelSplit(){
   const button=document.getElementById("parallelCreateBtn");
   if(button){button.disabled=true;button.textContent="Creating…";}
   try{
-    const result=await api("/api/rooms/"+encodeURIComponent(parentId)+"/splits/create",{method:"POST",body:JSON.stringify({code,layout})});
+    const result=await api("/api/rooms/"+encodeURIComponent(parentId)+"/splits/create",{method:"POST",body:JSON.stringify({name:dimensionName,code,layout})});
     closeModal();
-    openParallelRoomLayout(parentId,String(result.room.id),code,layout);
-    toast("Split room created. Share this code: "+code);
+    openParallelRoomLayout(parentId,String(result.room.id),code,layout,result.dimensionName||dimensionName);
+    toast("Alternate Dimension created. Share its code: "+code);
   }catch(error){toast(error.message||"Could not create the split.");if(button){button.disabled=false;button.textContent="Create Split";}}
 }
 async function joinParallelSplit(){
@@ -477,7 +486,7 @@ async function joinParallelSplit(){
   try{
     const result=await api("/api/rooms/"+encodeURIComponent(parentId)+"/splits/join",{method:"POST",body:JSON.stringify({code})});
     closeModal();
-    openParallelRoomLayout(parentId,String(result.room.id),code,String(result.layout||"separate"));
+    openParallelRoomLayout(parentId,String(result.room.id),code,String(result.layout||"separate"),result.dimensionName||"Alternate Dimension");
   }catch(error){toast(error.message||"Could not join that split.");if(button){button.disabled=false;button.textContent="Join Split";}}
 }
 document.getElementById("openParallelSplits")?.addEventListener("click",openParallelSplits);

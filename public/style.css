@@ -7603,3 +7603,13 @@ body.parallel-embed.parallel-embed-error:after{content:"This room could not be o
 .bot-join-chat-message .bot-welcome-byline{margin-bottom:5px!important;}
 .bot-join-chat-message .bot-join-chat-link{min-height:40px!important;margin-top:8px!important;padding-top:7px!important;padding-bottom:7px!important;}
 @media(max-width:560px){.bot-join-chat-message .bot-welcome-bubble{min-height:104px!important;padding:11px 12px 13px!important;}.bot-join-chat-message .bot-join-chat-link{min-height:40px!important;margin-top:7px!important;}}
+
+
+/* Alternate Dimensions — compact neon identity, separate from public room cards. */
+.parallel-split-panel{max-width:min(680px,94vw)}
+.parallel-split-heading h2{letter-spacing:.01em}
+.parallel-split-card input#parallelCreateName{border-color:rgba(0,215,193,.32);background:rgba(4,18,24,.9)}
+.parallel-split-card input#parallelCreateName:focus{border-color:rgba(0,215,193,.72);box-shadow:0 0 0 2px rgba(0,215,193,.12)}
+.parallel-dimension-name{color:#8cefe4;font-weight:800}
+.parallel-room-toolbar-title b{max-width:min(42vw,360px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:600px){.parallel-room-toolbar-title b{max-width:34vw}.parallel-room-toolbar-title small{display:none}}
