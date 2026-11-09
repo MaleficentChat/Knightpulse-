@@ -437,6 +437,11 @@ function openParallelSplits(){
           <small>4–24 letters or numbers. Codes are unique within this parent room.</small><button type="button" class="primary-btn" id="parallelCreateBtn">Create Split</button>
         `:`<p class="parallel-rank-note">Creating a split requires ${threshold} rank or above.</p>`}
       </section>
+      <section class="parallel-split-card dimension-management-card">
+        <h3>✧ Dimensions</h3>
+        <p>Your dimensions appear here. You can delete dimensions you created; Owner and Developer can manage every dimension.</p>
+        <div id="parallelDimensionsList" class="parallel-dimensions-list"><small>Loading dimensions…</small></div>
+      </section>
       <section class="parallel-split-card">
         <h3>↗ Enter an Alternate Dimension</h3>
         <p>Enter the code shared by its creator.</p>
@@ -449,6 +454,7 @@ function openParallelSplits(){
   const createButton=document.getElementById("parallelCreateBtn");
   createButton?.addEventListener("click",createParallelSplit);
   document.getElementById("parallelJoinBtn")?.addEventListener("click",joinParallelSplit);
+  loadParallelDimensions();
 }
 async function createParallelSplit(){
   const dimensionName=String(document.getElementById("parallelCreateName")?.value||"").trim();
@@ -468,6 +474,20 @@ async function createParallelSplit(){
     openParallelRoomLayout(parentId,String(result.room.id),code,layout,result.dimensionName||dimensionName,result.room.ownerId,result.room.portalEnabled!==false);
     toast("Alternate Dimension created. Share its code: "+code);
   }catch(error){toast(error.message||"Could not create the split.");if(button){button.disabled=false;button.textContent="Create Split";}}
+}
+async function loadParallelDimensions(){
+  const target=document.getElementById("parallelDimensionsList");if(!target)return;
+  try{
+    const result=await api("/api/splits"),items=Array.isArray(result.dimensions)?result.dimensions:[];
+    if(!items.length){target.innerHTML="<small>No dimensions to show yet.</small>";return;}
+    target.innerHTML=items.map(d=>'<div class="parallel-dimension-row"><div><b>⧉ '+esc(d.name||"Alternate Dimension")+'</b><small>'+esc(d.parentName||"Unknown room")+' · by '+esc(d.creator||"Member")+'</small></div>'+(d.canDelete?'<button type="button" class="danger-btn" data-delete-dimension="'+esc(d.id)+'">Delete</button>':'')+'</div>').join("");
+    target.querySelectorAll("[data-delete-dimension]").forEach(button=>button.addEventListener("click",async()=>{
+      const id=button.getAttribute("data-delete-dimension");
+      if(!confirm("Delete this dimension and its chat history? This cannot be undone."))return;
+      button.disabled=true;try{await api("/api/splits/"+encodeURIComponent(id),{method:"DELETE"});toast("Dimension deleted.");loadParallelDimensions();}
+      catch(error){toast(error.message||"Could not delete this dimension.");button.disabled=false;}
+    }));
+  }catch(error){target.innerHTML="<small>Could not load dimensions.</small>";}
 }
 async function joinParallelSplit(){
   const code=String(document.getElementById("parallelJoinCode")?.value||"").trim().toUpperCase();
