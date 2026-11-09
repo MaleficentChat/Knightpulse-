@@ -2328,7 +2328,7 @@ function parallelSplitRoomShape(row,parent,user){
 }
 app.get("/api/splits",auth,async(req,res)=>{
   try{
-    await ensureParallelSplitColumns();const actor=current(req),rank=String(actor.rank||"").toUpperCase(),elevated=["OWNER","DEVELOPER"].includes(rank);
+    await ensureParallelSplitColumns();const actor=current(req),rank=String(actor.rank||"").toUpperCase(),elevated=["OWNER"].includes(rank);
     const {rows}=await pool.query(`SELECT s.id,s.split_name,s.created_by,s.split_parent_id,p.name AS parent_name,u.username AS creator FROM rooms s LEFT JOIN rooms p ON p.id=s.split_parent_id LEFT JOIN users u ON u.id=s.created_by WHERE s.split_parent_id IS NOT NULL AND ($1::boolean OR s.created_by=$2) ORDER BY s.created_at DESC,s.id DESC`,[elevated,Number(actor.id)]);
     return res.json({dimensions:rows.map(row=>({id:String(row.id),name:String(row.split_name||"Alternate Dimension"),parentName:String(row.parent_name||"Room"),creator:String(row.creator||"Member"),canDelete:elevated||String(row.created_by)===String(actor.id)}))});
   }catch(error){console.error("Dimension listing failed:",error);return res.status(500).json({error:"Could not load dimensions."});}
@@ -2338,7 +2338,7 @@ app.delete("/api/splits/:id",auth,async(req,res)=>{
     await ensureParallelSplitColumns();const actor=current(req),rank=String(actor.rank||"").toUpperCase();
     const found=await pool.query("SELECT id,created_by FROM rooms WHERE id=$1 AND split_parent_id IS NOT NULL LIMIT 1",[Number(req.params.id)]);
     const dimension=found.rows[0];if(!dimension)return res.status(404).json({error:"Dimension not found."});
-    const elevated=["OWNER","DEVELOPER"].includes(rank);
+    const elevated=["OWNER"].includes(rank);
     if(!elevated&&String(dimension.created_by)!==String(actor.id))return res.status(403).json({error:"You can only delete dimensions you created."});
     await pool.query("DELETE FROM rooms WHERE id=$1 AND split_parent_id IS NOT NULL",[Number(dimension.id)]);
     if(Array.isArray(db.rooms))db.rooms=db.rooms.filter(room=>String(room.id)!==String(dimension.id));
