@@ -7353,3 +7353,23 @@ html[data-theme] .settings-tab.active {
 .party-mode-active #messages .msg{border-color:rgba(255,79,216,.24)}
 .party-mode-active .system-message,.party-mode-active .system-notice{filter:drop-shadow(0 0 7px rgba(155,92,255,.38))}
 @media(prefers-reduced-motion:reduce){.party-mode-fx span{animation-duration:24s!important;opacity:.28}}
+
+/* Party Mode: rotate real profile photos and shared YouTube media everywhere. */
+body.party-mode-active .avatar img,
+body.party-mode-active .big-avatar img,
+body.party-mode-active .profile-avatar img,
+body.party-mode-active .user-avatar img,
+body.party-mode-active .top-avatar img,
+body.party-mode-active .message-avatar-button img,
+body.party-mode-active .social-author-avatar img,
+body.party-mode-active .shadow-story-avatar img,
+body.party-mode-active .profile-friend-photo img,
+body.party-mode-active .instagram-avatar-ring img,
+body.party-mode-active .account-avatar-preview img,
+body.party-mode-active .youtube-message .youtube-preview img,
+body.party-mode-active .youtube-message iframe {
+  display:inline-block!important;
+  transform-origin:50% 50%!important;
+  animation:party-spin 4.5s linear infinite!important;
+  will-change:transform;
+}
