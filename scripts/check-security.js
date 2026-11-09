@@ -612,8 +612,6 @@ assert.ok(premiumCancelStart>=0&&premiumCancelEnd>premiumCancelStart,"Owner Prem
 const premiumCancelRoute=server.slice(premiumCancelStart,premiumCancelEnd);
 assert.match(premiumCancelRoute,/String\(target\.rank\|\|''\)\.toUpperCase\(\)!=='PREMIUM'/,
   "Premium cancellation must enforce strict staff hierarchy protection");
-assert.match(premiumCancelRoute,/String\(target\.rank\|\|'\)\.toUpperCase\(\)!=='PREMIUM'/,
-  "Premium cancellation must never demote staff ranks or non-Premium accounts");
 
 console.log("Room history, private-room access, invitations, private-message deletion, Shadow Feed, Friends Activity, bootstrap privacy, capacity, and slow-mode regression checks passed.");
 
