@@ -2093,11 +2093,9 @@ function messageHTML(message) {
     const joinUrl=String(message.joinChatUrl||"https://maleficentchat.onrender.com/");
     return `<div class="message bot-welcome-message bot-join-chat-message" data-mid="${esc(message.id)}">
       <div class="bot-welcome-bubble">
-        <div class="bot-welcome-byline">🤖 System Bot · COMMUNITY INVITE</div>
+        <div class="bot-welcome-byline">🤖 SYSTEM BOT</div>
         <div class="bot-welcome-glow">🖤 JOIN MALEFICENT CHAT</div>
-        <div class="bot-welcome-username">${esc(message.text||"Join Maleficent Chat to meet the community, chat and make new friends.")}</div>
-        <a class="bot-join-chat-link" href="${esc(joinUrl)}" target="_blank" rel="noopener noreferrer">✦ JOIN MALEFICENT CHAT ✦</a>
-        <div class="bot-join-chat-footnote">Your Maleficent Chat community is waiting</div>
+        <a class="bot-join-chat-link" href="${esc(joinUrl)}" target="_blank" rel="noopener noreferrer">JOIN MALEFICENT CHAT ↗</a>
       </div>
     </div>`;
   }
