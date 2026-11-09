@@ -638,7 +638,7 @@ assert.match(staffUi,/\[\[\x27all\x27,\x27All activity\x27\],\[\x27moderation\x2
   "audit log categories must include moderation, accounts/ranks and system/security");
 assert.match(staffUi,/kp-staff-groups-ordered[\s\S]*?Dropdown options[\s\S]*?Other staff tools/,
   "staff tools must be grouped into clear functional sections");
-assert.match(staffUi,/profile-actions-row[\s\S]*?kp-profile-tabs-label/,
+assert.match(staffUi,/profile-social-button[\s\S]*?kp-profile-tabs-label/,
   "member profiles must use the refreshed identity and navigation layout");
 assert.match(staffCss,/\.kp-staff-groups[\s\S]*\.kp-audit-filters[\s\S]*\.kp-profile-tabs-label/,
   "profile, staff workspace and audit category layouts must be styled");
