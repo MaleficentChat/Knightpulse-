@@ -4379,86 +4379,32 @@ async function deleteNewsComment(newsId,commentId){
 /* ---------------- LEADERBOARD ---------------- */
 
 async function loadLeaderboard() {
+  const root = $("leaderboard");
+  if (!root) return;
+  root.innerHTML = '<div class="card kp-leader-empty">Loading the leaderboards…</div>';
   try {
-    const data =
-      await api("/api/leaderboard");
-
-    const users =
-      data.users || [];
-
-    $("leaderboard").innerHTML = `
-      <div class="card">
-
-        <h3>Top XP</h3>
-
-        ${
-          users.map((user, i) => `
-            <div class="user-card">
-
-              <b>#${i + 1}</b>
-
-              ${avatar(user)}
-
-              <div style="flex:1">
-                <b>${esc(user.displayName)}</b>
-                ${rank(user.rank)}
-              </div>
-
-              <b>
-                Lv ${user.level || 1}
-                · ${user.xp || 0} XP
-              </b>
-
-            </div>
-          `).join("")
-        }
-
-      </div>
-
-      <div class="card">
-
-        <h3>Gold</h3>
-
-        ${
-          users
-            .slice()
-            .sort(
-              (a, b) =>
-                (b.gold || 0) -
-                (a.gold || 0)
-            )
-            .map(user => `
-              <div class="user-card">
-
-                ${avatar(user)}
-
-                <div style="flex:1">
-                  ${esc(user.displayName)}
-                </div>
-
-                <b>
-                  🪙 ${user.gold || 0}
-                </b>
-
-              </div>
-            `)
-            .join("")
-        }
-
-      </div>
-
-      <div class="card">
-        <h3>Diamonds</h3>
-        ${users.slice().sort((a,b)=>(Number(b.diamonds)||0)-(Number(a.diamonds)||0)).map(user=>`
-          <div class="user-card">
-            ${avatar(user)}
-            <div style="flex:1">${esc(user.displayName)}</div>
-            <b>💎 ${Number(user.diamonds||0).toLocaleString()}</b>
+    const data = await api("/api/leaderboard");
+    const users = Array.isArray(data.users) ? data.users : [];
+    const boards = [
+      { title:"Top XP", key:"xp", metric:u=>`Lv ${Number(u.level)||1} · ${(Number(u.xp)||0).toLocaleString()} XP`, sort:(a,b)=>(Number(b.xp)||0)-(Number(a.xp)||0), extra:true },
+      { title:"Gold", key:"gold", metric:u=>`🪙 ${(Number(u.gold)||0).toLocaleString()}`, sort:(a,b)=>(Number(b.gold)||0)-(Number(a.gold)||0) },
+      { title:"Diamonds", key:"diamonds", metric:u=>`💎 ${(Number(u.diamonds)||0).toLocaleString()}`, sort:(a,b)=>(Number(b.diamonds)||0)-(Number(a.diamonds)||0) }
+    ];
+    root.innerHTML = boards.map(board => {
+      const sorted = users.slice().sort(board.sort);
+      return `<section class="card kp-leaderboard-card"><h3>${board.title}</h3>${sorted.length ? sorted.map((user,index) => `
+        <div class="user-card kp-leader-row ${index<3?'kp-leader-top-'+(index+1):''}">
+          <span class="kp-leader-place">${index===0?'♛':index+1}</span>
+          ${avatar(user)}
+          <div style="flex:1;min-width:0">
+            <b class="kp-leader-name">${esc(user.displayName || user.username || "Member")}</b>
+            ${board.extra ? rank(user.rank) : ''}
           </div>
-        `).join("")}
-      </div>
-    `;
+          <b>${board.metric(user)}</b>
+        </div>`).join("") : '<div class="kp-leader-empty">No rankings yet. Be the first to make your mark.</div>'}</section>`;
+    }).join("");
   } catch (error) {
+    root.innerHTML = '<div class="card kp-leader-empty">Leaderboards could not load. Please try again.</div>';
     toast(error.message);
   }
 }
