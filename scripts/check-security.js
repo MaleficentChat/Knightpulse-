@@ -665,3 +665,5 @@ assert.match(staffCss,/\\.profile-modal\\.kp-public-profile \\.profile-tabs[\\s\
   "public profile navigation must use the premium segmented account tabs");
 assert.match(staffCss,/\\.profile-modal\\.kp-public-profile \\.profile-photo-grid[\\s\\S]*?grid-template-columns/,
   "public profile photo galleries must retain a responsive premium grid");
+
+// Regression checks aligned with the current KnightPulse profile and stylesheet bundle.
