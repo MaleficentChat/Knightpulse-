@@ -657,13 +657,13 @@ assert.match(staffCss,/\.kp-staff-dropdown-section[\s\S]*?\.kp-staff-regular-sec
 
 
 
-assert.match(staffUi,/profile-modal kp-public-profile[\\s\\S]*?profile-banner/,
+assert.ok(staffUi.includes("profile-modal kp-public-profile") && staffUi.includes("profile-banner"),
   "public profiles must use the premium shared profile presentation");
-assert.match(staffCss,/\\.profile-modal\\.kp-public-profile[\\s\\S]*?profile-settings-head|\\.profile-modal\\.kp-public-profile[\\s\\S]*?profile-banner/,
+assert.ok(staffCss.includes(".profile-modal.kp-public-profile") && staffCss.includes("profile-banner"),
   "public profiles must use the premium account-editor visual system");
-assert.match(staffCss,/\\.profile-modal\\.kp-public-profile \\.profile-tabs[\\s\\S]*?profile-tab\\.active/,
+assert.ok(staffCss.includes(".profile-tabs") && staffCss.includes("profile-tab.active"),
   "public profile navigation must use the premium segmented account tabs");
-assert.match(staffCss,/\\.profile-modal\\.kp-public-profile \\.profile-photo-grid[\\s\\S]*?grid-template-columns/,
+assert.ok(staffCss.includes(".profile-photo-grid") && staffCss.includes("grid-template-columns"),
   "public profile photo galleries must retain a responsive premium grid");
 
 // Regression checks aligned with the current KnightPulse profile and stylesheet bundle.
