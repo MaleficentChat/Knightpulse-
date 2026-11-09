@@ -665,3 +665,5 @@ assert.ok(staffCss.includes(".profile-tabs") && staffCss.includes("profile-tab.a
   "public profile navigation must use the premium segmented account tabs");
 assert.ok(staffCss.includes(".profile-photo-grid") && staffCss.includes("grid-template-columns"),
   "public profile photo galleries must retain a responsive premium grid");
+
+// Regression checks aligned with the current KnightPulse profile and stylesheet bundle.
