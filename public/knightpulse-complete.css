@@ -848,3 +848,54 @@ body.kp-rooms-panel-open{overflow:hidden!important}
  .kp-rooms-panel #rooms{grid-template-columns:minmax(0,1fr)!important;gap:11px!important}
  .kp-rooms-panel .kp-room-access{padding:14px!important}
 }
+
+
+/* KnightPulse room browser + leaderboard refinement */
+#viewRooms .kp-room-primary-actions>.kp-browse-rooms{
+  flex:0 0 58px!important;height:58px!important;min-height:58px!important;max-height:58px!important;
+  align-self:stretch!important;justify-content:flex-start!important;padding:0 20px!important;
+}
+#viewRooms .kp-room-primary-actions>.kp-main-room,
+#viewRooms .kp-room-primary-actions>.kp-create-room{flex:0 0 58px!important;height:58px!important;min-height:58px!important;max-height:58px!important}
+.kp-rooms-overlay{z-index:10000000!important}
+.kp-rooms-overlay:not(.hidden){visibility:visible!important}
+.kp-rooms-panel{position:relative!important}
+.kp-rooms-panel-head{position:sticky!important;top:calc(-1 * clamp(16px,3vw,28px))!important;z-index:5!important;
+  margin:calc(-1 * clamp(16px,3vw,28px)) calc(-1 * clamp(16px,3vw,28px)) 0!important;
+  padding:clamp(16px,3vw,28px)!important;background:rgba(13,29,49,.97)!important;
+  border-bottom:1px solid rgba(153,184,224,.14)!important;backdrop-filter:blur(16px)!important}
+.kp-rooms-panel-close{cursor:pointer!important;box-shadow:0 5px 16px rgba(0,0,0,.24)!important}
+@media(max-width:640px){
+ .kp-rooms-panel-head{top:calc(-1 * (16px + env(safe-area-inset-top)))!important;
+  margin:calc(-1 * (16px + env(safe-area-inset-top))) -14px 0!important;
+  padding:calc(16px + env(safe-area-inset-top)) 14px 14px!important}
+ .kp-rooms-panel-close{width:44px!important;height:44px!important}
+}
+#viewLeaderboard{max-width:1180px!important;margin:0 auto!important;padding:clamp(12px,2.5vw,26px)!important}
+#viewLeaderboard>.topbar{margin:0 0 18px!important;padding:22px!important;border:1px solid rgba(174,198,226,.16)!important;
+ border-radius:20px!important;background:radial-gradient(circle at 90% 0,rgba(206,174,112,.16),transparent 42%),linear-gradient(135deg,#172d48,#0c1a2c)!important}
+#viewLeaderboard>.topbar h2{margin:0!important;color:#f4e7c8!important;font-family:Georgia,serif!important;font-size:clamp(23px,4vw,32px)!important}
+#viewLeaderboard>.topbar:after{content:"Celebrate the members shaping the KnightPulse community";display:block;margin-top:7px;color:#9eb2cc;font-size:13px}
+#viewLeaderboard #leaderboard{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:15px!important;align-items:start!important}
+#viewLeaderboard #leaderboard>.card{min-width:0!important;padding:17px!important;border:1px solid rgba(153,184,224,.18)!important;border-radius:19px!important;
+ background:linear-gradient(155deg,rgba(24,47,73,.96),rgba(10,24,41,.98))!important;box-shadow:0 14px 34px rgba(0,0,0,.2)!important}
+#viewLeaderboard #leaderboard>.card h3{display:flex!important;align-items:center!important;gap:9px!important;margin:0 0 14px!important;
+ color:#f0d9a9!important;font-size:17px!important;font-weight:900!important}
+#viewLeaderboard #leaderboard>.card:nth-child(1) h3:before{content:"✦";color:#9fb9ff}
+#viewLeaderboard #leaderboard>.card:nth-child(2) h3:before{content:"◈";color:#f1ca74}
+#viewLeaderboard #leaderboard>.card:nth-child(3) h3:before{content:"💎";font-size:15px}
+#viewLeaderboard #leaderboard .user-card{display:flex!important;align-items:center!important;gap:9px!important;min-width:0!important;
+ margin:0 0 8px!important;padding:10px!important;border:1px solid rgba(155,184,218,.11)!important;border-radius:13px!important;
+ background:rgba(5,15,28,.42)!important;color:#eaf2fc!important}
+#viewLeaderboard #leaderboard .user-card:last-child{margin-bottom:0!important}
+#viewLeaderboard #leaderboard .user-card>div[style*="flex:1"]{min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important}
+#viewLeaderboard #leaderboard .user-card> b:last-child{flex:none!important;color:#e9d5a8!important;font-size:11px!important;text-align:right!important}
+#viewLeaderboard #leaderboard .user-card .avatar{width:38px!important;height:38px!important;flex:none!important}
+#viewLeaderboard #leaderboard .user-card .kp-leader-place{display:grid!important;place-items:center!important;flex:none!important;width:25px!important;height:25px!important;
+ border-radius:8px!important;background:rgba(132,162,199,.13)!important;color:#b8c9df!important;font-size:11px!important;font-weight:950!important}
+#viewLeaderboard #leaderboard .user-card.kp-leader-top-1 .kp-leader-place{background:rgba(232,195,113,.2)!important;color:#f6d98f!important}
+#viewLeaderboard #leaderboard .user-card.kp-leader-top-2 .kp-leader-place{background:rgba(187,204,225,.17)!important;color:#d8e4f3!important}
+#viewLeaderboard #leaderboard .user-card.kp-leader-top-3 .kp-leader-place{background:rgba(190,137,99,.17)!important;color:#e8b48b!important}
+#viewLeaderboard #leaderboard .kp-leader-name{display:block!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-size:12px!important;font-weight:850!important}
+#viewLeaderboard #leaderboard .kp-leader-empty{padding:22px 12px!important;text-align:center!important;color:#8fa6c2!important;font-size:12px!important}
+@media(max-width:820px){#viewLeaderboard #leaderboard{grid-template-columns:1fr!important;gap:12px!important}#viewLeaderboard #leaderboard>.card{padding:14px!important}}
