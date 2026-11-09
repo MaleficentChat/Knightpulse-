@@ -7373,3 +7373,107 @@ body.party-mode-active .youtube-message iframe {
   animation:party-spin 4.5s linear infinite!important;
   will-change:transform;
 }
+
+
+/* KnightPulse 2026 refresh — compact room discovery and consistent teal/steel cards. */
+#viewRooms:not(.chatting){padding-bottom:24px}
+#viewRooms:not(.chatting) .kp-room-hub{
+  display:grid;gap:13px;margin:10px 0 16px;padding:18px;
+  border:1px solid rgba(139,176,198,.18);border-radius:22px;
+  background:radial-gradient(ellipse at 90% 0%,rgba(0,191,174,.13),transparent 42%),linear-gradient(145deg,#142331,#0d1824 70%);
+  box-shadow:0 16px 42px rgba(0,0,0,.24);overflow:visible;
+}
+.kp-room-hub-head{display:flex;align-items:center;gap:14px;min-width:0}
+.kp-room-emblem{width:54px;height:54px;flex:0 0 54px;border-radius:17px;display:grid;place-items:center;background:linear-gradient(145deg,#213c50,#132332);border:1px solid rgba(152,190,211,.25);color:#e4c98e;font-size:28px}
+.kp-room-copy{min-width:0}
+.kp-room-eyebrow{font-size:9px;letter-spacing:.18em;font-weight:850;color:#8db3c9}
+.kp-room-copy h2{font-size:clamp(21px,4vw,30px);line-height:1.1;margin:6px 0;color:#f1f6fa}
+.kp-room-copy h2 em{font-style:normal;color:#59d6c5}
+.kp-room-copy p{margin:0;color:#a6b8c7;font-size:12px;line-height:1.45}
+.kp-room-primary-actions{display:flex;gap:9px;flex-wrap:wrap}
+.kp-room-primary-actions button{min-height:46px;flex:1 1 180px;border-radius:13px;background:linear-gradient(120deg,#087f79,#16a99b);box-shadow:0 8px 20px rgba(0,151,137,.18);color:#f5ffff}
+.kp-room-primary-actions .kp-create-room{background:linear-gradient(120deg,#263e52,#31546a);box-shadow:none}
+.kp-room-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.kp-room-search{display:flex!important;align-items:center;gap:10px;flex:1 1 230px;min-width:0;padding:0 12px;border:1px solid rgba(148,180,202,.2);border-radius:13px;background:#0b1722;color:#8fb7cb}
+.kp-room-search input{min-width:0;flex:1;margin:0!important;padding:12px 0!important;border:0!important;background:transparent!important;box-shadow:none!important;color:#eef7fb!important}
+.kp-room-search kbd{font-size:11px;color:#8ca5b7;border:1px solid rgba(148,180,202,.2);border-radius:7px;padding:3px 7px}
+.kp-hidden-rooms{min-height:42px;background:#1b2b39!important;border:1px solid rgba(148,180,202,.2)!important;color:#c9d8e3!important}
+.kp-room-access{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,.8fr);gap:10px;align-items:center;padding:12px;border-radius:15px;background:rgba(6,15,24,.52);border:1px solid rgba(148,180,202,.13)}
+.kp-access-copy{display:flex;align-items:center;gap:10px;min-width:0}
+.kp-access-icon{width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:11px;background:#203344;color:#b7d6e5}
+.kp-access-copy b,.kp-access-copy small{display:block}
+.kp-access-copy b{font-size:12px;color:#e2edf4}
+.kp-access-copy small{font-size:10px;color:#8fa3b1;margin-top:3px}
+.kp-room-code{display:grid!important;gap:3px!important;min-width:0;color:#9db6c6!important;font-size:9px!important;letter-spacing:.1em}
+.kp-room-code input{margin:0!important;padding:9px 10px!important;background:#0b1722!important;border-color:rgba(148,180,202,.2)!important}
+.kp-room-code small{font-size:9px;color:#8096a6;letter-spacing:0}
+#rooms.room-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:12px;align-items:stretch}
+#rooms .room-list-card{min-width:0;padding:15px;border-radius:18px;border:1px solid rgba(141,177,199,.17);background:linear-gradient(145deg,#152433,#101b28);box-shadow:0 9px 24px rgba(0,0,0,.17);transition:transform .18s ease,border-color .18s ease,background .18s ease}
+#rooms .room-list-card:hover{transform:translateY(-2px);border-color:rgba(0,205,184,.38);background:linear-gradient(145deg,#1a3040,#122330)}
+#rooms .room-list-card.selected{border-color:#20bba9;box-shadow:0 0 0 1px rgba(32,187,169,.2),0 12px 28px rgba(0,0,0,.22)}
+#rooms .room-list-card .room-open{align-items:center;gap:12px;min-height:66px}
+#rooms .room-icon-wrap{width:48px;height:48px;flex:0 0 48px;display:grid;place-items:center;border-radius:15px;background:linear-gradient(145deg,#24465a,#172b3a);border:1px solid rgba(151,192,213,.2);font-size:23px}
+#rooms .room-main{gap:5px}
+#rooms .room-title-row{font-size:15px;color:#eef5f8}
+#rooms .room-desc{color:#9bafbd;font-size:11px;line-height:1.45}
+#rooms .room-subrow{color:#7f9aaa;font-size:10px}
+#rooms .room-count{min-width:48px;background:rgba(0,191,174,.09);border:1px solid rgba(0,191,174,.13);color:#8ee8d8}
+#rooms .room-list-actions{border-top:1px solid rgba(148,180,202,.1);padding-top:9px}
+#rooms .room-action-icon{background:#1d3140;border:1px solid rgba(148,180,202,.18);color:#c4d6e1}
+#rooms .room-empty{padding:28px 16px;border:1px dashed rgba(148,180,202,.24);border-radius:18px;background:#101d29;color:#a9bdc9}
+#viewGames .arcade-home{display:grid;gap:14px;padding-bottom:24px}
+#viewGames .arcade-welcome,#viewGames .arcade-studio-card,#viewGames .arcade-library,#viewGames .arcade-game-card,#viewGames .arcade-play-view{
+  color:#edf5f8;background:linear-gradient(145deg,#152635,#101b27);border:1px solid rgba(145,182,204,.18);border-radius:18px;box-shadow:0 12px 30px rgba(0,0,0,.18)
+}
+#viewGames .arcade-welcome{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:20px;background:radial-gradient(ellipse at 90% 10%,rgba(0,191,174,.14),transparent 45%),linear-gradient(145deg,#192e3e,#101b27)}
+#viewGames .arcade-welcome h2{margin:7px 0;color:#f1f7fa;font-size:clamp(21px,4vw,30px)}
+#viewGames .arcade-welcome p,#viewGames .arcade-studio-card p{color:#9fb4c2;font-size:12px;line-height:1.5}
+#viewGames .arcade-kicker{color:#73d7ca;letter-spacing:.16em;font-size:9px;font-weight:900}
+#viewGames .arcade-orb{width:58px;height:58px;flex:0 0 58px;display:grid;place-items:center;border-radius:18px;background:#203b4d;color:#8be4d7;font-size:28px}
+#viewGames .arcade-studio-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px}
+#viewGames .arcade-studio-card h3{margin:5px 0;color:#e8f1f6}
+#viewGames .arcade-studio-card .primary{background:linear-gradient(120deg,#087f79,#16a99b);white-space:nowrap}
+#viewGames .arcade-library{padding:14px}
+#viewGames .arcade-game-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:11px}
+#viewGames .arcade-game-card{display:flex;align-items:center;gap:11px;width:100%;min-width:0;padding:14px;text-align:left;transition:transform .18s ease,border-color .18s ease}
+#viewGames .arcade-game-card:hover{transform:translateY(-2px);border-color:rgba(0,191,174,.42)}
+#viewGames .arcade-card-icon{width:44px;height:44px;flex:0 0 44px;display:grid;place-items:center;border-radius:14px;background:#203b4d;color:#b5e9e3}
+#viewGames .arcade-violet,#viewGames .arcade-pink,#viewGames .arcade-mint,#viewGames .arcade-gold{background:#203b4d;color:#a8e9df}
+#viewGames .arcade-card-copy{display:grid;gap:4px;min-width:0;flex:1}
+#viewGames .arcade-card-copy b{color:#edf5f8;font-size:13px}
+#viewGames .arcade-card-copy small{color:#9fb2bf;font-size:10px;line-height:1.4}
+#viewGames .arcade-card-copy em{font-style:normal;color:#6fd2c4;font-size:9px}
+#viewGames .arcade-play{color:#80dfd2;font-size:11px;font-weight:800;white-space:nowrap}
+#viewGames .arcade-footnote{padding:12px;border-radius:13px;background:#101d29;border:1px solid rgba(145,182,204,.12);color:#8fa5b3;font-size:10px;line-height:1.5}
+#viewGames .arcade-play-view{padding:16px}
+#viewGames .arcade-game-heading{display:flex;align-items:center;gap:10px;margin:14px 0}
+#viewGames .arcade-game-heading h2{margin:0;color:#eff7fa}
+#viewGames .arcade-game-heading p{margin:4px 0 0;color:#9db2bf}
+#viewGames .arcade-back{background:#203344;border:1px solid rgba(145,182,204,.2);color:#d9e9f1}
+#viewLeaderboard{display:grid;gap:12px;padding-bottom:24px}
+#leaderboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:12px;align-items:start}
+#leaderboard>.card{margin:0;padding:16px;border-radius:18px;background:linear-gradient(145deg,#152635,#101b27);border:1px solid rgba(145,182,204,.18);box-shadow:0 12px 30px rgba(0,0,0,.18)}
+#leaderboard>.card h3{margin:0 0 12px;color:#75d8cb;font-size:16px}
+#leaderboard .user-card{display:flex;align-items:center;gap:10px;margin:7px 0;padding:10px;border-radius:12px;background:#1b2d3b;border:1px solid rgba(145,182,204,.12);color:#e8f1f5}
+#leaderboard .user-card b:last-child{font-size:11px;color:#8fe0d4;text-align:right}
+@media(max-width:560px){
+  #viewRooms:not(.chatting) .kp-room-hub{padding:13px;border-radius:17px;gap:11px}
+  .kp-room-emblem{width:44px;height:44px;flex-basis:44px;font-size:22px}
+  .kp-room-access{grid-template-columns:1fr}
+  .kp-room-primary-actions{display:grid;grid-template-columns:1fr}
+  #rooms.room-grid{grid-template-columns:1fr;gap:9px}
+  #viewGames .arcade-welcome{padding:15px}
+  #viewGames .arcade-studio-card{align-items:flex-start;flex-direction:column}
+  #viewGames .arcade-studio-card .primary{width:100%}
+}
+@media(prefers-reduced-motion:reduce){
+  #rooms .room-list-card,#viewGames .arcade-game-card{transition:none}
+}
+/* Party Mode also rotates letter/initial message avatars, not only uploaded photos. */
+body.party-mode-active #messages .msg .message-avatar-button,
+body.party-mode-active .msg.dm-msg .message-avatar-button{
+  display:grid!important;place-items:center!important;
+  transform-origin:50% 50%!important;
+  animation:party-spin 4.5s linear infinite!important;
+  will-change:transform;
+}
