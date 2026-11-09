@@ -165,22 +165,22 @@
       <div class="kp-room-hub-head">
         <div class="kp-room-emblem" aria-hidden="true"><span>♜</span><i></i></div>
         <div class="kp-room-copy">
-          <div class="kp-room-eyebrow"><span class="kp-live-dot"></span> THE KNIGHTPULSE NETWORK <span class="kp-eyebrow-line"></span></div>
+          <div class="kp-room-eyebrow"><span class="kp-live-dot"></span> THE KNIGHTPULSE NETWORK</div>
           <h2 id="kp-room-title">Find your next <em>realm.</em></h2>
-          <p>Good conversations start somewhere. Explore rooms that match your interests and your account’s age group.</p>
-          <div class="kp-age-tags"><span><b>♧</b> Teen spaces</span><span><b>♛</b> Adult spaces</span><span><b>◇</b> Community rooms</span></div>
+          <p>Choose a space, meet your people, and jump into the conversation.</p>
         </div>
-        <div class="kp-hub-side-note"><span>YOUR SPACE</span><b>YOUR PEOPLE.</b><small>Choose a room. Join the pulse.</small></div>
+      </div>
+      <div class="kp-room-primary-actions">
+        <button class="kp-main-room primary age-chat-open-button" id="refreshRoomsBtn" type="button" title="Open Main Room" aria-label="Open Main Room" onclick="goToMainRoomFromRoomRefresh()"><span>↗</span> Join Main Room</button>
+        <button class="kp-create-room primary hidden room-create-button" id="newRoom" type="button"><span>＋</span> Create a room</button>
       </div>
       <div class="kp-room-tools">
-        <label class="kp-room-search"><span aria-hidden="true">⌕</span><input id="roomSearch" type="search" placeholder="Search rooms, topics or interests…" aria-label="Search rooms"><kbd>⌘ K</kbd></label>
+        <label class="kp-room-search"><span aria-hidden="true">⌕</span><input id="roomSearch" type="search" placeholder="Search rooms, topics or interests…" aria-label="Search rooms"><kbd>⌕</kbd></label>
         <button class="kp-hidden-rooms mini hidden" id="hiddenRoomsToggle" type="button" onclick="toggleHiddenRoomsView()" aria-pressed="false"><span>▣</span> Hidden rooms</button>
-        <button class="kp-create-room primary hidden room-create-button" id="newRoom" type="button"><span>＋</span> Create a room</button>
       </div>
       <div class="kp-room-access">
         <div class="kp-access-copy"><span class="kp-access-icon">⌑</span><div><b>Have an invite code?</b><small>Enter a private room code to find your space.</small></div></div>
         <label class="kp-room-code"><span>ROOM CODE</span><input id="roomCodeSearch" inputmode="numeric" autocomplete="off" maxlength="11" placeholder="00000 00000" aria-label="Enter secret room code"><small id="roomCodeFeedback">10-digit invite code</small></label>
-        <button class="kp-main-room primary age-chat-open-button" id="refreshRoomsBtn" type="button" title="Open Main Room" aria-label="Open Main Room" onclick="goToMainRoomFromRoomRefresh()"><span>↗</span> Main Room</button>
       </div>
     </section>
     <div id="rooms" class="room-grid"></div>
