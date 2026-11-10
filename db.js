@@ -33,6 +33,7 @@ async function initDB() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS diamonds BIGINT NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS device_fingerprint VARCHAR(255);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_data JSONB NOT NULL DEFAULT '{}'::jsonb;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_token_version INTEGER NOT NULL DEFAULT 0;
 
     CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value JSONB);
     CREATE TABLE IF NOT EXISTS stored_media(
@@ -396,7 +397,8 @@ async function loadState(defaultState) {
     vip_expires_at: row.vip_expires_at ? new Date(row.vip_expires_at).getTime() : null,
     isPremium: !!row.is_premium,
     is_premium: !!row.is_premium,
-    createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+    authTokenVersion: Number(row.auth_token_version || 0)
   }));
 
   // Load equipped Gold Boutique cosmetics from PostgreSQL so they persist across restarts.
@@ -533,12 +535,12 @@ async function persistState(state) {
   for (const u of state.users || []) {
     if(!Number.isFinite(Number(u.id))) continue;
     const profileData={...u};
-    for (const key of ['id','username','password','passwordHash','rank','gold','diamonds','xp','avatar','birthDate','dateOfBirth','gender','bio','email','vipExpiresAt','vip_expires_at','isPremium','is_premium','giftsReceived']) delete profileData[key];
+    for (const key of ['id','username','password','passwordHash','rank','gold','diamonds','xp','avatar','birthDate','dateOfBirth','gender','bio','email','vipExpiresAt','vip_expires_at','isPremium','is_premium','giftsReceived','authTokenVersion']) delete profileData[key];
     await pool.query(
-      `UPDATE users SET username=$2,password=$3,rank=$4,gold=$5,xp=$6,avatar=$7,birth_date=$8,gender=$9,bio=$10,email=$11,vip_expires_at=$12,is_premium=$13,profile_data=$14::jsonb,diamonds=$15 WHERE id=$1`,
+      `UPDATE users SET username=$2,password=$3,rank=$4,gold=$5,xp=$6,avatar=$7,birth_date=$8,gender=$9,bio=$10,email=$11,vip_expires_at=$12,is_premium=$13,profile_data=$14::jsonb,diamonds=$15,auth_token_version=$16 WHERE id=$1`,
       [Number(u.id),u.username,u.passwordHash||u.password||"",String(u.rank||"MEMBER"),Number(u.gold||0),Number(u.xp||0),u.avatar||null,
        u.birthDate||u.dateOfBirth||null,u.gender||null,u.bio||null,u.email||null,
-       (u.vipExpiresAt||u.vip_expires_at)?new Date(u.vipExpiresAt||u.vip_expires_at):null,!!(u.isPremium||u.is_premium),JSON.stringify(profileData),Math.max(0,Math.floor(Number(u.diamonds)||0))]
+       (u.vipExpiresAt||u.vip_expires_at)?new Date(u.vipExpiresAt||u.vip_expires_at):null,!!(u.isPremium||u.is_premium),JSON.stringify(profileData),Math.max(0,Math.floor(Number(u.diamonds)||0)),Math.max(0,Math.floor(Number(u.authTokenVersion)||0))]
     );
   }
 
