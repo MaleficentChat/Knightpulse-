@@ -679,3 +679,6 @@ assert.match(server, /function loginRateLimit\(req,res,next\)/, "login must be t
 assert.match(server, /await inspectUploadSignature\(req\.file\)/, "uploaded bytes must be signature-checked before storage");
 assert.match(server, /Content-Disposition.*attachment/, "unknown or active legacy media must not be served inline");
 assert.match(app, /if\(changed\.token\)safeStorage\.setItem\('mc_token',changed\.token\)/, "password-change flow must store the replacement token");
+
+
+assert.match(database, /ssl:\s*\{\s*rejectUnauthorized:\s*true\s*\}/, "PostgreSQL TLS must verify server certificates");
