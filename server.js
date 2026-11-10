@@ -818,7 +818,7 @@ function getSessionSecret() {
 }
 const SESSION_SECRET = getSessionSecret();
 const TOKEN_SECRET = SESSION_SECRET;
-function makeToken(userId){const b64=o=>Buffer.from(JSON.stringify(o)).toString("base64url");const h=b64({alg:"HS256",typ:"JWT"}),p=b64({sub:String(userId),exp:Math.floor(Date.now()/1000)+7*86400});const sig=crypto.createHmac("sha256",TOKEN_SECRET).update(h+"."+p).digest("base64url");return h+"."+p+"."+sig;}
+function makeToken(userId){const b64=o=>Buffer.from(JSON.stringify(o)).toString("base64url");const user=findUser(userId);const h=b64({alg:"HS256",typ:"JWT"}),p=b64({sub:String(userId),ver:Math.max(0,Math.floor(Number(user?.authTokenVersion)||0)),exp:Math.floor(Date.now()/1000)+7*86400});const sig=crypto.createHmac("sha256",TOKEN_SECRET).update(h+"."+p).digest("base64url");return h+"."+p+"."+sig;}
 function verifyToken(token){try{const [h,p,sig]=String(token||"").split(".");if(!h||!p||!sig)return null;const e=crypto.createHmac("sha256",TOKEN_SECRET).update(h+"."+p).digest("base64url");if(sig!==e)return null;const x=JSON.parse(Buffer.from(p,"base64url").toString("utf8"));return x.exp>=Math.floor(Date.now()/1000)?x:null;}catch{return null;}}
 function roomRankCanEnter(user,room){
   if(!user||!room)return false;
@@ -911,7 +911,7 @@ function current(req){
     const tokenPayload=verifyToken(raw);
     if(!tokenPayload)continue;
     const tokenUser=db.users.find(u=>String(u.id)===String(tokenPayload.sub));
-    if(tokenUser){
+    if(tokenUser && Number(tokenPayload.ver ?? 0)===Number(tokenUser.authTokenVersion||0)){
       // Normalize the configured site-owner account from the retired Owner
       // label to Owner so permissions and UI use the same current hierarchy.
       if(tokenUser.username===DEFAULT_OWNER && String(tokenUser.rank||"").toUpperCase()!=="OWNER"){
@@ -925,6 +925,7 @@ function current(req){
   // Keep cookie-session authentication as a final fallback for existing clients.
   const sessionUid=req.session?.userId;
   const sessionUser=sessionUid?db.users.find(u=>String(u.id)===String(sessionUid))||null:null;
+  if(sessionUser && Number(req.session?.authTokenVersion ?? 0)!==Number(sessionUser.authTokenVersion||0))return null;
   if(sessionUser && sessionUser.username===DEFAULT_OWNER && String(sessionUser.rank||"").toUpperCase()!=="OWNER"){
     sessionUser.rank="OWNER";
     saveSoon();
@@ -1512,11 +1513,13 @@ app.get("/uploads/*",async(req,res,next)=>{
         found=await pool.query("SELECT mime_type,original_name,content FROM stored_media WHERE media_key=$1",[mediaKey]);
       }catch(error){if(error.code==="ENOENT")return next();throw error;}
     }
-    if(!found.rowCount)return next();
+    if(!found.rowCount)return res.sendStatus(404);
     const row=found.rows[0],bytes=row.content;
-    const mime=String(row.mime_type||"application/octet-stream");
+    const storedMime=String(row.mime_type||"application/octet-stream").toLowerCase();
+    const inlineSafe=/^(image\/(png|jpeg|gif|webp|avif)|audio\/(mpeg|mp4|aac|ogg|wav|opus|flac)|video\/(mp4|webm))$/.test(storedMime);
+    const mime=inlineSafe?storedMime:"application/octet-stream";
     const safeName=String(row.original_name||path.basename(mediaKey)).replace(/[\r\n"]/g,"_").replace(/[^\x20-\x7E]/g,"_");
-    res.set({"Content-Type":mime,"Accept-Ranges":"bytes","Cache-Control":"public, max-age=31536000, immutable","X-Content-Type-Options":"nosniff","Content-Disposition":'inline; filename="'+safeName+'"'});
+    res.set({"Content-Type":mime,"Accept-Ranges":"bytes","Cache-Control":"public, max-age=31536000, immutable","X-Content-Type-Options":"nosniff","Content-Disposition":(inlineSafe?'inline':'attachment')+'; filename="'+safeName+'"'});
     const range=String(req.headers.range||"");
     if(range){
       const match=/^bytes=(\d*)-(\d*)$/.exec(range);
@@ -1562,12 +1565,47 @@ const upload=multer({
   }
 });
 
+function validUploadSignature(file,bytes){
+  const ext=path.extname(String(file.originalname||"")).toLowerCase();
+  const starts=(...values)=>values.every((value,index)=>bytes[index]===value);
+  const ascii=(start,length)=>bytes.subarray(start,start+length).toString("ascii");
+  const ftyp=ascii(4,4)==="ftyp",brand=ftyp?ascii(8,4):"";
+  const isMp4=ftyp&&/^(isom|iso2|mp41|mp42|avc1|M4V |M4A )$/.test(brand);
+  const signatures={
+    ".jpg":starts(0xff,0xd8,0xff),".jpeg":starts(0xff,0xd8,0xff),
+    ".png":starts(0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a),
+    ".gif":ascii(0,6)==="GIF87a"||ascii(0,6)==="GIF89a",
+    ".webp":ascii(0,4)==="RIFF"&&ascii(8,4)==="WEBP",
+    ".avif":ftyp&&(brand==="avif"||brand==="avis"),
+    ".mp4":isMp4,".m4v":isMp4,".m4a":isMp4,
+    ".mp3":ascii(0,3)==="ID3"||(bytes[0]===0xff&&(bytes[1]&0xe0)===0xe0),
+    ".aac":bytes.length>1&&bytes[0]===0xff&&(bytes[1]&0xf6)===0xf0,
+    ".wav":ascii(0,4)==="RIFF"&&ascii(8,4)==="WAVE",
+    ".ogg":ascii(0,4)==="OggS",".oga":ascii(0,4)==="OggS",".opus":ascii(0,4)==="OggS",
+    ".flac":ascii(0,4)==="fLaC",
+    ".webm":starts(0x1a,0x45,0xdf,0xa3)
+  };
+  return Object.prototype.hasOwnProperty.call(signatures,ext)&&signatures[ext]===true;
+}
+async function inspectUploadSignature(file){
+  const handle=await fs.promises.open(file.path,"r");
+  try{
+    const bytes=Buffer.alloc(64);
+    const result=await handle.read(bytes,0,bytes.length,0);
+    if(!validUploadSignature(file,bytes.subarray(0,result.bytesRead))){
+      const error=new Error("This file type is not supported or its contents do not match its extension.");
+      error.status=415;
+      throw error;
+    }
+  }finally{await handle.close();}
+}
+
 // Persist every ordinary file upload immediately after Multer writes it.
 const parseSingleUpload=upload.single.bind(upload);
 upload.single=(field)=>{const parse=parseSingleUpload(field);return (req,res,next)=>parse(req,res,async error=>{
   if(error)return next(error);
   if(!req.file)return next();
-  try{await persistUploadedMedia(req.file,req.file.filename);next();}
+  try{await inspectUploadSignature(req.file);await persistUploadedMedia(req.file,req.file.filename);next();}
   catch(storageError){await fs.promises.unlink(req.file.path).catch(()=>{});next(storageError);}
 });};
 
@@ -1808,8 +1846,23 @@ app.post(
   }
 );
 
+const loginAttemptBuckets=new Map();
+function loginRateLimit(req,res,next){
+  const now=Date.now(),account=String(req.body?.username||"").trim().toLowerCase().slice(0,80);
+  const keys=["ip:"+String(clientIp(req)||"unknown"),"account:"+account];
+  const buckets=keys.map(key=>({key,times:(loginAttemptBuckets.get(key)||[]).filter(time=>now-time<10*60*1000)}));
+  if(buckets.some(bucket=>bucket.times.length>=8))return res.status(429).json({error:"Too many login attempts. Please wait 10 minutes and try again."});
+  for(const bucket of buckets){bucket.times.push(now);loginAttemptBuckets.set(bucket.key,bucket.times);}
+  if(loginAttemptBuckets.size>5000){
+    for(const [key,times] of loginAttemptBuckets){if(!times.length||now-times[times.length-1]>10*60*1000)loginAttemptBuckets.delete(key);if(loginAttemptBuckets.size<=4000)break;}
+  }
+  req.loginRateKeys=keys;
+  next();
+}
+
 app.post(
   "/api/login",
+  loginRateLimit,
   async(req,res)=>{
     const loginUsername=String(req.body?.username||"").trim();
     const passwordInput=String(req.body?.password||"");
@@ -1833,6 +1886,7 @@ app.post(
     if(!u||!passwordValid){
       return res.status(401).json({error:"Invalid username or password."});
     }
+    for(const key of req.loginRateKeys||[])loginAttemptBuckets.delete(key);
 
     if(["VIP","SVIP"].includes(String(u.rank).toUpperCase()) && u.vipExpiresAt && Number(u.vipExpiresAt)<Date.now()){
       u.rank="MEMBER"; u.vipExpiresAt=null; u.vip_expires_at=null;
@@ -1848,6 +1902,7 @@ app.post(
     u.lastSeen=Date.now();
 
     req.session.userId=u.id;
+    req.session.authTokenVersion=Number(u.authTokenVersion||0);
     await recordUserIp(req,u,"login");
 
     save();
@@ -1892,8 +1947,10 @@ app.post(
 app.post(
   "/api/logout",
   auth,
-  (req,res)=>{
+  async(req,res)=>{
     const u=current(req);
+    u.authTokenVersion=Math.max(0,Math.floor(Number(u.authTokenVersion)||0))+1;
+    await pool.query("UPDATE users SET auth_token_version=$1 WHERE id=$2",[u.authTokenVersion,Number(u.id)]);
 
     u.online=false;
     u.lastSeen=Date.now();
@@ -1905,6 +1962,8 @@ app.post(
     );
 
     req.session.destroy(()=>{});
+    const activeSockets=io.sockets.adapter.rooms.get("user:"+u.id);
+    if(activeSockets)for(const socketId of [...activeSockets])io.sockets.sockets.get(socketId)?.disconnect(true);
     res.clearCookie("mc_auth",{httpOnly:true,secure:!!req.secure,sameSite:"lax",path:"/"});
 
     save();
@@ -6893,6 +6952,7 @@ io.on(
         const userId=String(claims.sub);
         const u=findUser(userId);
         if(!u){ack({ok:false,error:"User not found"});return;}
+        if(Number(claims.ver ?? 0)!==Number(u.authTokenVersion||0)){ack({ok:false,error:"This session has expired. Please sign in again."});return socket.disconnect(true);}
 
         const previousUserId=String(socket.data.userId||"");
         if(previousUserId&&previousUserId!==userId){
@@ -7699,11 +7759,17 @@ app.post('/api/password/change',auth,async(req,res)=>{
   if(!valid)return res.status(401).json({error:"Current password is incorrect."});
   try{
     const hash=await bcrypt.hash(newPassword,10);
-    await pool.query("UPDATE users SET password=$1 WHERE id=$2",[hash,Number(u.id)]);
+    u.authTokenVersion=Math.max(0,Math.floor(Number(u.authTokenVersion)||0))+1;
+    await pool.query("UPDATE users SET password=$1,auth_token_version=$2 WHERE id=$3",[hash,u.authTokenVersion,Number(u.id)]);
     u.password=hash;u.passwordHash=hash;
     await persistState(db);
+    req.session.authTokenVersion=u.authTokenVersion;
+    const authToken=makeToken(u.id);
+    res.cookie("mc_auth",authToken,{httpOnly:true,secure:!!req.secure,sameSite:"lax",path:"/",maxAge:7*24*60*60*1000});
+    const activeSockets=io.sockets.adapter.rooms.get("user:"+u.id);
+    if(activeSockets)for(const socketId of [...activeSockets])io.sockets.sockets.get(socketId)?.disconnect(true);
     log(u,"PASSWORD_CHANGE",u.username);
-    res.json({ok:true});
+    res.json({ok:true,token:authToken});
   }catch(e){console.error("Password change failed:",e);res.status(500).json({error:"Could not change password."});}
 });
 app.put('/api/notifications/preferences',auth,async(req,res)=>{
