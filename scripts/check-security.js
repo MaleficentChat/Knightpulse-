@@ -667,3 +667,15 @@ assert.ok(staffCss.includes(".profile-photo-grid") && staffCss.includes("grid-te
   "public profile photo galleries must retain a responsive premium grid");
 
 // Regression checks aligned with the current KnightPulse profile and stylesheet bundle.
+
+
+// KnightPulse security hardening regression checks.
+assert.match(database, /auth_token_version INTEGER NOT NULL DEFAULT 0/, "account token versions must be stored durably");
+assert.match(database, /auth_token_version=\$16/, "account token versions must be persisted with user state");
+assert.match(server, /ver:Math\.max\(0,Math\.floor\(Number\(user\?\.authTokenVersion\)\|\|0\)\)/, "signed auth tokens must carry an account version");
+assert.match(server, /Number\(tokenPayload\.ver \?\? 0\)===Number\(tokenUser\.authTokenVersion\|\|0\)/, "HTTP auth must reject revoked tokens");
+assert.match(server, /Number\(claims\.ver \?\? 0\)!==Number\(u\.authTokenVersion\|\|0\)/, "Socket.IO auth must reject revoked tokens");
+assert.match(server, /function loginRateLimit\(req,res,next\)/, "login must be throttled by account and network");
+assert.match(server, /await inspectUploadSignature\(req\.file\)/, "uploaded bytes must be signature-checked before storage");
+assert.match(server, /Content-Disposition.*attachment/, "unknown or active legacy media must not be served inline");
+assert.match(app, /if\(changed\.token\)safeStorage\.setItem\('mc_token',changed\.token\)/, "password-change flow must store the replacement token");
