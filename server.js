@@ -1962,6 +1962,8 @@ app.post(
     );
 
     req.session.destroy(()=>{});
+    const activeSockets=io.sockets.adapter.rooms.get("user:"+u.id);
+    if(activeSockets)for(const socketId of [...activeSockets])io.sockets.sockets.get(socketId)?.disconnect(true);
     res.clearCookie("mc_auth",{httpOnly:true,secure:!!req.secure,sameSite:"lax",path:"/"});
 
     save();
@@ -6950,6 +6952,7 @@ io.on(
         const userId=String(claims.sub);
         const u=findUser(userId);
         if(!u){ack({ok:false,error:"User not found"});return;}
+        if(Number(claims.ver ?? 0)!==Number(u.authTokenVersion||0)){ack({ok:false,error:"This session has expired. Please sign in again."});return socket.disconnect(true);}
 
         const previousUserId=String(socket.data.userId||"");
         if(previousUserId&&previousUserId!==userId){
@@ -7763,6 +7766,8 @@ app.post('/api/password/change',auth,async(req,res)=>{
     req.session.authTokenVersion=u.authTokenVersion;
     const authToken=makeToken(u.id);
     res.cookie("mc_auth",authToken,{httpOnly:true,secure:!!req.secure,sameSite:"lax",path:"/",maxAge:7*24*60*60*1000});
+    const activeSockets=io.sockets.adapter.rooms.get("user:"+u.id);
+    if(activeSockets)for(const socketId of [...activeSockets])io.sockets.sockets.get(socketId)?.disconnect(true);
     log(u,"PASSWORD_CHANGE",u.username);
     res.json({ok:true,token:authToken});
   }catch(e){console.error("Password change failed:",e);res.status(500).json({error:"Could not change password."});}
