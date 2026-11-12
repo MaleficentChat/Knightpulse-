@@ -642,7 +642,7 @@ assert.match(staffUi,/profile-social-button[\s\S]*?kp-profile-tabs-label/,
   "member profiles must use the refreshed identity and navigation layout");
 assert.match(staffCss,/\.kp-staff-groups[\s\S]*\.kp-audit-filters[\s\S]*\.kp-profile-tabs-label/,
   "profile, staff workspace and audit category layouts must be styled");
-assert.ok(indexHtml.includes("knightpulse-complete.css?v=leaderboard-stack-close-20261109-1"),
+assert.ok(indexHtml.includes("knightpulse-complete.css?v=scroll-fix-20261113-1"),
   "the HTML must request the refreshed profile, staff and audit styles");
 
 assert.match(staffUi,/kp-profile-quick-stats[\s\S]*?<small>Experience<\/small>[\s\S]*?<small>Likes<\/small>/,
