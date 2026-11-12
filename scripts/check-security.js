@@ -630,6 +630,13 @@ assert.match(staffUi, /adminActivityLogsDropdown[\s\S]*Admin Activity Logs/,
   "the durable admin activity log interface must remain available");
 assert.match(staffCss, /\.kp-command-center[\s\S]*\.kp-staff-inbox/,
   "the new command center and staff inbox must have dedicated responsive styling");
+
+assert.ok(indexHtml.includes('id="onlineUsers"') && !activeClient.includes('$("userSearch").oninput'),
+  "the retired Users search binding must not crash startup when the People panel is used");
+assert.match(activeClient,/if\(state\.view==="users"\)[\s\S]*?renderOnline\("all"\)/,
+  "Find People navigation must open the current People panel");
+assert.match(activeClient,/const requestPremiumButton=\$\('requestPremium'\);if\(requestPremiumButton\)/,
+  "rank-restricted shop views must not dereference a missing Premium request button");
 console.log("KnightPulse staff command center, permission audit, activity log and notification inbox checks passed.");
 
 assert.match(staffUi,/function auditCategoryFor\(row\)[\s\S]*?function renderAuditCollection\(target,rows/,
