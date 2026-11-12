@@ -56,7 +56,9 @@
     foot.textContent = maxed ? "✹ Maximum legacy title reached" :
       (next.xp - xp).toLocaleString() + " XP to " + next.title;
     card.append(head, track, foot);
-    levelRow.insertAdjacentElement("afterend", card);
+    const tabs = panel.closest(".profile-modal")?.querySelector(".profile-tabs");
+    if (tabs) tabs.insertAdjacentElement("afterend", card);
+    else levelRow.insertAdjacentElement("afterend", card);
   }
 
   const observer = new MutationObserver(decorateProfile);
