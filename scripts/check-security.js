@@ -584,7 +584,7 @@ assert.ok(server.includes("const FEATURE_GRANT_POLICY_VERSION=8;"),
   "rank and feature-grant policy migration must be versioned");
 assert.ok(server.includes("blockedRanks=['PREMIUM','MOD','ADMIN','SUPER_ADMIN','COMMISSOR','CHIEF_COMMISSOR','COOWNER','ELITE','OWNER']"),
   "Elite and higher ranks must be blocked from purchasing Premium on the server");
-assert.ok(indexHtml.includes("/app.js?v=performance-20261112-1"),
+assert.ok(indexHtml.includes("/app.js?v=functionality-audit-20261113-1"),
   "the HTML must point at the current rank-schema app bundle");
 
 
