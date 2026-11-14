@@ -2920,7 +2920,15 @@ app.get("/api/rooms/:id/messages",auth,async(req,res)=>{
   if(!verifyRoomJoinToken(req.headers['x-room-join-token'],actor.id,room))return res.status(403).json({error:"Join this room before viewing its messages."});
   const {rows}=await pool.query(`SELECT data FROM room_messages WHERE room_id=$1 ORDER BY created_at DESC,id DESC LIMIT 300`,[Number(req.params.id)]);
   const now=Date.now();
-  const messages=rows.reverse().map(r=>r.data).filter(m=>m && (!m.expiresAt||Number(m.expiresAt)>now) && !m.deleted).map(m=>({...m,avatar:m.avatar||(db.users.find(user=>String(user.id)===String(m.userId))?.avatar||""),roomRank:roomRole(room.id,m.userId),roomRankBadge:({USER:"✨",ROOM_MODERATOR:"🪄",ROOM_ADMIN:"💫",ROOM_OWNER:"🎩"})[roomRole(room.id,m.userId)]||"✨"}));
+  // Build lookup tables once per response; avoid scanning every account and
+  // re-reading the room-staff store separately for each of up to 300 messages.
+  const avatarByUserId=new Map(db.users.map(user=>[String(user.id),user.avatar||""]));
+  const staffByUserId=roomStaffStore().room_staff[String(room.id)]||{};
+  const roomBadges={USER:"✨",ROOM_MODERATOR:"🪄",ROOM_ADMIN:"💫",ROOM_OWNER:"🎩"};
+  const messages=rows.reverse().map(r=>r.data).filter(m=>m && (!m.expiresAt||Number(m.expiresAt)>now) && !m.deleted).map(m=>{
+    const roomRank=staffByUserId[String(m.userId)]||"USER";
+    return {...m,avatar:m.avatar||avatarByUserId.get(String(m.userId))||"",roomRank,roomRankBadge:roomBadges[roomRank]||"✨"};
+  });
   db.messages=db.messages.filter(m=>String(m.roomId)!==String(req.params.id)).concat(messages);
   res.json({messages});
 });
