@@ -1,4 +1,4 @@
-/* KnightPulse identity layer — intentionally separate from the legacy base stylesheet. */
+/* Maleficent Chat identity layer — intentionally separate from the legacy base stylesheet. */
 :root {
   --bg:#100c0a; --bg-deep:#090807; --panel:#1a1411; --panel-2:#241a16; --panel-3:#30201b;
   --border:rgba(221, 164, 132,.14); --border-strong:rgba(221, 164, 132,.25);
@@ -14,7 +14,7 @@ button,input,textarea,select{accent-color:#e6b17d}
 .auth-card{position:relative;width:min(460px,94vw);padding:38px 34px 32px;background:linear-gradient(155deg,rgba(63, 35, 21,.97),rgba(36, 19, 10,.98));border:1px solid rgba(237, 174, 142,.28);border-radius:26px;box-shadow:0 30px 100px rgba(0, 0, 0,.55),inset 0 1px rgba(255, 255, 255,.05)}
 .auth-card:before{content:"";position:absolute;top:0;left:12%;right:12%;height:2px;background:linear-gradient(90deg,transparent,#eba683,#e6bd78,transparent);border-radius:50%}
 .brand-mark{display:grid;place-items:center;width:68px;height:68px;margin:0 auto 16px;border-radius:21px;background:linear-gradient(145deg,#834729,#442313);border:1px solid rgba(241, 192, 168,.38);color:#f1d49d;font-size:0;box-shadow:0 12px 35px rgba(168, 84, 42,.28)}
-.brand-mark:after{content:"♞";font-family:Georgia,serif;font-size:42px;line-height:1;color:#f1d49d;text-shadow:0 3px 16px rgba(230, 185, 106,.25)}
+.brand-mark:after{content:"🖤";font-family:Georgia,serif;font-size:42px;line-height:1;color:#f1d49d;text-shadow:0 3px 16px rgba(230, 185, 106,.25)}
 .auth-card h1{font-size:27px;letter-spacing:-.8px;color:#fdf8f6}
 .auth-card p{color:#d0af9e}
 .auth-tabs{padding:5px;background:#29150b;border:1px solid rgba(229, 171, 142,.14);border-radius:14px}
@@ -27,9 +27,9 @@ input:focus,textarea:focus,select:focus{border-color:#eba683;box-shadow:0 0 0 3p
 .top-menu,.top-icon,.top-profile{color:#fae7de;border-radius:12px}
 .top-menu:hover,.top-icon:hover{background:rgba(230, 143, 100,.14)}
 .brand-avatar,.rail-logo{background:linear-gradient(145deg,#9b5431,#442414 70%);border:1px solid rgba(240, 191, 166,.48);color:#f1d49d;box-shadow:0 5px 18px rgba(169, 88, 48,.25);font-size:0}
-.brand-avatar:after,.rail-logo:after{content:"♞";font-family:Georgia,serif;font-size:23px;color:#f1d49d}
+.brand-avatar:after,.rail-logo:after{content:"🖤";font-family:Georgia,serif;font-size:23px;color:#f1d49d}
 .top-brand-copy b{font-size:0}
-.top-brand-copy b:after{content:"KnightPulse";font-size:16px;letter-spacing:.1px;color:#fdf7f4}
+.top-brand-copy b:after{content:"Maleficent Chat";font-size:16px;letter-spacing:.1px;color:#fdf7f4}
 .top-brand-copy span{font-size:0}
 .top-brand-copy span:after{content:"community";font-size:11px;letter-spacing:1.3px;text-transform:uppercase;color:#d4b477}
 .sidebar{background:rgba(35, 18, 10,.97);border-right:1px solid rgba(230, 171, 141,.13);backdrop-filter:blur(16px)}
