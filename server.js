@@ -6689,6 +6689,8 @@ app.post("/api/news",auth,upload.single("file"),featureAllowed("publish_news"),a
 
       time:Date.now(),
       author:u.displayName||u.username,
+      authorUsername:u.username||"",
+      authorId:u.id,
       avatar:u.avatar||"",
       comments:[],
       attachment:req.file?{url:"/uploads/"+req.file.filename,type:req.file.mimetype,name:req.file.originalname}:null
