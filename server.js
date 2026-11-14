@@ -7886,42 +7886,17 @@ app.get('/api/me/account',auth,async(req,res)=>{
 
     await persistState(db);
 
-    // Cross-promote Maleficent Chat in Teen Chat and Adult Chat only.
-    // One in-flight guard prevents overlapping minute broadcasts.
-    let joinMCBroadcastInFlight = false;
-    setInterval(async () => {
-      if (joinMCBroadcastInFlight) return;
-      joinMCBroadcastInFlight = true;
-      try {
-        const targets = await pool.query(
-          "SELECT id,name FROM rooms WHERE is_public=true AND LOWER(BTRIM(name))=ANY($1::text[]) ORDER BY id",
-          [["teen chat", "adult chat"]]
-        );
-        for (const room of targets.rows) {
-          const message = {
-            id: id(), roomId: String(room.id), userId: null,
-            username: "Bot", displayName: "System Bot", rank: "BOT",
-            system: false, isBot: true, bot: "Bot",
-            joinChatPanel: true,
-            joinChatUrl: "https://maleficentchat.onrender.com/",
-            joinChatBrand: "MALEFICENT CHAT",
-            text: "Join Maleficent Chat to meet the community, chat and make new friends.",
-            reactions: {}, edited: false, deleted: false, pinned: false,
-            time: Date.now(), delivered: true
-          };
-          await pool.query(
-            "INSERT INTO room_messages(id,room_id,user_id,data,created_at) VALUES($1,$2,NULL,$3::jsonb,NOW())",
-            [message.id, Number(room.id), JSON.stringify(message)]
-          );
-          db.messages.push(message);
-          io.to("room:" + room.id).emit("message", message);
-        }
-      } catch (error) {
-        console.error("[SYSTEM BOT] Join Maleficent Chat broadcast failed:", error?.message || error);
-      } finally {
-        joinMCBroadcastInFlight = false;
-      }
-    }, 5 * 60 * 1000);
+    // Cross-site promotional bot messages are disabled. Remove only previously
+    // generated Maleficent Chat invite panels; ordinary bot/system messages remain.
+    await pool.query(
+      "DELETE FROM room_messages WHERE data->>'joinChatPanel'='true' AND data->>'joinChatUrl'=$1",
+      ["https://maleficentchat.onrender.com/"]
+    );
+    if (Array.isArray(db.messages)) {
+      db.messages = db.messages.filter(message =>
+        !(message?.joinChatPanel && message?.joinChatUrl === "https://maleficentchat.onrender.com/")
+      );
+    }
 
     
 // Master repair APIs: privacy-aware admin controls and persistent records.
