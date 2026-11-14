@@ -4633,7 +4633,7 @@ function openWalletConvertModal(){
   $("walletConvertSubmit").onclick=async()=>{const value=Number(amount.value);if(!Number.isSafeInteger(value)||value<1){toast("Enter a whole positive Diamond amount.");return;}try{const result=await api("/api/wallet/convert",{method:"POST",body:JSON.stringify({amount:value})});state.user.diamonds=result.wallet.diamonds;state.user.gold=result.wallet.gold;updateNav();closeModal();toast("Converted "+value+" Diamonds into "+(value*100).toLocaleString()+" Gold.");if(state.view==="wallet")loadWallet();}catch(error){toast(error.message)}};
 }
 async function loadWallet(){
-  const root=$("walletRoot");if(!root)return;root.innerHTML="<div class='wallet-loading'>Opening your MC Bank…</div>";
+  const root=$("walletRoot");if(!root)return;root.innerHTML="<div class='wallet-loading'>Opening your Pulse Wallet…</div>";
   try{
     const pair=await Promise.all([api("/api/wallet"),api("/api/daily/status")]),data=pair[0],daily=pair[1];
     state.user.diamonds=Number(data.wallet?.diamonds||0);state.user.gold=Number(data.wallet?.gold||0);updateNav();
