@@ -947,20 +947,20 @@ body.kp-rooms-panel-open{overflow:hidden!important}
 .bot-join-chat-message .bot-welcome-username,
 .bot-join-chat-message .bot-join-chat-footnote { display:none !important; }
 
-/* Final MC-only color guard: no KnightPulse sapphire or legacy violet accents. */
+/* KnightPulse complete identity lock: midnight navy, electric blue and warm gold. */
 :root,html[data-theme]{
- --bg:#090d11!important;--bg-deep:#090807!important;--panel:#0f151c!important;--panel-2:#151d25!important;--panel-3:#1b2530!important;
- --border:rgba(132, 175, 221,.14)!important;--border-strong:rgba(132, 175, 221,.25)!important;
- --text:#fff4e9!important;--muted:#95abc3!important;--accent:#5290d2!important;--accent-2:#e5bd78!important;
- --accent-soft:rgba(82, 144, 210,.15)!important;--bubble:#1b2631!important;--mine:#71372f!important;
- --pink:#7eb0e6!important;--purple:#437cb8!important;--green:#72a2d5!important;
- --kp-void:#090807!important;--kp-night:#090d11!important;--kp-surface:#0f151c!important;--kp-raised:#151d25!important;--kp-raised2:#1b2530!important;
- --kp-line:rgba(132, 175, 221,.16)!important;--kp-line-hot:rgba(82, 144, 210,.42)!important;
- --kp-ink:#fff4e9!important;--kp-muted:#95abc3!important;--kp-blue:#5290d2!important;--kp-blue2:#3d71a8!important;--kp-gold:#e5bd78!important;
+ --bg:#071326!important;--bg-deep:#040b18!important;--panel:#0b1b31!important;--panel-2:#102541!important;--panel-3:#173253!important;
+ --border:rgba(111,169,232,.18)!important;--border-strong:rgba(229,189,99,.34)!important;
+ --text:#f3f7ff!important;--muted:#9db2cf!important;--accent:#438de0!important;--accent-2:#e5bd63!important;
+ --accent-soft:rgba(67,141,224,.16)!important;--bubble:#142b47!important;--mine:#245a91!important;
+ --pink:#e5bd63!important;--purple:#6fa9e8!important;--green:#7cc6ad!important;
+ --kp-void:#040b18!important;--kp-night:#071326!important;--kp-surface:#0b1b31!important;--kp-raised:#102541!important;--kp-raised2:#173253!important;
+ --kp-line:rgba(111,169,232,.2)!important;--kp-line-hot:rgba(229,189,99,.48)!important;
+ --kp-ink:#f3f7ff!important;--kp-muted:#9db2cf!important;--kp-blue:#438de0!important;--kp-blue2:#245a91!important;--kp-gold:#e5bd63!important;
 }
-html,body,#app,.main{background-color:#090d11!important;color:#fff4e9!important}
-.top-brand-copy b:after{content:"Maleficent Chat"!important}
-.brand-mark:after,.brand-avatar:after,.rail-logo:after{content:"🖤"!important;font-family:inherit!important;font-size:22px!important}
+html,body,#app,.main{background-color:#071326!important;color:#f3f7ff!important}
+.top-brand-copy b:after{content:none!important}
+.brand-mark:after,.brand-avatar:after,.rail-logo:after{content:"⚡"!important;font-family:inherit!important;font-size:22px!important}
 
 
 /* Scroll audit 2026-11-11: restore usable scrolling across views and panels. */
