@@ -1,0 +1,30 @@
+/* KnightPulse royal blue + gold identity layer. Loaded last so all shared MC components inherit it. */
+:root{
+ --bg:#071326;--bg-deep:#040b18;--panel:#101f35;--panel-2:#172944;--panel-3:#203653;
+ --border:rgba(190,211,235,.14);--border-strong:rgba(224,184,91,.34);
+ --text:#f3f6fc;--muted:#9aabc2;--accent:#4d8fd8;--accent-2:#e5bd63;
+ --accent-soft:rgba(77,143,216,.16);--bubble:#1b304b;--mine:#174c7b;
+ --pink:#e5bd63;--purple:#6fa9e8;--green:#7cc6ad;--danger:#ff7187;
+ --kp-void:#071326;--kp-night:#0b1a2e;--kp-surface:#101f35;--kp-raised:#172944;
+ --kp-raised2:#203653;--kp-line:rgba(190,211,235,.16);--kp-line-hot:rgba(229,189,99,.5);
+ --kp-ink:#f3f6fc;--kp-muted:#9aabc2;--kp-blue:#4d8fd8;--kp-blue2:#2e6eae;
+ --kp-gold:#e5bd63;--kp-mint:#7cc6ad;--kp-red:#ff7187;
+ --kp-shadow:0 18px 55px rgba(0,0,0,.38);--kp-radius:16px;
+}
+html,body{background:#071326!important;color:#f3f6fc}
+body{background:radial-gradient(ellipse at 72% -15%,rgba(48,104,166,.24),transparent 48%),linear-gradient(160deg,#071326,#040b18 72%)!important}
+:where(.panel,.card,.modal,.modal-content,.topbar,.sidebar,.room-card,.profile-card,.chat-panel,.online-panel,.nav-panel,.dropdown-menu,.menu-panel){border-color:rgba(190,211,235,.14)}
+:where(button,.button,.primary,.secondary,.nav,.tab,.room-tab,.action-button){--button-accent:#4d8fd8}
+:where(button.primary,.primary,button[type=submit],.btn-primary){background:linear-gradient(135deg,#2f72b7,#1c4f86)!important;border-color:rgba(229,189,99,.48)!important;color:#fff!important}
+:where(button.primary:hover,.primary:hover,button[type=submit]:hover,.btn-primary:hover){filter:brightness(1.12)}
+:where(.active,.selected,[aria-current=page]){border-color:rgba(229,189,99,.62)}
+:where(.nav.active,.tab.active,.room-tab.active,.selected){background:linear-gradient(135deg,rgba(55,112,174,.34),rgba(229,189,99,.10))!important;color:#f7d98f!important}
+:where(a,.link,.accent-text){color:#83b8ef}
+:where(.gold,.rank-badge,.premium-badge,.brand-accent){color:#f0cf7d}
+:where(input,textarea,select){background:#0a192d;color:#f3f6fc;border-color:rgba(190,211,235,.2)}
+:where(input:focus,textarea:focus,select:focus){border-color:#e5bd63!important;box-shadow:0 0 0 3px rgba(229,189,99,.13)!important}
+:where(.message,.chat-bubble){border-color:rgba(190,211,235,.12)}
+:where(.message.own,.chat-bubble.own,.my-message){background:linear-gradient(135deg,#174c7b,#163956)}
+:where(.brand-mark,.rail-logo,.logo-mark){color:#f0cf7d}
+:where(.kp-live-dot,.online-dot,.status-online){background:#79c9a7}
+:where(.divider,hr){border-color:rgba(190,211,235,.12)}
