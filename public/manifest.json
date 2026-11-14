@@ -3,8 +3,8 @@
   "short_name": "Knightpulse",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#080f20",
-  "theme_color": "#101b31",
+  "background_color": "#061326",
+  "theme_color": "#07172a",
   "icons": [
     {
       "src": "/favicon.svg",

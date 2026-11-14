@@ -1,5 +1,5 @@
-const CACHE="cloud-chat-v27-socket-only-live-chat";
-const ASSETS=["/","/style.css","/app.js","/manifest.json","/favicon.svg","/robots.txt","/sitemap.xml","/doodle-studio.js"];
+const CACHE="knightpulse-royal-blue-gold-v28";
+const ASSETS=["/","/style.css","/app.js","/manifest.json","/favicon.svg","/robots.txt","/sitemap.xml","/doodle-studio.js","/knightpulse-royal-theme.css"];
 
 self.addEventListener("install",event=>{
   event.waitUntil((async()=>{
@@ -21,7 +21,7 @@ self.addEventListener("fetch",event=>{
   // messages appear to disappear after a reload even when PostgreSQL had them.
   if(url.origin===self.location.origin && url.pathname.startsWith("/api/")) return;
   const refreshable=event.request.mode==="navigate" ||
-    ["/","/index.html","/app.js","/style.css","/manifest.json","/favicon.svg","/robots.txt","/sitemap.xml","/doodle-studio.js"].includes(url.pathname);
+    ["/","/index.html","/app.js","/style.css","/manifest.json","/favicon.svg","/robots.txt","/sitemap.xml","/doodle-studio.js","/knightpulse-royal-theme.css"].includes(url.pathname);
 
   if(refreshable){
     // Network-first for application code and the page shell prevents a
