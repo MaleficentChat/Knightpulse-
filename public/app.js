@@ -3485,12 +3485,35 @@ async function openQuickUserCard(id){
 }
 
 async function openUser(id) {
+  const requestToken=window.__kpProfileOpenToken=(Number(window.__kpProfileOpenToken)||0)+1;
+  modal('<div class="about-card kp-profile-loading" role="status" aria-live="polite"><h3>Loading profile…</h3><p class="muted">Getting this member’s profile.</p></div>');
   try {
-    const data = await api(`/api/users/${encodeURIComponent(id)}/profile`);
-    const user=data.user;
-    try { const nr=await api(`/api/friends/${encodeURIComponent(id)}/nickname`); user._nickname=nr.nickname||nr.nicknameFromOther||''; } catch {} if(!user) return;
+    const data = await api('/api/users/'+encodeURIComponent(id)+'/profile');
+    if(requestToken!==window.__kpProfileOpenToken)return;
+    const user=data&&data.user;
+    if(!user)throw new Error('This profile could not be found.');
     renderUserProfileModal(user,data);
-  } catch(error){ toast(error.message); }
+    // Optional nickname lookup must never delay the main profile render.
+    api('/api/friends/'+encodeURIComponent(id)+'/nickname').then(nr=>{
+      if(requestToken!==window.__kpProfileOpenToken)return;
+      const root=document.querySelector('.kp-public-profile');
+      if(!root||root.dataset.sfUserId!==String(id))return;
+      const nickname=nr.nickname||nr.nicknameFromOther||'';
+      if(!nickname)return;
+      user._nickname=nickname;
+      const name=root.querySelector('.profile-name');
+      if(name&&!name.querySelector('.nickname-badge')){
+        const badge=document.createElement('span');
+        badge.className='nickname-badge';
+        badge.textContent='“'+nickname+'”';
+        name.append(' ',badge);
+      }
+    }).catch(()=>{});
+  } catch(error){
+    if(requestToken!==window.__kpProfileOpenToken)return;
+    modal('<div class="about-card"><h3>Could not open profile</h3><p class="muted">'+esc(error.message||'Please try again.')+'</p><button type="button" class="mini primary" id="retryPublicProfile">Try again</button></div>');
+    $('retryPublicProfile')?.addEventListener('click',()=>openUser(id));
+  }
 }
 
 function renderUserProfileModal(user,data={}){
@@ -3751,7 +3774,8 @@ function renderUserProfileModal(user,data={}){
           profileFriendButton.disabled=outgoing;
         }catch{}
       };
-      syncProfileFriendButton();
+      const deferProfileFriendSync=window.requestIdleCallback||((callback)=>window.setTimeout(callback,350));
+      deferProfileFriendSync(()=>{if(profileFriendButton.isConnected)syncProfileFriendButton();},{timeout:1200});
       profileFriendButton.addEventListener('click',async()=>{
         const id=encodeURIComponent(user.id),friendState=profileFriendButton.dataset.friendState||'none';
         profileFriendButton.disabled=true;
