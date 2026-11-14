@@ -1,6 +1,6 @@
 "use strict";
-const ELIGIBLE = new Set(["PREMIUM","MODERATOR","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER","DEVELOPER"]);
-const SUPERADMIN_PLUS = new Set(["SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER","DEVELOPER"]);
+const ELIGIBLE = new Set(["VIP","SVIP","PREMIUM","MODERATOR","MOD","ADMIN","SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]);
+const SUPERADMIN_PLUS = new Set(["SUPER_ADMIN","COMMISSOR","CHIEF_COMMISSOR","COOWNER","ELITE","OWNER"]);
 const DEFAULT_DAILY_LIMIT = Math.max(1, Math.min(500, Number(process.env.AI_COMPANION_DAILY_TEXT_LIMIT) || 80));
 const rank = user => { const value=String(user?.rank || "").toUpperCase().replace(/[\s-]+/g,"_"); return value==="SUPERADMIN"?"SUPER_ADMIN":value; };
 const allowed = user => ELIGIBLE.has(rank(user));
