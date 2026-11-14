@@ -28,3 +28,63 @@ body{background:radial-gradient(ellipse at 72% -15%,rgba(48,104,166,.24),transpa
 :where(.brand-mark,.rail-logo,.logo-mark){color:#f0cf7d}
 :where(.kp-live-dot,.online-dot,.status-online){background:#79c9a7}
 :where(.divider,hr){border-color:rgba(190,211,235,.12)}
+
+
+/* KnightPulse identity lock: this layer deliberately overrides legacy MC skin rules. */
+:root{
+ --bg:#071326!important;--bg-deep:#040b18!important;--panel:#101f35!important;--panel-2:#172944!important;--panel-3:#203653!important;
+ --border:rgba(190,211,235,.16)!important;--border-strong:rgba(229,189,99,.48)!important;
+ --text:#f3f6fc!important;--muted:#9aabc2!important;--accent:#4d8fd8!important;--accent-2:#e5bd63!important;
+ --accent-soft:rgba(77,143,216,.16)!important;--bubble:#1b304b!important;--mine:#174c7b!important;
+ --kp-void:#071326!important;--kp-night:#0b1a2e!important;--kp-surface:#101f35!important;--kp-raised:#172944!important;
+ --kp-raised2:#203653!important;--kp-line:rgba(190,211,235,.16)!important;--kp-line-hot:rgba(229,189,99,.5)!important;
+ --kp-ink:#f3f6fc!important;--kp-muted:#9aabc2!important;--kp-blue:#4d8fd8!important;--kp-blue2:#2e6eae!important;--kp-gold:#e5bd63!important;
+}
+html,body,#app{background-color:#071326!important;color:#f3f6fc!important}
+body{background:radial-gradient(ellipse at 72% -15%,rgba(48,104,166,.24),transparent 48%),linear-gradient(160deg,#071326,#040b18 72%)!important}
+.auth-screen{background:radial-gradient(ellipse at 50% 0%,rgba(48,104,166,.28),transparent 48%),linear-gradient(145deg,#071326,#102541 58%,#040b18)!important}
+.auth-card{background:linear-gradient(155deg,rgba(19,43,70,.98),rgba(8,22,40,.99))!important;border-color:rgba(229,189,99,.32)!important}
+.auth-card:before{background:linear-gradient(90deg,transparent,#4d8fd8,#e5bd63,transparent)!important}
+.auth-card h1,.auth-card p{color:#f3f6fc!important}
+.auth-tabs{background:#0a192d!important;border-color:rgba(190,211,235,.18)!important}
+.auth-tabs button{color:#a9bad0!important}
+.auth-tabs button:hover,.auth-tabs button.active{background:linear-gradient(135deg,rgba(77,143,216,.3),rgba(229,189,99,.1))!important;border-color:rgba(229,189,99,.4)!important;color:#fff!important}
+.brand-mark,.brand-avatar,.rail-logo{background:linear-gradient(145deg,#245b91,#10233c 68%)!important;border:1px solid rgba(229,189,99,.58)!important;color:#f3d88f!important;box-shadow:0 8px 25px rgba(28,86,139,.3)!important}
+.brand-mark:after,.brand-avatar:after,.rail-logo:after{content:"♞"!important;color:#f3d88f!important;font-family:Georgia,serif!important;text-shadow:0 3px 16px rgba(229,189,99,.28)!important}
+.top-header{background:rgba(7,19,38,.96)!important;border-bottom:1px solid rgba(190,211,235,.16)!important}
+.top-brand-copy b:after{content:"KnightPulse"!important;color:#f3f6fc!important}
+.top-brand-copy span:after{content:"THE SOCIAL REALM"!important;color:#e5bd63!important}
+.top-icon,.top-profile,.top-menu{background:rgba(23,41,68,.85)!important;border-color:rgba(190,211,235,.17)!important;color:#f3f6fc!important}
+.sidebar{background:rgba(7,19,38,.98)!important;border-right:1px solid rgba(190,211,235,.14)!important}
+.nav{color:#a9bad0!important}
+.nav:hover,.nav.active{background:linear-gradient(110deg,rgba(77,143,216,.25),rgba(229,189,99,.09))!important;border-color:rgba(229,189,99,.3)!important;color:#f7dc98!important;box-shadow:inset 3px 0 0 #e5bd63!important}
+.nav-group,.nav-group>summary{border-color:rgba(190,211,235,.14)!important;color:#c4d1e2!important}
+.main{background:transparent!important}
+.topbar{background:linear-gradient(105deg,rgba(16,37,63,.98),rgba(9,24,43,.96))!important;border:1px solid rgba(190,211,235,.18)!important;box-shadow:0 8px 28px rgba(0,0,0,.2)!important}
+.topbar:after{content:"KNIGHTPULSE  /  COMMUNITY NETWORK"!important;color:#e5bd63!important}
+.topbar h2{color:#f3f6fc!important}
+.room,.card,.online-panel,.chat-card,.panel,.stat-card,.user-card,.friend-card,.news-card,.game-card,.settings-card,.staff-card,
+.modal-card,.notification-dropdown,.dropdown-menu,.context-menu{background:linear-gradient(145deg,#142944,#0b1b30)!important;border-color:rgba(190,211,235,.17)!important;color:#f3f6fc!important;box-shadow:0 12px 32px rgba(0,0,0,.24)!important}
+.room:hover,.room.selected{border-color:rgba(229,189,99,.58)!important;box-shadow:0 12px 32px rgba(23,83,137,.24)!important}
+.room-meta,.room small,.gold,.rank-badge,.premium-badge,.brand-accent{color:#e5bd63!important}
+.chat-card{background:linear-gradient(180deg,#0e2037,#09182b)!important}
+.chat-head,.panel-head{background:linear-gradient(100deg,#173657,#102541)!important;border-color:rgba(190,211,235,.17)!important;color:#f3f6fc!important}
+.messages{background-image:radial-gradient(rgba(190,211,235,.08) .8px,transparent .8px)!important}
+.msg-text{color:#f3f6fc!important}
+.quoted{border-left-color:#e5bd63!important;background:rgba(28,54,82,.8)!important}
+.composer,.replybar,.typing{background:#102541!important;border-color:rgba(190,211,235,.16)!important}
+.composer input,form input,form textarea,form select,.field input,.field textarea,.field select,input,textarea,select{background:#0a192d!important;border-color:rgba(190,211,235,.2)!important;color:#f3f6fc!important}
+input:focus,textarea:focus,select:focus{border-color:#e5bd63!important;box-shadow:0 0 0 3px rgba(229,189,99,.14)!important}
+.primary,.send,.btn-primary,button[type=submit]{background:linear-gradient(115deg,#286cae,#1b4f82 58%,#c49a4b)!important;color:#fff!important;border:1px solid rgba(229,189,99,.4)!important;box-shadow:0 8px 22px rgba(30,91,145,.24)!important}
+.primary:hover,.send:hover,.btn-primary:hover{filter:brightness(1.12)!important}
+button.mini,.icon-btn,.action,.secondary,.tab-btn{background:rgba(23,45,73,.92)!important;border-color:rgba(190,211,235,.18)!important;color:#eaf2fc!important}
+button.mini:hover,.icon-btn:hover,.action:hover,.secondary:hover,.tab-btn:hover{background:rgba(77,143,216,.2)!important;border-color:rgba(229,189,99,.38)!important}
+a{color:#83b8ef!important}
+#viewNews .brand-news-masthead{background:radial-gradient(ellipse at 80% 15%,rgba(77,143,216,.25),transparent 42%),linear-gradient(125deg,#102541,#173657 60%,#09182b)!important;border-color:rgba(229,189,99,.3)!important}
+#viewNews .brand-news-kicker,#viewNews .brand-news-byline{color:#e5bd63!important}
+#viewNews .brand-news-story{background:linear-gradient(145deg,#142944,#0b1b30)!important}
+#viewGames .game-card,#viewGames .card{background:linear-gradient(145deg,#142944,#0b1b30)!important}
+#viewRooms .announcement{background:rgba(23,45,73,.9)!important;border-color:rgba(190,211,235,.18)!important;color:#f3f6fc!important}
+.profile-section,.profile-info-card,.profile-music-card,.profile-music-pill,.profile-friend-tile{background:rgba(16,31,53,.92)!important;border-color:rgba(190,211,235,.18)!important;color:#f3f6fc!important}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline-color:#e5bd63!important}
+@media(max-width:700px){.top-header{background:rgba(7,19,38,.98)!important}}

@@ -68,7 +68,8 @@ dmReplyText: null,
   modeManagement: {},
   roomListMode: "all",
   showHiddenRoomsOnly: false,
-  userPermissions: {}
+  userPermissions: {},
+  dmUnreadCount: 0
 };
 
 
@@ -2263,11 +2264,11 @@ async function translateMessageText(messageId,scope){
 }
 function messageHTML(message) {
   if(message?.joinChatPanel && String(message.bot||message.username)==="Bot"){
-    const joinUrl=String(message.joinChatUrl||"https://maleficentchat.onrender.com/");
+    const joinUrl=String(message.joinChatUrl||"https://knightpulse.up.railway.app/");
     return `<div class="message bot-welcome-message bot-join-chat-message" data-mid="${esc(message.id)}">
       <div class="bot-welcome-bubble">
         <div class="bot-welcome-byline">🤖 SYSTEM BOT</div>
-        <a class="bot-welcome-glow bot-join-chat-glow" href="${esc(joinUrl)}" target="_blank" rel="noopener noreferrer">🖤 JOIN MALEFICENT CHAT</a>
+        <a class="bot-welcome-glow bot-join-chat-glow" href="${esc(joinUrl)}" target="_blank" rel="noopener noreferrer">♞ JOIN KNIGHTPULSE</a>
       </div>
     </div>`;
   }
@@ -2929,7 +2930,7 @@ function renderArcade(){
   if(arcadeGameTimer){clearTimeout(arcadeGameTimer);arcadeGameTimer=null;}if(arcadeInterval){clearInterval(arcadeInterval);arcadeInterval=null;}
   root.innerHTML=`
     <section class="arcade-home">
-      <div class="arcade-welcome"><div><span class="arcade-kicker">MALEFICENT ARCADE</span><h2>Choose your next obsession.</h2><p>Quick games, friendly rivalries, and tiny victories. No drawing tools or old Gravity Run mode.</p></div><div class="arcade-orb">✦</div></div>
+      <div class="arcade-welcome"><div><span class="arcade-kicker">KNIGHTPULSE ARCADE</span><h2>Choose your next obsession.</h2><p>Quick games, friendly rivalries, and tiny victories. No drawing tools or old Gravity Run mode.</p></div><div class="arcade-orb">✦</div></div>
       <section class="arcade-studio-card"><div><span class="arcade-kicker">CREATIVE STUDIO</span><h3>🖌️ Doodle Studio</h3><p>Draw something, save it to your personal library, or share it in the current room.</p></div><button type="button" class="primary" data-open-doodle-studio>Open Doodle Studio ↗</button></section>
       <section class="arcade-library"><div class="news-card-top"><h3>Saved drawings</h3><button type="button" class="mini" data-refresh-doodle-library>Refresh</button></div><div id="doodleLibrary" class="doodle-library-list"><p class="muted">Loading your drawings…</p></div></section>
       <div class="arcade-game-grid">
@@ -3036,7 +3037,7 @@ function openDoodleComposer(){
   }catch(e){toast(e.message||'Could not save doodle.');btn.disabled=false;btn.textContent='💾 Save drawing';}});
   $('doodleSend')?.addEventListener('click',async()=>{const btn=$('doodleSend');btn.disabled=true;btn.textContent='Sending…';try{
     const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('Could not export the doodle.')),'image/png'));
-    const file=new File([blob],'maleficent-doodle.png',{type:'image/png'}),form=new FormData();form.append('text','');form.append('file',file);
+    const file=new File([blob],'knightpulse-doodle.png',{type:'image/png'}),form=new FormData();form.append('text','');form.append('file',file);
     const data=await api('/api/rooms/'+encodeURIComponent(state.currentRoom)+'/messages',{method:'POST',body:form});
     if(data.message&&String(data.message.roomId)===String(state.currentRoom))appendMessage(data.message);
     closeModal();toast('Doodle sent to the room!');
@@ -6800,6 +6801,7 @@ async function refreshTopDMUnreadBadge(){
     const data=await api("/api/dm/conversations");
     const conversations=Array.isArray(data.conversations)?data.conversations:[];
     const count=conversations.reduce((total,conversation)=>total+Math.max(0,Number(conversation.unreadCount)||0),0);
+    state.dmUnreadCount=count;
     for(const id of ["topDmDot","dmDot"]){
       const el=$(id);if(!el)continue;
       el.textContent=count>99?"99+":String(count);
@@ -6839,10 +6841,9 @@ async function loadNotifications() {
   if(notificationRefreshPromise)return notificationRefreshPromise;
   notificationRefreshPromise=(async()=>{
   try {
-    const [data,unreadData,dm,staffCounts,friendsData]=await Promise.all([
+    const [data,unreadData,staffCounts,friendsData]=await Promise.all([
       api("/api/notifications"),
       api("/api/notifications/unread").catch(()=>null),
-      api("/api/dm/unread-count").catch(()=>({count:0})),
       api("/api/staff/unread-count").catch(()=>({reports:0,staffNotifications:0,total:0})),
       api("/api/friends").catch(()=>({incoming:[]}))
     ]);
@@ -6852,7 +6853,7 @@ async function loadNotifications() {
     if(!activeWarningNotificationId&&pendingWarnings.length)showPersistentWarning(pendingWarnings[0]);
     const notificationStaffCount=unread.filter(n=>["report","moderation","staff"].includes(n.type)).length;
     const reportCount=Math.max(Number(staffCounts.reports||0),notificationStaffCount);
-    const counts={dm:Number(dm.count||0),report:reportCount,all:unread.length,friends:(friendsData.incoming||[]).length};
+    const counts={dm:Number(state.dmUnreadCount||0),report:reportCount,all:unread.length,friends:(friendsData.incoming||[]).length};
     const setBubble=(id,count)=>{
       const el=$(id);
       if(!el)return;
@@ -6887,8 +6888,8 @@ if(!window.__mcNotificationBadgeResumeBound){
 // Notification counters are a background convenience, not a live chat
 // transport. Polling five APIs every 5 seconds was creating needless load.
 // Opening notification views and socket reconnects refresh immediately.
-setInterval(()=>{if(state.user)loadNotifications();},15000);
-setInterval(()=>{if(state.user)refreshTopDMUnreadBadge();},15000);
+setInterval(()=>{if(state.user)loadNotifications();},30000);
+setInterval(()=>{if(state.user)refreshTopDMUnreadBadge();},30000);
 setTimeout(()=>{if(state.user){loadNotifications();refreshTopDMUnreadBadge();}},1200);
 
 async function openNotificationCenter(){
