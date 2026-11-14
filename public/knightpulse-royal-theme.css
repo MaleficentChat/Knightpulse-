@@ -1,0 +1,35 @@
+/* KnightPulse royal blue + gold visual layer.
+   Loaded after the existing MC/KP styles so the layout and feature-specific
+   styling remain intact while the palette is unified. */
+:root{
+  --bg:#07172a;--bg-deep:#050e1d;--panel:#0d2038;--panel-2:#132b49;--panel-3:#1a385b;
+  --border:rgba(111,164,220,.18);--border-strong:rgba(229,193,126,.34);
+  --text:#f3f6fb;--muted:#9eb1c8;--accent:#438ee8;--accent-2:#e5bd7e;
+  --accent-soft:rgba(67,142,232,.16);--bubble:#183451;--mine:#245d91;
+  --pink:#e5bd7e;--purple:#76a9ed;--green:#73c9b2;--danger:#ff7189;
+  --kp-void:#061326;--kp-night:#0a1c33;--kp-surface:#102743;--kp-raised:#173554;
+  --kp-raised2:#204365;--kp-line:rgba(137,177,222,.18);--kp-line-hot:rgba(229,189,126,.48);
+  --kp-ink:#f3f6fb;--kp-muted:#9eb1c8;--kp-blue:#438ee8;--kp-blue2:#2c68a8;
+  --kp-gold:#e5bd7e;--kp-mint:#73c9b2;--kp-red:#ff7189;
+  --kp-shadow:0 18px 55px rgba(0,8,20,.42);--kp-radius:16px;
+  color-scheme:dark;
+}
+html,body{background:#061326!important;color:#f3f6fb!important}
+body{background-image:radial-gradient(ellipse at 48% -18%,rgba(53,119,190,.26),transparent 48%),radial-gradient(ellipse at 100% 65%,rgba(229,189,126,.08),transparent 36%)!important;background-attachment:fixed!important}
+button,input,textarea,select{accent-color:#e5bd7e}
+#app{color:#f3f6fb}
+#app button:not(.danger):not(.delete):not([data-danger="true"]){--button-accent:#438ee8}
+#app a{color:#83b8f4}
+#app :is(.panel,.card,.modal,.modal-content,.drawer,.sidebar,.room-panel,.chat-panel,.profile-card,.settings-card,.leaderboard-card){
+  border-color:rgba(137,177,222,.18);
+}
+#app :is(.gold,.gold-text,.rank-gold,.currency-gold){color:#f0cf91}
+#app :is(.primary,.primary-btn,.btn-primary,.active-tab,.nav-item.active){
+  border-color:rgba(229,189,126,.42);
+}
+#app :is(.primary,.primary-btn,.btn-primary){background:linear-gradient(135deg,#2869aa,#438ee8);color:#fff}
+#app :is(.nav-item.active,.tab.active,.active-tab){box-shadow:inset 0 0 0 1px rgba(229,189,126,.26)}
+#app :is(input,textarea,select){border-color:rgba(137,177,222,.25)}
+#app :is(input,textarea,select):focus{border-color:#e5bd7e;box-shadow:0 0 0 2px rgba(229,189,126,.14)}
+#app ::selection{background:rgba(67,142,232,.38);color:#fff}
+#app ::-webkit-scrollbar-thumb{background:linear-gradient(#438ee8,#b88d4f);border-radius:12px}
