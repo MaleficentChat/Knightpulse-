@@ -796,7 +796,7 @@ function startRoomMessageBackgroundSync(){
     try{await refreshRoomMessageList(roomId);}
     catch(error){console.warn("Background room-message sync failed:",error?.message||error);}
     finally{roomMessageSyncInFlight=false;}
-  },2000);
+  },5000);
 }
 
 async function refreshActiveDMMessageList(peerId){
@@ -828,7 +828,7 @@ function startActiveDMMessageBackgroundSync(){
     try{await refreshActiveDMMessageList(peerId);}
     catch(error){console.warn("Background private-message recovery failed:",error?.message||error);}
     finally{activeDMSyncInFlight=false;}
-  },2000);
+  },5000);
 }
 
 async function authenticateSocketAndJoinRoom(socket=state.socket, syncHistory=true) {
@@ -2923,7 +2923,7 @@ function setPartyMode(enabled){
   const toggle=document.getElementById("togglePartyMode");
   if(toggle)toggle.textContent=active?"🎉 Turn Party Mode Off":"🎉 Turn Party Mode On";
 }
-/* ---------------- MALefICENT ARCADE ---------------- */
+/* ---------------- KNIGHTPULSE ARCADE ---------------- */
 let arcadeGameTimer=null,arcadeInterval=null;
 function renderArcade(){
   const root=$("gamesRoot");if(!root)return;
@@ -6841,10 +6841,9 @@ async function loadNotifications() {
   if(notificationRefreshPromise)return notificationRefreshPromise;
   notificationRefreshPromise=(async()=>{
   try {
-    const [data,unreadData,staffCounts,friendsData]=await Promise.all([
+    const [data,unreadData,friendsData]=await Promise.all([
       api("/api/notifications"),
       api("/api/notifications/unread").catch(()=>null),
-      api("/api/staff/unread-count").catch(()=>({reports:0,staffNotifications:0,total:0})),
       api("/api/friends").catch(()=>({incoming:[]}))
     ]);
     // Fall back to the main notification response if the unread-only endpoint is unavailable.
@@ -6852,7 +6851,7 @@ async function loadNotifications() {
     const pendingWarnings=unread.filter(n=>String(n.type||"").toLowerCase()==="warning").sort((x,y)=>new Date(x.time||0)-new Date(y.time||0));
     if(!activeWarningNotificationId&&pendingWarnings.length)showPersistentWarning(pendingWarnings[0]);
     const notificationStaffCount=unread.filter(n=>["report","moderation","staff"].includes(n.type)).length;
-    const reportCount=Math.max(Number(staffCounts.reports||0),notificationStaffCount);
+    const reportCount=notificationStaffCount;
     const counts={dm:Number(state.dmUnreadCount||0),report:reportCount,all:unread.length,friends:(friendsData.incoming||[]).length};
     const setBubble=(id,count)=>{
       const el=$(id);
@@ -7233,7 +7232,7 @@ function openRoomCreationModal() {
   const rankLabels={MEMBER:"Member",VIP:"VIP",SVIP:"SVIP",PREMIUM:"Premium",MOD:"Moderator",ADMIN:"Admin",SUPER_ADMIN:"Super Admin",COMMISSOR:"Commissor",CHIEF_COMMISSOR:"Chief Commissor",COOWNER:"Co-owner",ELITE:"Elite",OWNER:"Owner"};
   modal(`
     <div class="room-editor room-editor-create">
-      <header class="room-editor-hero"><span class="room-editor-hero-icon">🌙</span><div><p class="room-editor-eyebrow">MAKE YOUR SPACE</p><h2>Create a room</h2><p>Set up a new corner of Cloud Chat.</p></div></header>
+      <header class="room-editor-hero"><span class="room-editor-hero-icon">🌙</span><div><p class="room-editor-eyebrow">MAKE YOUR SPACE</p><h2>Create a room</h2><p>Set up a new corner of KnightPulse.</p></div></header>
       <form id="roomForm">
         <section class="room-editor-section"><h3>✨ The basics</h3><div class="room-editor-grid room-editor-identity">
           <label>Room name<input id="rn" maxlength="50" required placeholder="e.g. Midnight Lounge"></label>
@@ -7293,7 +7292,7 @@ async function loadSettings(){
   const sessions=(await api('/api/security/sessions').catch(()=>({sessions:[]}))).sessions||[];
   const canUsePartyModeForSettings=canUsePartyMode();
   $('settings').innerHTML=`
-    <section class="settings-hero"><div class="settings-hero-glow"></div><div class="settings-hero-copy"><span class="settings-eyebrow">CLOUD CHAT · CONTROL CENTER</span><h2>Account settings</h2><p>Your account, your privacy, your aesthetic. Make this space yours.</p><div class="settings-hero-tags"><span>✦ Personalize</span><span>♢ Stay secure</span><span>♡ Your choices</span></div></div><div class="settings-hero-emblem">✧</div></section>
+    <section class="settings-hero"><div class="settings-hero-glow"></div><div class="settings-hero-copy"><span class="settings-eyebrow">KNIGHTPULSE · CONTROL CENTER</span><h2>Account settings</h2><p>Your account, your privacy, your aesthetic. Make this space yours.</p><div class="settings-hero-tags"><span>✦ Personalize</span><span>♢ Stay secure</span><span>♡ Your choices</span></div></div><div class="settings-hero-emblem">✧</div></section>
     ${canUsePartyModeForSettings ? `<div class="panel party-mode-settings-panel"><h3>🎉 Party Mode <small class="muted">CLASSIC+</small></h3><p class="muted">Available from Classic rank upward. Turn on rainbow names, glowing chat, floating party sparks, spinning GIFs and music in this browser only.</p><button type="button" class="primary" id="settingsPartyMode">${isPartyModeActive()?'🎉 Turn Party Mode Off':'🎉 Turn Party Mode On'}</button></div>` : ''}
     <div class="grid2">
       <div class="panel"><h3>👤 Account</h3><p class="muted">Manage the information connected to your account.</p><div class="settings-list">
