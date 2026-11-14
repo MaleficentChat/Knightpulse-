@@ -791,12 +791,12 @@ function startRoomMessageBackgroundSync(){
   if(roomMessageSyncTimer)clearInterval(roomMessageSyncTimer);
   roomMessageSyncTimer=setInterval(async()=>{
     const roomId=String(state.currentRoom||"");
-    if(!state.user||!roomId||roomMessageSyncInFlight||document.hidden)return;
+    if(!state.user||!roomId||roomMessageSyncInFlight||document.hidden||state.socket?.connected)return;
     roomMessageSyncInFlight=true;
     try{await refreshRoomMessageList(roomId);}
     catch(error){console.warn("Background room-message sync failed:",error?.message||error);}
     finally{roomMessageSyncInFlight=false;}
-  },5000);
+  },15000);
 }
 
 async function refreshActiveDMMessageList(peerId){
@@ -823,12 +823,12 @@ function startActiveDMMessageBackgroundSync(){
   if(activeDMSyncTimer)clearInterval(activeDMSyncTimer);
   activeDMSyncTimer=setInterval(async()=>{
     const peerId=String(state.dmUserId||"");
-    if(!state.user||!peerId||activeDMSyncInFlight||document.hidden)return;
+    if(!state.user||!peerId||activeDMSyncInFlight||document.hidden||state.socket?.connected)return;
     activeDMSyncInFlight=true;
     try{await refreshActiveDMMessageList(peerId);}
     catch(error){console.warn("Background private-message recovery failed:",error?.message||error);}
     finally{activeDMSyncInFlight=false;}
-  },5000);
+  },15000);
 }
 
 async function authenticateSocketAndJoinRoom(socket=state.socket, syncHistory=true) {
