@@ -1320,7 +1320,7 @@ async function renderView() {
   const id =
     `view${state.view[0].toUpperCase()}${state.view.slice(1)}`;
 
-  const view = $(id);
+  const view = state.view==="wallFriends"?$("viewWall"):$(id);
 
   if (!view) return;
 
@@ -1344,6 +1344,12 @@ async function renderView() {
     case "brandNews":
       return loadBrandNews();
     case "wall":
+      $("wallViewTitle") && ($("wallViewTitle").textContent="🌘 Shadow Feed");
+      wallShowingFriends=false;wallShowingSaved=false;wallShowingReels=false;updateWallModeButtons();
+      return loadWall();
+    case "wallFriends":
+      $("wallViewTitle") && ($("wallViewTitle").textContent="💜 Shadow Friends Wall");
+      wallShowingFriends=true;wallShowingSaved=false;wallShowingReels=false;updateWallModeButtons();
       return loadWall();
 
     case "suggestions":
