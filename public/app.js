@@ -2079,37 +2079,38 @@ async function joinRoom(id) {
       );
     }
 
-    const staffInfo=await api(`/api/rooms/${encodeURIComponent(id)}/staff`).catch(()=>({myRole:'USER'}));
     state.currentRoom = id;
     const activeRoomTheme=state.rooms.find(r=>String(r.id)===String(id));applyRoomTheme();
-    state.currentRoomRole=staffInfo.myRole||'USER';
+    state.currentRoomRole='USER';
     rememberMyRoom(id);
 
-    // Joining over HTTP can finish before socket authentication; authenticate
-    // again here so the room join cannot be silently ignored during login.
-    if(state.socket?.connected){
-      const roomSocket=state.socket;
-      const socketJoined=await authenticateSocketAndJoinRoom(roomSocket,false).catch(error=>{console.warn("Room socket join failed:",error?.message||error);return false;});
-      if(!socketJoined)console.warn("Room socket subscription was not confirmed; reconnect recovery will retry.");
-    }
+    // Start independent room setup requests together instead of serially waiting
+    // for staff, socket subscription, announcements, and then message history.
+    const staffPromise=api(`/api/rooms/${encodeURIComponent(id)}/staff`)
+      .then(info=>{if(String(state.currentRoom)===id)state.currentRoomRole=info.myRole||'USER';})
+      .catch(()=>{});
+    const roomSocket=state.socket;
+    const socketPromise=roomSocket?.connected
+      ? authenticateSocketAndJoinRoom(roomSocket,false).catch(error=>{console.warn("Room socket join failed:",error?.message||error);return false;})
+      : Promise.resolve(true);
 
     $("chatWrap").classList.remove("hidden");
     $("viewRooms").classList.add("chatting");
+    $("roomName").textContent=`${room.icon || "💬"} ${room.name}`;
+    $("roomDesc").textContent=room.description||"";
+    $("announcement").textContent=room.announcement||"";
+    $("announcement").classList.toggle("hidden",!room.announcement);
 
-    $("roomName").textContent =
-      `${room.icon || "💬"} ${room.name}`;
-
-    $("roomDesc").textContent =
-      room.description || "";
-
-    $("announcement").textContent = room.announcement || "";
-    $("announcement").classList.toggle("hidden", !room.announcement);
-    await loadRoomAnnouncements(id);
-
-   const data =
-  await api(`/api/rooms/${id}/messages`);
-
-state.messages = data.messages || [];
+    // Announcements are secondary content; load them without blocking chat history.
+    loadRoomAnnouncements(id);
+    const [data,socketJoined]=await Promise.all([
+      api(`/api/rooms/${id}/messages`),
+      socketPromise
+    ]);
+    if(String(state.currentRoom)!==id)return false;
+    if(!socketJoined)console.warn("Room socket subscription was not confirmed; reconnect recovery will retry.");
+    await staffPromise;
+    state.messages = data.messages || [];
 
 $("messages").innerHTML =
   state.messages
